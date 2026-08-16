@@ -62,6 +62,17 @@ export type RadialSpec = {
 
   /** Flat height held across the whole frame band. */
   frameHeight: number;
+
+  /**
+   * Height at which the model will later be cut for a colour split, or 0.
+   *
+   * The rim wall is emitted as two stacked bands with a vertex ring exactly
+   * here, so the cut lands on existing vertices. Without it the cut crosses
+   * the wall quads' diagonals and lands on a point the cap does not share —
+   * geometrically coincident, but a T-junction that leaves both halves
+   * reporting open edges.
+   */
+  splitZ: number;
 };
 
 /** Smallest ring worth emitting; below this the centre fan takes over. */
@@ -86,6 +97,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     heightOf,
     levels,
     frameHeight,
+    splitZ,
   } = spec;
 
   let targetCellMm = spec.targetCellMm;
@@ -264,12 +276,33 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   // --- rim wall ------------------------------------------------------------
   for (let i = 0; i < rimN; i++) {
     const j = (i + 1) % rimN;
-    mb.addQuad(
-      inX[i], inY[i], inZ[i],
-      inX[i], inY[i], 0,
-      inX[j], inY[j], 0,
-      inX[j], inY[j], inZ[j],
-    );
+
+    // Split the band at splitZ when it lies below both ends, so a later cut
+    // runs along real edges instead of through the quads' diagonals.
+    const cut =
+      splitZ > 0 && splitZ < Math.min(inZ[i], inZ[j]) ? splitZ : 0;
+
+    if (cut > 0) {
+      mb.addQuad(
+        inX[i], inY[i], cut,
+        inX[i], inY[i], 0,
+        inX[j], inY[j], 0,
+        inX[j], inY[j], cut,
+      );
+      mb.addQuad(
+        inX[i], inY[i], inZ[i],
+        inX[i], inY[i], cut,
+        inX[j], inY[j], cut,
+        inX[j], inY[j], inZ[j],
+      );
+    } else {
+      mb.addQuad(
+        inX[i], inY[i], inZ[i],
+        inX[i], inY[i], 0,
+        inX[j], inY[j], 0,
+        inX[j], inY[j], inZ[j],
+      );
+    }
   }
 
   return mb.finish();

@@ -115,6 +115,9 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       emboss: msg.emboss,
     };
 
+    const wantsSplit =
+      msg.splitHeightMm > 0 && msg.splitHeightMm < msg.maxT;
+
     const buildParams = {
       widthMm: msg.widthMm,
       resolution: hmRaw.w,
@@ -125,17 +128,11 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       quality: msg.quality,
       smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
       levels: msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0,
+      splitZ: wantsSplit ? msg.splitHeightMm : 0,
     };
 
     const shape = getShape(msg.shapeId);
     const mesh = shape.build(buildCtx, buildParams);
-
-    // TODO: splitting is shape-agnostic now; the pentagon-only gate is a
-    // leftover and should be opened up to every shape.
-    const wantsSplit =
-      msg.shapeId === "pentagon" &&
-      msg.splitHeightMm > 0 &&
-      msg.splitHeightMm < msg.maxT;
 
     if (wantsSplit) {
       // Split while the mesh is still flat: splitHeightMm is a thickness.

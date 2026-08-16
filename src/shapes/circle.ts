@@ -14,7 +14,7 @@ export const CircleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels } = params;
+    const { widthMm, quality, smoothing, levels, splitZ } = params;
 
     const range = maxT - minT;
 
@@ -32,6 +32,7 @@ export const CircleShape: ShapePlugin = {
       innerFraction: hasFrame ? innerRadius / outerRadius : 1,
       frameRings: hasFrame ? FRAME_RINGS : 0,
       frameHeight: maxT,
+      splitZ,
 
       boundaryAt: (s) => {
         const theta = s * Math.PI * 2;

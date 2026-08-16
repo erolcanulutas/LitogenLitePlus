@@ -25,7 +25,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels } = params;
+    const { widthMm, quality, smoothing, levels, splitZ } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -180,12 +180,33 @@ export const TriangleShape: ShapePlugin = {
     // --- rim ---------------------------------------------------------------
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
-      mb.addQuad(
-        edgeX[i], edgeY[i], edgeZ[i],
-        edgeX[i], edgeY[i], 0,
-        edgeX[j], edgeY[j], 0,
-        edgeX[j], edgeY[j], edgeZ[j],
-      );
+
+      // Put a vertex ring at splitZ so a later colour cut runs along real
+      // edges rather than through these quads' diagonals.
+      const cut =
+        splitZ > 0 && splitZ < Math.min(edgeZ[i], edgeZ[j]) ? splitZ : 0;
+
+      if (cut > 0) {
+        mb.addQuad(
+          edgeX[i], edgeY[i], cut,
+          edgeX[i], edgeY[i], 0,
+          edgeX[j], edgeY[j], 0,
+          edgeX[j], edgeY[j], cut,
+        );
+        mb.addQuad(
+          edgeX[i], edgeY[i], edgeZ[i],
+          edgeX[i], edgeY[i], cut,
+          edgeX[j], edgeY[j], cut,
+          edgeX[j], edgeY[j], edgeZ[j],
+        );
+      } else {
+        mb.addQuad(
+          edgeX[i], edgeY[i], edgeZ[i],
+          edgeX[i], edgeY[i], 0,
+          edgeX[j], edgeY[j], 0,
+          edgeX[j], edgeY[j], edgeZ[j],
+        );
+      }
     }
 
     return mb.finish();

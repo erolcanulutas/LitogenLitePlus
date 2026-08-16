@@ -61,6 +61,15 @@ export type ShapeBuildParams = {
    * shape outline already gets. That is what line art and logos want.
    */
   levels: number;
+
+  /**
+   * Height the model will later be cut at for a colour split, or 0.
+   *
+   * The generator puts a vertex ring on the rim wall at exactly this height so
+   * the cut runs along real edges. Otherwise it crosses the wall quads'
+   * diagonals and leaves T-junctions the cap cannot pair with.
+   */
+  splitZ: number;
 };
 
 export type ShapePlugin = {

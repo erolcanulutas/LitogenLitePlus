@@ -2,18 +2,29 @@ import { MeshBuilder, type Mesh } from "./mesh";
 
 const EPS = 1e-7;
 
-/** A mesh whose triangles are tagged with which material they belong to. */
+/**
+ * The two halves of a colour-split model, each a closed solid in its own
+ * right, concatenated into one buffer.
+ *
+ * Keeping them separately watertight is the whole point: slicers assign
+ * filament per object, so a multi-colour print needs two real bodies. Tagging
+ * triangles of a single body with different materials is legal 3MF but most
+ * slicers ignore it, and an open shell gets rejected outright.
+ */
 export type SplitMesh = {
   positions: Float32Array;
   triangleCount: number;
-  /** One entry per triangle: 0 below the split plane, 1 above it. */
-  material: Uint8Array;
+  /** Triangles [0, belowCount) are the lower body, the rest the upper one. */
+  belowCount: number;
 };
 
 /**
- * Cuts a mesh along a horizontal plane so the two halves can be printed in
- * different colours. Triangles straddling the plane are clipped, so the seam
- * is exactly flat rather than ragged.
+ * Cuts a heightfield model along a horizontal plane and caps both halves.
+ *
+ * Clipping alone leaves each half open where the plane passed through, so the
+ * cross-section is triangulated too: the lower body gets a lid at the plane,
+ * the upper body a floor. Both come from the same clipped polygons, wound
+ * opposite ways, so they meet exactly.
  */
 export function splitMeshAtZ(mesh: Mesh, splitZ: number): SplitMesh {
   const { positions, triangleCount } = mesh;
@@ -21,7 +32,6 @@ export function splitMeshAtZ(mesh: Mesh, splitZ: number): SplitMesh {
   const below = new MeshBuilder(triangleCount);
   const above = new MeshBuilder(Math.max(1, triangleCount >> 1));
 
-  // Scratch polygons for the clip; at most 4 vertices come out of a triangle.
   const poly = new Float64Array(12);
   const tri = new Float64Array(9);
 
@@ -33,17 +43,32 @@ export function splitMeshAtZ(mesh: Mesh, splitZ: number): SplitMesh {
     const lo = Math.min(z0, z1, z2);
     const hi = Math.max(z0, z1, z2);
 
+    // Only upward-facing triangles bound the solid from above, so only they
+    // describe the cross-section. Walls project to a line and contribute none.
+    const ux = tri[3] - tri[0], uy = tri[4] - tri[1];
+    const vx = tri[6] - tri[0], vy = tri[7] - tri[1];
+    const projected = ux * vy - uy * vx;
+    const facesUp = projected > EPS;
+
     if (hi <= splitZ + EPS) {
       emit(below, tri[0], tri[1], tri[2], tri[3], tri[4], tri[5], tri[6], tri[7], tri[8]);
       continue;
     }
+
     if (lo >= splitZ - EPS) {
       emit(above, tri[0], tri[1], tri[2], tri[3], tri[4], tri[5], tri[6], tri[7], tri[8]);
+      if (facesUp) {
+        capFromTriangle(below, above, tri[0], tri[1], tri[3], tri[4], tri[6], tri[7], splitZ);
+      }
       continue;
     }
 
-    fanInto(below, poly, clipTriangle(tri, poly, splitZ, false));
-    fanInto(above, poly, clipTriangle(tri, poly, splitZ, true));
+    const belowCount = clipTriangle(tri, poly, splitZ, false);
+    fanInto(below, poly, belowCount);
+
+    const aboveCount = clipTriangle(tri, poly, splitZ, true);
+    fanInto(above, poly, aboveCount);
+    if (facesUp) capFromPolygon(below, above, poly, aboveCount, splitZ);
   }
 
   const belowMesh = below.finish();
@@ -54,10 +79,43 @@ export function splitMeshAtZ(mesh: Mesh, splitZ: number): SplitMesh {
   merged.set(belowMesh.positions, 0);
   merged.set(aboveMesh.positions, belowMesh.positions.length);
 
-  const material = new Uint8Array(total);
-  material.fill(1, belowMesh.triangleCount);
+  return {
+    positions: merged,
+    triangleCount: total,
+    belowCount: belowMesh.triangleCount,
+  };
+}
 
-  return { positions: merged, triangleCount: total, material };
+/** Lid on the lower body (+Z) and floor on the upper one (-Z). */
+function capFromTriangle(
+  lower: MeshBuilder,
+  upper: MeshBuilder,
+  ax: number, ay: number,
+  bx: number, by: number,
+  cx: number, cy: number,
+  z: number,
+) {
+  emit(lower, ax, ay, z, bx, by, z, cx, cy, z);
+  emit(upper, ax, ay, z, cx, cy, z, bx, by, z);
+}
+
+function capFromPolygon(
+  lower: MeshBuilder,
+  upper: MeshBuilder,
+  poly: Float64Array,
+  count: number,
+  z: number,
+) {
+  for (let i = 1; i + 1 < count; i++) {
+    const a = 0, b = i * 3, c = (i + 1) * 3;
+    capFromTriangle(
+      lower, upper,
+      poly[a], poly[a + 1],
+      poly[b], poly[b + 1],
+      poly[c], poly[c + 1],
+      z,
+    );
+  }
 }
 
 function emit(
@@ -66,13 +124,15 @@ function emit(
   bx: number, by: number, bz: number,
   cx: number, cy: number, cz: number,
 ) {
-  // Drop slivers: they carry no volume and upset some slicers.
+  // Only drop genuinely degenerate triangles. A sliver still carries three
+  // edges that its neighbours expect to pair with, so discarding it on a
+  // generous threshold punches holes in an otherwise closed body.
   const ux = bx - ax, uy = by - ay, uz = bz - az;
   const vx = cx - ax, vy = cy - ay, vz = cz - az;
   const nx = uy * vz - uz * vy;
   const ny = uz * vx - ux * vz;
   const nz = ux * vy - uy * vx;
-  if (Math.hypot(nx, ny, nz) <= EPS) return;
+  if (Math.hypot(nx, ny, nz) <= 1e-12) return;
 
   mb.addTriangle(ax, ay, az, bx, by, bz, cx, cy, cz);
 }
