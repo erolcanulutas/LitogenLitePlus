@@ -1,10 +1,14 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
+import { emitTerracedTriangle } from "../core/terrace";
 import { triangleCellMm } from "../core/quality";
 
 /** Matches the ceiling in core/radial.ts: N^2 triangles must stay bounded. */
 const MAX_SUBDIVISIONS = 2000;
+
+/** Stride of the row buffers: x, y, z, brightness. */
+const STRIDE = 4;
 
 /**
  * Equilateral triangle, built on a barycentric grid.
@@ -21,7 +25,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing } = params;
+    const { widthMm, quality, smoothing, levels } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -42,18 +46,39 @@ export const TriangleShape: ShapePlugin = {
     // stands in for a cell that wide. Filter over it instead of point sampling.
     const footprintPx = smoothing * (side / N) * (heightmap.w / side);
 
-    const thicknessAt = (u: number, v: number, w: number, x: number, y: number) => {
-      if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return maxT;
+    const terraced = levels >= 2;
+    const heightOf = (lum: number) =>
+      emboss === "back" ? maxT - lum * range : minT + lum * range;
+    const bandHeight = (band: number) => heightOf((band + 0.5) / levels);
+    const heightForLum = (l: number) =>
+      terraced
+        ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))
+        : heightOf(l);
+
+    /** Brightness at a grid point, or -1 inside the flat frame band. */
+    const lumAt = (u: number, v: number, w: number, x: number, y: number) => {
+      if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return -1;
 
       const uu = (x + side / 2) / side;
       const vv = ((2 * hTri) / 3 - y) / hTri;
-      const lum = sampleHeightFiltered(sampler, uu, vv, footprintPx);
-
-      return emboss === "back" ? maxT - lum * range : minT + lum * range;
+      return sampleHeightFiltered(sampler, uu, vv, footprintPx);
     };
 
-    // top (N^2) + base fan (3N) + rim (6N)
-    const mb = new MeshBuilder(N * N + 9 * N);
+    // top (N^2) + base fan (3N) + rim (6N), with headroom for terrace cuts.
+    const base = N * N + 9 * N;
+    const mb = new MeshBuilder(terraced ? Math.round(base * 1.4) : base);
+
+    const emitSurface = (
+      x0: number, y0: number, z0: number, l0: number,
+      x1: number, y1: number, z1: number, l1: number,
+      x2: number, y2: number, z2: number, l2: number,
+    ) => {
+      if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
+        emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, levels, bandHeight);
+      } else {
+        mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
+      }
+    };
 
     // Boundary loop, counter-clockwise: A->B, B->C, C->A. Shared by the base
     // fan and the rim so both reference identical vertices.
@@ -62,8 +87,8 @@ export const TriangleShape: ShapePlugin = {
     const edgeY = new Float64Array(edgeCount);
     const edgeZ = new Float64Array(edgeCount);
 
-    let prev = new Float64Array((N + 1) * 3);
-    let cur = new Float64Array((N + 1) * 3);
+    let prev = new Float64Array((N + 1) * STRIDE);
+    let cur = new Float64Array((N + 1) * STRIDE);
 
     const fillRow = (r: number, out: Float64Array) => {
       const w = r / N;
@@ -73,10 +98,12 @@ export const TriangleShape: ShapePlugin = {
         const u = 1 - w - v;
         const x = u * ax + v * bx + w * cx;
         const y = u * ay + v * by + w * cy;
-        const o = c * 3;
+        const o = c * STRIDE;
+        const lum = lumAt(u, v, w, x, y);
         out[o] = x;
         out[o + 1] = y;
-        out[o + 2] = thicknessAt(u, v, w, x, y);
+        out[o + 2] = lum < 0 ? maxT : heightForLum(lum);
+        out[o + 3] = lum;
       }
     };
 
@@ -85,22 +112,20 @@ export const TriangleShape: ShapePlugin = {
 
       if (r === 0) {
         for (let c = 0; c < N; c++) {
-          const o = c * 3;
+          const o = c * STRIDE;
           edgeX[c] = row[o];
           edgeY[c] = row[o + 1];
           edgeZ[c] = row[o + 2];
         }
       }
       if (r < N) {
-        // B -> C edge, at column N - r.
-        const o = cols * 3;
+        const o = cols * STRIDE;
         const i = N + r;
         edgeX[i] = row[o];
         edgeY[i] = row[o + 1];
         edgeZ[i] = row[o + 2];
       }
       if (r >= 1) {
-        // C -> A edge, at column 0, walked from C back down to A.
         const i = 3 * N - r;
         edgeX[i] = row[0];
         edgeY[i] = row[1];
@@ -118,21 +143,21 @@ export const TriangleShape: ShapePlugin = {
 
       const cols = N - r;
       for (let c = 0; c < cols; c++) {
-        const o0 = c * 3;
-        const o1 = (c + 1) * 3;
+        const o0 = c * STRIDE;
+        const o1 = (c + 1) * STRIDE;
 
         // t00 -> t10 -> t01 faces +Z.
-        mb.addTriangle(
-          prev[o0], prev[o0 + 1], prev[o0 + 2],
-          prev[o1], prev[o1 + 1], prev[o1 + 2],
-          cur[o0], cur[o0 + 1], cur[o0 + 2],
+        emitSurface(
+          prev[o0], prev[o0 + 1], prev[o0 + 2], prev[o0 + 3],
+          prev[o1], prev[o1 + 1], prev[o1 + 2], prev[o1 + 3],
+          cur[o0], cur[o0 + 1], cur[o0 + 2], cur[o0 + 3],
         );
 
         if (c + 1 < cols) {
-          mb.addTriangle(
-            prev[o1], prev[o1 + 1], prev[o1 + 2],
-            cur[o1], cur[o1 + 1], cur[o1 + 2],
-            cur[o0], cur[o0 + 1], cur[o0 + 2],
+          emitSurface(
+            prev[o1], prev[o1 + 1], prev[o1 + 2], prev[o1 + 3],
+            cur[o1], cur[o1 + 1], cur[o1 + 2], cur[o1 + 3],
+            cur[o0], cur[o0 + 1], cur[o0 + 2], cur[o0 + 3],
           );
         }
       }

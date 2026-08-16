@@ -350,6 +350,7 @@ export default function App() {
   const [splitHeightMm, setSplitHeightMm] = useState(0);
   const [quality, setQuality] = useState<Quality>("normal");
   const [smoothing, setSmoothing] = useState(1.0);
+  const [levels, setLevels] = useState(0);
 
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
   const [view, setView] = useState<"editor" | "preview">("editor");
@@ -471,6 +472,7 @@ export default function App() {
           frameMm,
           quality,
           smoothing,
+          levels,
           splitHeightMm,
           layerHeight: 0.2,
           emboss: "back",
@@ -829,6 +831,58 @@ export default function App() {
             <option value="normal">Normal</option>
             <option value="high">High</option>
           </select>
+
+          <div className="label-row" style={{ marginTop: 12 }}>
+            <label className="miniLabel">Surface</label>
+            <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into bands and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art." />
+          </div>
+
+          <select
+            className="spinInput"
+            value={levels === 0 ? "photo" : "graphic"}
+            onChange={(e) => setLevels(e.target.value === "photo" ? 0 : 2)}
+          >
+            <option value="photo">Photo (smooth)</option>
+            <option value="graphic">Graphic (hard edges)</option>
+          </select>
+
+          {levels > 0 && (
+            <>
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Bands</label>
+                <InfoIcon text="How many brightness levels the picture is reduced to. 2 gives a pure silhouette — right for a black and white logo. More bands keep some shading, at the cost of extra walls." />
+              </div>
+
+              <div className="spinRow">
+                <input
+                  className="spinInput"
+                  type="number"
+                  min={2}
+                  max={16}
+                  step={1}
+                  value={levels}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (!Number.isNaN(v)) setLevels(Math.max(2, Math.min(16, v)));
+                  }}
+                />
+                <div className="spinBtns">
+                  <button
+                    className="spinBtn"
+                    onClick={() => setLevels((v) => Math.min(16, v + 1))}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    className="spinBtn"
+                    onClick={() => setLevels((v) => Math.max(2, v - 1))}
+                  >
+                    ▼
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
             <label className="miniLabel">Edge Smoothing</label>

@@ -49,6 +49,18 @@ export type ShapeBuildParams = {
    * want 1.5 to 3, where the stair-stepping is what you notice first.
    */
   smoothing: number;
+
+  /**
+   * Brightness bands for terraced ("graphic") output, or 0 for a smooth
+   * surface.
+   *
+   * Smooth samples the picture as a continuous heightfield, which is what a
+   * photograph wants. Terraced quantises it and cuts the surface along the
+   * resulting contours, so edges land exactly where the artwork puts them
+   * rather than rounding to the nearest mesh cell — the same treatment the
+   * shape outline already gets. That is what line art and logos want.
+   */
+  levels: number;
 };
 
 export type ShapePlugin = {

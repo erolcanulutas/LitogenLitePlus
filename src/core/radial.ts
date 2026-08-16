@@ -1,4 +1,5 @@
 import { MeshBuilder, type Mesh } from "./mesh";
+import { emitTerracedTriangle } from "./terrace";
 
 /**
  * Shared generator for every shape built out of concentric rings: circle,
@@ -9,13 +10,12 @@ import { MeshBuilder, type Mesh } from "./mesh";
  * stay roughly square from the centre out. A fixed count per ring — which is
  * what this used to do — spends the same number of vertices on a 1mm ring as
  * on a 40mm one, making the inner rings up to 40x finer than they need to be
- * while the radial direction stays coarse. That wasted budget is why the mesh
- * facets were visible as concentric arcs across the image.
+ * while the radial direction stays coarse.
  *
- * Because neighbouring rings now hold different vertex counts, the strip
- * between them is zippered rather than stitched as quads: whichever ring is
- * behind in angle advances next. That keeps the surface closed with no
- * T-junctions for any pair of counts.
+ * Because neighbouring rings hold different vertex counts, the strip between
+ * them is zippered rather than stitched as quads: whichever ring is behind in
+ * angle advances next. That keeps the surface closed with no T-junctions for
+ * any pair of counts.
  *
  * Winding is outward everywhere: the top faces +Z, the base faces -Z, and the
  * rim faces away from the axis.
@@ -40,13 +40,25 @@ export type RadialSpec = {
   boundaryAt: (s: number) => { x: number; y: number };
 
   /**
-   * Surface height above z=0 at a point inside the image area.
+   * Brightness (0..1) at a point inside the image area.
    *
    * `footprintMm` is how much surface this one vertex stands in for — the
    * larger side of its cell. The shape passes it to the area sampler so detail
    * finer than the mesh gets averaged in rather than aliased.
    */
-  heightAt: (x: number, y: number, footprintMm: number) => number;
+  lumAt: (x: number, y: number, footprintMm: number) => number;
+
+  /** Brightness -> surface height above z=0, in mm. */
+  heightOf: (lum: number) => number;
+
+  /**
+   * Brightness bands for terraced output, or 0 for a smooth surface.
+   *
+   * Smooth is right for photographs. Terraced is right for line art: it cuts
+   * the surface along the picture's own contours so edges land exactly where
+   * the artwork puts them instead of rounding to the nearest cell.
+   */
+  levels: number;
 
   /** Flat height held across the whole frame band. */
   frameHeight: number;
@@ -70,7 +82,9 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     innerFraction,
     frameRings,
     boundaryAt,
-    heightAt,
+    lumAt,
+    heightOf,
+    levels,
     frameHeight,
   } = spec;
 
@@ -85,6 +99,14 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     Math.round((radiusMm * innerFraction) / targetCellMm),
   );
   const totalRings = imageRings + frameRings;
+
+  const terraced = levels >= 2;
+  /** Height of a whole band, taken at its middle. */
+  const bandHeight = (band: number) => heightOf((band + 0.5) / levels);
+  const heightForLum = (l: number) =>
+    terraced
+      ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))
+      : heightOf(l);
 
   // Radius fraction of ring r. Ring 0 is the centre, ring totalRings the rim.
   const ringT = (r: number): number => {
@@ -113,15 +135,18 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   let inX = new Float64Array(maxVerts);
   let inY = new Float64Array(maxVerts);
   let inZ = new Float64Array(maxVerts);
+  let inL = new Float64Array(maxVerts);
   let outX = new Float64Array(maxVerts);
   let outY = new Float64Array(maxVerts);
   let outZ = new Float64Array(maxVerts);
+  let outL = new Float64Array(maxVerts);
 
   const fillRing = (
     r: number,
     X: Float64Array,
     Y: Float64Array,
     Z: Float64Array,
+    L: Float64Array,
   ): number => {
     const n = ringVerts(r);
     const t = ringT(r);
@@ -138,35 +163,58 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
 
       if (flat) {
         Z[i] = frameHeight;
+        L[i] = -1;
       } else {
+        // Cell is `radius * dt` deep and `segLen * t` wide; filter by the
+        // larger side so the coarse direction never aliases.
         const radialStep = Math.hypot(p.x, p.y) * dt;
-        Z[i] = heightAt(x, y, Math.max(radialStep, angularStep));
+        const lum = lumAt(x, y, Math.max(radialStep, angularStep));
+        L[i] = lum;
+        Z[i] = heightForLum(lum);
       }
     }
     return n;
   };
 
-  // Triangle budget: two per vertex across the strips, plus base and rim.
+  // Two per vertex across the strips, plus base and rim. Terracing adds cuts,
+  // so leave it headroom.
   let estimate = 0;
   for (let r = 1; r <= totalRings; r++) estimate += 2 * ringVerts(r);
   estimate += 3 * ringVerts(totalRings);
-  const mb = new MeshBuilder(estimate);
+  const mb = new MeshBuilder(terraced ? Math.round(estimate * 1.4) : estimate);
 
-  let innerN = fillRing(1, inX, inY, inZ);
+  /** Smooth or terraced, depending on the mode and whether the frame is involved. */
+  const emitSurface = (
+    x0: number, y0: number, z0: number, l0: number,
+    x1: number, y1: number, z1: number, l1: number,
+    x2: number, y2: number, z2: number, l2: number,
+  ) => {
+    if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
+      emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, levels, bandHeight);
+    } else {
+      mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
+    }
+  };
+
+  let innerN = fillRing(1, inX, inY, inZ, inL);
 
   // --- centre apex fan ---------------------------------------------------
-  const apexZ = ringIsFrame(0)
-    ? frameHeight
-    : heightAt(0, 0, radiusMm * ringDt(0));
+  const apexIsFrame = ringIsFrame(0);
+  const apexLum = apexIsFrame ? -1 : lumAt(0, 0, radiusMm * ringDt(0));
+  const apexZ = apexIsFrame ? frameHeight : heightForLum(apexLum);
 
   for (let i = 0; i < innerN; i++) {
     const j = (i + 1) % innerN;
-    mb.addTriangle(0, 0, apexZ, inX[i], inY[i], inZ[i], inX[j], inY[j], inZ[j]);
+    emitSurface(
+      0, 0, apexZ, apexLum,
+      inX[i], inY[i], inZ[i], inL[i],
+      inX[j], inY[j], inZ[j], inL[j],
+    );
   }
 
   // --- top surface, ring to ring -----------------------------------------
   for (let r = 1; r < totalRings; r++) {
-    const outerN = fillRing(r + 1, outX, outY, outZ);
+    const outerN = fillRing(r + 1, outX, outY, outZ, outL);
 
     // Zipper: advance whichever ring is behind in angle. Emits innerN + outerN
     // triangles and leaves no gaps for any pair of counts.
@@ -180,26 +228,27 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
 
       if (takeInner) {
         const i2 = (i + 1) % innerN;
-        mb.addTriangle(
-          inX[ii], inY[ii], inZ[ii],
-          outX[jj], outY[jj], outZ[jj],
-          inX[i2], inY[i2], inZ[i2],
+        emitSurface(
+          inX[ii], inY[ii], inZ[ii], inL[ii],
+          outX[jj], outY[jj], outZ[jj], outL[jj],
+          inX[i2], inY[i2], inZ[i2], inL[i2],
         );
         i++;
       } else {
         const j2 = (j + 1) % outerN;
-        mb.addTriangle(
-          inX[ii], inY[ii], inZ[ii],
-          outX[jj], outY[jj], outZ[jj],
-          outX[j2], outY[j2], outZ[j2],
+        emitSurface(
+          inX[ii], inY[ii], inZ[ii], inL[ii],
+          outX[jj], outY[jj], outZ[jj], outL[jj],
+          outX[j2], outY[j2], outZ[j2], outL[j2],
         );
         j++;
       }
     }
 
-    const tx = inX, ty = inY, tz = inZ;
-    inX = outX; inY = outY; inZ = outZ;
-    outX = tx; outY = ty; outZ = tz;
+    let t = inX; inX = outX; outX = t;
+    t = inY; inY = outY; outY = t;
+    t = inZ; inZ = outZ; outZ = t;
+    t = inL; inL = outL; outL = t;
     innerN = outerN;
   }
 
