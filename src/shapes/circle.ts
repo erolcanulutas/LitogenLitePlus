@@ -1,7 +1,7 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh } from "../core/radial";
-import { sampleHeightBilinear } from "../core/sample";
+import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
 import { radialDensity } from "../core/quality";
 
 /** Rings used for the flat frame band. It is flat, so a handful is plenty. */
@@ -26,6 +26,9 @@ export const CircleShape: ShapePlugin = {
     const angularCount = Math.max(72, Math.floor(heightmap.w * q.angMul));
     const imageRings = Math.max(10, q.radial);
 
+    const sampler = buildAreaSampler(heightmap);
+    const pxPerMm = heightmap.w / (2 * outerRadius);
+
     return buildRadialMesh({
       angularCount,
       imageRings,
@@ -41,10 +44,10 @@ export const CircleShape: ShapePlugin = {
         };
       },
 
-      heightAt: (x, y) => {
+      heightAt: (x, y, footprintMm) => {
         const u = (x + outerRadius) / (2 * outerRadius);
         const v = (outerRadius - y) / (2 * outerRadius);
-        const lum = sampleHeightBilinear(heightmap, u, v);
+        const lum = sampleHeightFiltered(sampler, u, v, 0.5 * footprintMm * pxPerMm);
         return emboss === "back" ? maxT - lum * range : minT + lum * range;
       },
     });

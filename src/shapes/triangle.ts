@@ -1,6 +1,6 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
-import { sampleHeightBilinear } from "../core/sample";
+import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
 import { triangleDensity } from "../core/quality";
 
 /**
@@ -32,12 +32,17 @@ export const TriangleShape: ShapePlugin = {
     const bx = side / 2, by = -hTri / 3;
     const cx = 0, cy = (2 * hTri) / 3;
 
+    const sampler = buildAreaSampler(heightmap);
+    // The barycentric grid steps by side/N in both directions, so every vertex
+    // stands in for a cell that wide. Filter over it instead of point sampling.
+    const footprintPx = 0.5 * (side / N) * (heightmap.w / side);
+
     const thicknessAt = (u: number, v: number, w: number, x: number, y: number) => {
       if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return maxT;
 
       const uu = (x + side / 2) / side;
       const vv = ((2 * hTri) / 3 - y) / hTri;
-      const lum = sampleHeightBilinear(heightmap, uu, vv);
+      const lum = sampleHeightFiltered(sampler, uu, vv, footprintPx);
 
       return emboss === "back" ? maxT - lum * range : minT + lum * range;
     };

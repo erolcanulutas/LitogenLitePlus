@@ -1,7 +1,7 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh, polygonBoundary } from "../core/radial";
-import { sampleHeightBilinear } from "../core/sample";
+import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
 import { radialDensity } from "../core/quality";
 
 const SIDES = 5;
@@ -63,6 +63,9 @@ export const PentagonShape: ShapePlugin = {
     const offY = (Math.min(...ys) + Math.max(...ys)) / 2;
     const corners = raw.map((p) => ({ x: p.x - offX, y: p.y - offY }));
 
+    const sampler = buildAreaSampler(heightmap);
+    const pxPerMm = heightmap.w / bboxW;
+
     return buildRadialMesh({
       angularCount: SIDES * perEdge,
       imageRings,
@@ -72,10 +75,10 @@ export const PentagonShape: ShapePlugin = {
 
       boundaryAt: polygonBoundary(corners, perEdge),
 
-      heightAt: (x, y) => {
+      heightAt: (x, y, footprintMm) => {
         const u = clamp01((x + bboxW / 2) / bboxW);
         const v = clamp01(1 - (y + bboxH / 2) / bboxH);
-        const lum = sampleHeightBilinear(heightmap, u, v);
+        const lum = sampleHeightFiltered(sampler, u, v, 0.5 * footprintMm * pxPerMm);
         return emboss === "back" ? maxT - lum * range : minT + lum * range;
       },
     });

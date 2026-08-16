@@ -1,7 +1,7 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh, polygonBoundary } from "../core/radial";
-import { sampleHeightBilinear } from "../core/sample";
+import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
 import { radialDensity } from "../core/quality";
 
 const SIDES = 6;
@@ -48,6 +48,9 @@ export const HexagonShape: ShapePlugin = {
     const totalW = 2 * circumradius;
     const totalH = 2 * apothem;
 
+    const sampler = buildAreaSampler(heightmap);
+    const pxPerMm = heightmap.w / totalW;
+
     return buildRadialMesh({
       angularCount: SIDES * perEdge,
       imageRings,
@@ -57,10 +60,10 @@ export const HexagonShape: ShapePlugin = {
 
       boundaryAt: polygonBoundary(corners, perEdge),
 
-      heightAt: (x, y) => {
+      heightAt: (x, y, footprintMm) => {
         const u = clamp01((x + circumradius) / totalW);
         const v = clamp01(1 - (y + apothem) / totalH);
-        const lum = sampleHeightBilinear(heightmap, u, v);
+        const lum = sampleHeightFiltered(sampler, u, v, 0.5 * footprintMm * pxPerMm);
         return emboss === "back" ? maxT - lum * range : minT + lum * range;
       },
     });

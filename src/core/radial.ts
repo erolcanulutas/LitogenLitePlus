@@ -34,8 +34,14 @@ export type RadialSpec = {
   /** Outer boundary, sampled counter-clockwise for i in [0, angularCount). */
   boundaryAt: (i: number) => { x: number; y: number };
 
-  /** Surface height above z=0 at a point inside the image area. */
-  heightAt: (x: number, y: number) => number;
+  /**
+   * Surface height above z=0 at a point inside the image area.
+   *
+   * `footprintMm` is how much of the surface this one vertex stands in for —
+   * the larger side of its cell. The shape passes it to the area sampler so
+   * detail finer than the mesh gets averaged in rather than aliased.
+   */
+  heightAt: (x: number, y: number, footprintMm: number) => number;
 
   /** Flat height held across the whole frame band. */
   frameHeight: number;
@@ -64,6 +70,14 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
 
   const ringIsFrame = (r: number): boolean => frameRings > 0 && r > imageRings;
 
+  /** Ring spacing in t units, centred on ring r. */
+  const ringDt = (r: number): number => {
+    if (totalRings <= 0) return 1;
+    if (r <= 0) return ringT(1) - ringT(0);
+    if (r >= totalRings) return ringT(totalRings) - ringT(totalRings - 1);
+    return (ringT(r + 1) - ringT(r - 1)) / 2;
+  };
+
   // Boundary direction vectors, evaluated once and scaled per ring.
   const bx = new Float64Array(n);
   const by = new Float64Array(n);
@@ -73,14 +87,31 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     by[i] = p.y;
   }
 
+  // Cell metrics at full radius: how far out each vertex sits, and how long
+  // the boundary step next to it is. Scaled by t / dt to get the local cell.
+  const radius = new Float64Array(n);
+  const segLen = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    radius[i] = Math.hypot(bx[i], by[i]);
+    segLen[i] = Math.hypot(bx[j] - bx[i], by[j] - by[i]);
+  }
+
   // apex fan + (totalRings-1) quad strips + base fan + rim
   const expected = n * (1 + 2 * (totalRings - 1) + 1 + 2);
   const mb = new MeshBuilder(expected);
 
   const ringZ = (r: number, t: number, out: Float64Array) => {
-    const flat = ringIsFrame(r);
+    if (ringIsFrame(r)) {
+      out.fill(frameHeight);
+      return;
+    }
+    const dt = ringDt(r);
     for (let i = 0; i < n; i++) {
-      out[i] = flat ? frameHeight : heightAt(bx[i] * t, by[i] * t);
+      // Cell is `radius * dt` deep and `segLen * t` wide; filter by the larger
+      // side so the coarse direction never aliases.
+      const footprint = Math.max(radius[i] * dt, segLen[i] * t);
+      out[i] = heightAt(bx[i] * t, by[i] * t, footprint);
     }
   };
 
@@ -90,7 +121,9 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   ringZ(1, innerT, innerZ);
 
   // --- centre apex fan -------------------------------------------------
-  const apexZ = ringIsFrame(0) ? frameHeight : heightAt(0, 0);
+  const apexZ = ringIsFrame(0)
+    ? frameHeight
+    : heightAt(0, 0, radius[0] * ringDt(0));
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     mb.addTriangle(
