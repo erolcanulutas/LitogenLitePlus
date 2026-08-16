@@ -7,6 +7,7 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from "react";
+import type { ShapeId } from "../core/types";
 
 /* ---------------------------------------------
  * Types
@@ -37,7 +38,7 @@ export type ImageEditorHandle = {
 type Props = {
   image: HTMLImageElement | null;
   cropRatio: number; // W / H
-  shapeId: "triangle" | "circle" | "hexagon" | "pentagon";
+  shapeId: ShapeId;
   rotate: number; // IMAGE rotation (background)
   flipH: boolean;
   flipV: boolean;

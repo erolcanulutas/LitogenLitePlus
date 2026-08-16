@@ -1,10 +1,10 @@
 import type { Quality } from "./quality";
-
-export type Vec3 = [number, number, number];
-
-export type Tri = [Vec3, Vec3, Vec3];
+import type { Mesh } from "./mesh";
 
 export type EmbossSide = "front" | "back";
+
+/** Ids of the registered shape plugins. */
+export type ShapeId = "triangle" | "circle" | "hexagon" | "pentagon";
 
 export type Heightmap = {
   w: number;
@@ -30,7 +30,7 @@ export type ShapeBuildParams = {
   // size (mm)
   widthMm: number;
 
-  // quality: mesh density hint
+  // heightmap width; shapes scale their mesh density against it
   resolution: number;
 
   // global quality preset
@@ -41,9 +41,8 @@ export type ShapePlugin = {
   id: string;
   label: string;
 
-  // editor crop ratio (W/H). triangle needs 2/sqrt(3), circle 1, etc.
+  /** Editor crop ratio (W/H). Triangle needs 2/sqrt(3), circle 1, etc. */
   cropRatio: number;
 
-  // build triangles
-  build: (ctx: BuildContext, params: ShapeBuildParams) => Tri[];
+  build: (ctx: BuildContext, params: ShapeBuildParams) => Mesh;
 };

@@ -29,9 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Reports only for now: the migrated source still carries lint debt
-      # (explicit `any`, effect-driven setState). Flip to blocking once the
-      # core cleanup in the roadmap lands.
+      # Reports only for now. Down to two errors, both the same effect-driven
+      # setState in App.tsx. Flip to blocking once that effect is untangled.
       - name: Lint
         run: npm run lint
         continue-on-error: true

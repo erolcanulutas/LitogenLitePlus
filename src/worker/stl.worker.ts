@@ -3,11 +3,10 @@
 import { imageToHeightmap } from "../core/heightmap";
 import { writeBinarySTL } from "../core/stl_writer";
 import { writeColored3MF } from "../core/3mf_writer";
-import type { ColoredTri } from "../core/3mf_writer";
-import type { EmbossSide, Tri, Vec3 } from "../core/types";
+import { splitMeshAtZ } from "../core/split_mesh";
+import type { EmbossSide } from "../core/types";
 import { getShape } from "../shapes";
 import type { Quality } from "../core/quality";
-import { makeLithophaneColoredTriangles } from "../core/split_mesh";
 
 type JobRequest = {
   id: number;
@@ -32,43 +31,30 @@ function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
 }
 
-function rotateTrisVertical(tris: Tri[]): Tri[] {
+/**
+ * Shapes are generated lying flat, with z as thickness. Printing wants them
+ * standing up, so rotate -90° about X: (x, y, z) -> (x, -z, y), then drop the
+ * result onto the bed.
+ *
+ * This is a real rotation. It used to be (x, y, z) -> (-x, -z, y), which has
+ * determinant -1 — a mirror. That flipped the handedness of every triangle, so
+ * the generators compensated by winding their faces inward and by sampling the
+ * heightmap at (1 - u). Three compensating errors that cancelled out. The
+ * rotation is now proper, faces are wound outward, and the shapes sample at u.
+ */
+function orientForPrinting(positions: Float32Array, floatCount: number): void {
   let minZ = Infinity;
 
-  const out: Tri[] = tris.map((tri) =>
-    tri.map((v) => {
-      let x = v[0];
-      let y = v[2];
-      const z = v[1];
-
-      x = -x;
-      y = -y;
-
-      const nv: Vec3 = [x, y, z];
-      minZ = Math.min(minZ, z);
-      return nv;
-    }) as Tri
-  );
-
-  if (isFinite(minZ) && minZ !== 0) {
-    for (const tri of out) {
-      for (const v of tri) {
-        v[2] -= minZ;
-      }
-    }
+  for (let i = 0; i < floatCount; i += 3) {
+    const y = positions[i + 1];
+    positions[i + 1] = -positions[i + 2];
+    positions[i + 2] = y;
+    if (y < minZ) minZ = y;
   }
 
-  return out;
-}
-
-function rotateColoredTrisVertical(items: ColoredTri[]): ColoredTri[] {
-  const rawTris = items.map((item) => item.tri);
-  const rotatedTris = rotateTrisVertical(rawTris);
-
-  return items.map((item, i) => ({
-    materialIndex: item.materialIndex,
-    tri: rotatedTris[i],
-  }));
+  if (Number.isFinite(minZ) && minZ !== 0) {
+    for (let i = 2; i < floatCount; i += 3) positions[i] -= minZ;
+  }
 }
 
 self.onmessage = async (ev: MessageEvent<JobRequest>) => {
@@ -86,7 +72,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     const targetRows = clamp(
       Math.round((msg.heightMm / msg.layerHeight) * 2),
       400,
-      1200
+      1200,
     );
 
     const src = msg.image;
@@ -130,51 +116,39 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     };
 
     const shape = getShape(msg.shapeId);
-    const trisRaw = shape.build(buildCtx, buildParams);
+    const mesh = shape.build(buildCtx, buildParams);
 
-    if (
+    // TODO: splitting is shape-agnostic now; the pentagon-only gate is a
+    // leftover and should be opened up to every shape.
+    const wantsSplit =
       msg.shapeId === "pentagon" &&
       msg.splitHeightMm > 0 &&
-      msg.splitHeightMm < msg.maxT
-    ) {
-      const coloredRaw = makeLithophaneColoredTriangles(
-        trisRaw,
-        msg.splitHeightMm,
-        msg.maxT
-      );
+      msg.splitHeightMm < msg.maxT;
 
-      const coloredRotated = rotateColoredTrisVertical(coloredRaw);
-      const file = await writeColored3MF(coloredRotated);
+    if (wantsSplit) {
+      // Split while the mesh is still flat: splitHeightMm is a thickness.
+      const split = splitMeshAtZ(mesh, msg.splitHeightMm);
+      orientForPrinting(split.positions, split.triangleCount * 9);
 
-      const res: JobResponse = {
-        id: msg.id,
-        ok: true,
-        file,
-        extension: "3mf",
-      };
+      const file = await writeColored3MF(split);
 
-      (self as any).postMessage(res, { transfer: [file] });
+      const res: JobResponse = { id: msg.id, ok: true, file, extension: "3mf" };
+      (self as unknown as Worker).postMessage(res, { transfer: [file] });
       return;
     }
 
-    const tris = rotateTrisVertical(trisRaw);
-    const file = writeBinarySTL(tris);
+    orientForPrinting(mesh.positions, mesh.triangleCount * 9);
+    const file = writeBinarySTL(mesh);
 
+    const res: JobResponse = { id: msg.id, ok: true, file, extension: "stl" };
+    (self as unknown as Worker).postMessage(res, { transfer: [file] });
+  } catch (e: unknown) {
     const res: JobResponse = {
-      id: msg.id,
-      ok: true,
-      file,
-      extension: "stl",
-    };
-
-    (self as any).postMessage(res, { transfer: [file] });
-  } catch (e: any) {
-    const res: JobResponse = {
-      id: (ev.data && (ev.data as any).id) ?? -1,
+      id: ev.data?.id ?? -1,
       ok: false,
-      error: e?.message ? String(e.message) : "Unknown error",
+      error: e instanceof Error ? e.message : "Unknown error",
     };
 
-    (self as any).postMessage(res);
+    (self as unknown as Worker).postMessage(res);
   }
 };

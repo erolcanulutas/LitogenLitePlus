@@ -1,39 +1,55 @@
-import type { Tri } from "./types";
+import type { Mesh } from "./mesh";
 
-function sub(a: number[], b: number[]) {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
+/**
+ * Binary STL. Reads straight out of the flat mesh buffer — no intermediate
+ * objects, one allocation for the whole file.
+ */
+export function writeBinarySTL(mesh: Mesh): ArrayBuffer {
+  const { positions, triangleCount } = mesh;
 
-function cross(a: number[], b: number[]) {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
-
-function normalize(v: number[]) {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / l, v[1] / l, v[2] / l];
-}
-
-export function writeBinarySTL(tris: Tri[]): ArrayBuffer {
-  const buf = new ArrayBuffer(84 + tris.length * 50);
+  const buf = new ArrayBuffer(84 + triangleCount * 50);
   const dv = new DataView(buf);
 
-  dv.setUint32(80, tris.length, true);
+  dv.setUint32(80, triangleCount, true);
+
   let off = 84;
+  for (let i = 0; i < triangleCount; i++) {
+    const o = i * 9;
 
-  for (const [v0, v1, v2] of tris) {
-    const n = normalize(cross(sub(v1, v0), sub(v2, v0),));
+    const ax = positions[o], ay = positions[o + 1], az = positions[o + 2];
+    const bx = positions[o + 3], by = positions[o + 4], bz = positions[o + 5];
+    const cx = positions[o + 6], cy = positions[o + 7], cz = positions[o + 8];
 
-    dv.setFloat32(off + 0, n[0], true);
-    dv.setFloat32(off + 4, n[1], true);
-    dv.setFloat32(off + 8, n[2], true);
+    // Face normal from the winding: cross(b - a, c - a), normalised.
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const vx = cx - ax, vy = cy - ay, vz = cz - az;
 
-    [...v0, ...v1, ...v2].forEach((v, i) =>
-      dv.setFloat32(off + 12 + i * 4, v, true)
-    );
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 0) {
+      nx /= len;
+      ny /= len;
+      nz /= len;
+    }
+
+    dv.setFloat32(off, nx, true);
+    dv.setFloat32(off + 4, ny, true);
+    dv.setFloat32(off + 8, nz, true);
+
+    dv.setFloat32(off + 12, ax, true);
+    dv.setFloat32(off + 16, ay, true);
+    dv.setFloat32(off + 20, az, true);
+
+    dv.setFloat32(off + 24, bx, true);
+    dv.setFloat32(off + 28, by, true);
+    dv.setFloat32(off + 32, bz, true);
+
+    dv.setFloat32(off + 36, cx, true);
+    dv.setFloat32(off + 40, cy, true);
+    dv.setFloat32(off + 44, cz, true);
 
     dv.setUint16(off + 48, 0, true);
     off += 50;

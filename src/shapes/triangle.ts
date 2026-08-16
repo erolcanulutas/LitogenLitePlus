@@ -1,165 +1,158 @@
-import type {
-  BuildContext,
-  ShapeBuildParams,
-  ShapePlugin,
-  Tri,
-  Vec3,
-} from "../core/types";
+import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
+import { MeshBuilder, type Mesh } from "../core/mesh";
 import { sampleHeightBilinear } from "../core/sample";
-import { qualityParams } from "../core/quality";
+import { triangleDensity } from "../core/quality";
 
-/* -------------------------------------------------
- * Helpers
- * ------------------------------------------------- */
-
-function addTri(tris: Tri[], a: Vec3, b: Vec3, c: Vec3) {
-  tris.push([a, b, c]);
-}
-
-/* -------------------------------------------------
- * Triangle shape plugin
- * ------------------------------------------------- */
-
+/**
+ * Equilateral triangle, built on a barycentric grid.
+ *
+ * Unlike the ring-based shapes this one subdivides in two directions at once,
+ * so it keeps its own generator. The flat underside is still just one fan from
+ * the centroid, and the rim is stitched from the same boundary vertices the
+ * fan uses, so the two always agree.
+ */
 export const TriangleShape: ShapePlugin = {
   id: "triangle",
   label: "Triangle (equilateral)",
   cropRatio: 2.0 / Math.sqrt(3),
 
-  build: (ctx: BuildContext, params: ShapeBuildParams): Tri[] => {
+  build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
     const { widthMm, resolution, quality } = params;
 
-    /* ---------------------------------------------
-     * TRIANGLE-ONLY QUALITY REMAP
-     *
-     * draft  -> custom low
-     * normal -> OLD draft
-     * high   -> OLD normal
-     * OLD high is NEVER used
-     * --------------------------------------------- */
-
-    let q;
-    if (quality === "draft") {
-      // brand new ultra-light triangle draft
-      q = {
-        angMul: 0.45,
-        radial: 60,
-        ringAngMax: 0, // unused for triangle
-      };
-    } else if (quality === "normal") {
-      // normal = OLD draft
-      q = qualityParams("draft");
-    } else {
-      // high = OLD normal
-      q = qualityParams("normal");
-    }
-
-    const tris: Tri[] = [];
+    const { subdivMul } = triangleDensity(quality);
+    const N = Math.max(8, Math.floor(resolution * subdivMul));
 
     const side = widthMm;
     const hTri = (side * Math.sqrt(3)) / 2;
     const range = maxT - minT;
 
-    // Triangle vertices (centroid at origin)
-    const A: [number, number] = [-side / 2, -hTri / 3];
-    const B: [number, number] = [side / 2, -hTri / 3];
-    const C: [number, number] = [0, (2 * hTri) / 3];
+    // Centroid at the origin.
+    const ax = -side / 2, ay = -hTri / 3;
+    const bx = side / 2, by = -hTri / 3;
+    const cx = 0, cy = (2 * hTri) / 3;
 
-    function thicknessAt(u: number, v: number, w: number): number {
-      const distToEdge = Math.min(u, v, w) * hTri;
-
-      if (frameMm > 0 && distToEdge <= frameMm) {
-        return maxT;
-      }
-
-      const x = u * A[0] + v * B[0] + w * C[0];
-      const y = u * A[1] + v * B[1] + w * C[1];
+    const thicknessAt = (u: number, v: number, w: number, x: number, y: number) => {
+      if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return maxT;
 
       const uu = (x + side / 2) / side;
       const vv = ((2 * hTri) / 3 - y) / hTri;
+      const lum = sampleHeightBilinear(heightmap, uu, vv);
 
-      const lum = sampleHeightBilinear(heightmap, 1 - uu, vv);
+      return emboss === "back" ? maxT - lum * range : minT + lum * range;
+    };
 
-      return emboss === "back"
-        ? maxT - lum * range
-        : minT + lum * range;
-    }
+    // top (N^2) + base fan (3N) + rim (6N)
+    const mb = new MeshBuilder(N * N + 9 * N);
 
-    // subdivision count
-    const N = Math.max(8, Math.floor(resolution * q.angMul));
+    // Boundary loop, counter-clockwise: A->B, B->C, C->A. Shared by the base
+    // fan and the rim so both reference identical vertices.
+    const edgeCount = 3 * N;
+    const edgeX = new Float64Array(edgeCount);
+    const edgeY = new Float64Array(edgeCount);
+    const edgeZ = new Float64Array(edgeCount);
 
-    const topVerts: Vec3[][] = [];
-    const botVerts: Vec3[][] = [];
+    let prev = new Float64Array((N + 1) * 3);
+    let cur = new Float64Array((N + 1) * 3);
 
-    for (let r = 0; r <= N; r++) {
-      const rowTop: Vec3[] = [];
-      const rowBot: Vec3[] = [];
-
+    const fillRow = (r: number, out: Float64Array) => {
       const w = r / N;
-      const count = N - r;
-
-      for (let c = 0; c <= count; c++) {
+      const cols = N - r;
+      for (let c = 0; c <= cols; c++) {
         const v = c / N;
         const u = 1 - w - v;
-
-        const x = u * A[0] + v * B[0] + w * C[0];
-        const y = u * A[1] + v * B[1] + w * C[1];
-        const z = thicknessAt(u, v, w);
-
-        rowTop.push([x, y, z]);
-        rowBot.push([x, y, 0]);
+        const x = u * ax + v * bx + w * cx;
+        const y = u * ay + v * by + w * cy;
+        const o = c * 3;
+        out[o] = x;
+        out[o + 1] = y;
+        out[o + 2] = thicknessAt(u, v, w, x, y);
       }
+    };
 
-      topVerts.push(rowTop);
-      botVerts.push(rowBot);
-    }
-
-    // top & bottom
-    for (let r = 0; r < N; r++) {
+    const recordBoundary = (r: number, row: Float64Array) => {
       const cols = N - r;
 
-      for (let c = 0; c < cols; c++) {
-        const t00 = topVerts[r][c];
-        const t10 = topVerts[r][c + 1];
-        const t01 = topVerts[r + 1][c];
-
-        addTri(tris, t00, t01, t10);
-
-        if (c + 1 < topVerts[r + 1].length) {
-          addTri(tris, t10, t01, topVerts[r + 1][c + 1]);
-        }
-
-        const b00 = botVerts[r][c];
-        const b10 = botVerts[r][c + 1];
-        const b01 = botVerts[r + 1][c];
-
-        addTri(tris, b00, b10, b01);
-
-        if (c + 1 < botVerts[r + 1].length) {
-          addTri(tris, b10, botVerts[r + 1][c + 1], b01);
+      if (r === 0) {
+        for (let c = 0; c < N; c++) {
+          const o = c * 3;
+          edgeX[c] = row[o];
+          edgeY[c] = row[o + 1];
+          edgeZ[c] = row[o + 2];
         }
       }
-    }
+      if (r < N) {
+        // B -> C edge, at column N - r.
+        const o = cols * 3;
+        const i = N + r;
+        edgeX[i] = row[o];
+        edgeY[i] = row[o + 1];
+        edgeZ[i] = row[o + 2];
+      }
+      if (r >= 1) {
+        // C -> A edge, at column 0, walked from C back down to A.
+        const i = 3 * N - r;
+        edgeX[i] = row[0];
+        edgeY[i] = row[1];
+        edgeZ[i] = row[2];
+      }
+    };
 
-    // walls
-    for (let c = 0; c < N; c++) {
-      addTri(tris, topVerts[0][c], botVerts[0][c], botVerts[0][c + 1]);
-      addTri(tris, topVerts[0][c], botVerts[0][c + 1], topVerts[0][c + 1]);
-    }
+    fillRow(0, prev);
+    recordBoundary(0, prev);
 
+    // --- top surface -------------------------------------------------------
     for (let r = 0; r < N; r++) {
-      addTri(tris, topVerts[r][0], botVerts[r][0], botVerts[r + 1][0]);
-      addTri(tris, topVerts[r][0], botVerts[r + 1][0], topVerts[r + 1][0]);
+      fillRow(r + 1, cur);
+      recordBoundary(r + 1, cur);
+
+      const cols = N - r;
+      for (let c = 0; c < cols; c++) {
+        const o0 = c * 3;
+        const o1 = (c + 1) * 3;
+
+        // t00 -> t10 -> t01 faces +Z.
+        mb.addTriangle(
+          prev[o0], prev[o0 + 1], prev[o0 + 2],
+          prev[o1], prev[o1 + 1], prev[o1 + 2],
+          cur[o0], cur[o0 + 1], cur[o0 + 2],
+        );
+
+        if (c + 1 < cols) {
+          mb.addTriangle(
+            prev[o1], prev[o1 + 1], prev[o1 + 2],
+            cur[o1], cur[o1 + 1], cur[o1 + 2],
+            cur[o0], cur[o0 + 1], cur[o0 + 2],
+          );
+        }
+      }
+
+      const swap = prev;
+      prev = cur;
+      cur = swap;
     }
 
-    for (let r = 0; r < N; r++) {
-      const c0 = N - r;
-      const c1 = N - r - 1;
-
-      addTri(tris, topVerts[r][c0], botVerts[r][c0], botVerts[r + 1][c1]);
-      addTri(tris, topVerts[r][c0], botVerts[r + 1][c1], topVerts[r + 1][c1]);
+    // --- flat base, one fan from the centroid ------------------------------
+    for (let i = 0; i < edgeCount; i++) {
+      const j = (i + 1) % edgeCount;
+      mb.addTriangle(
+        0, 0, 0,
+        edgeX[j], edgeY[j], 0,
+        edgeX[i], edgeY[i], 0,
+      );
     }
 
-    return tris;
+    // --- rim ---------------------------------------------------------------
+    for (let i = 0; i < edgeCount; i++) {
+      const j = (i + 1) % edgeCount;
+      mb.addQuad(
+        edgeX[i], edgeY[i], edgeZ[i],
+        edgeX[i], edgeY[i], 0,
+        edgeX[j], edgeY[j], 0,
+        edgeX[j], edgeY[j], edgeZ[j],
+      );
+    }
+
+    return mb.finish();
   },
 };

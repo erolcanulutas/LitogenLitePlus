@@ -6,6 +6,7 @@ import ImageControls from "./ui/ImageControls";
 import { SHAPES } from "./shapes";
 import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
+import type { ShapeId } from "./core/types";
 
 /* -------------------------------------------------------------
  * BRAND FONT & STYLES
@@ -257,9 +258,7 @@ function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
 }
 
 export default function App() {
-  const [shapeId, setShapeId] = useState<
-    "triangle" | "circle" | "hexagon" | "pentagon"
-  >("triangle");
+  const [shapeId, setShapeId] = useState<ShapeId>("triangle");
 
   const shape = useMemo(() => SHAPES.find((s) => s.id === shapeId)!, [shapeId]);
 
@@ -324,7 +323,7 @@ export default function App() {
   }
 
   function ensureWorker() {
-    if (!workerRef.current) workerRef.current = new (STLWorker as any)();
+    if (!workerRef.current) workerRef.current = new STLWorker();
     return workerRef.current!;
   }
 
@@ -448,7 +447,7 @@ export default function App() {
           <select
             className="spinInput"
             value={shapeId}
-            onChange={(e) => setShapeId(e.target.value as any)}
+            onChange={(e) => setShapeId(e.target.value as ShapeId)}
           >
             {SHAPES.map((s) => (
               <option key={s.id} value={s.id}>
@@ -767,7 +766,7 @@ export default function App() {
               ref={editorRef}
               image={imgEl}
               cropRatio={shape.cropRatio}
-              shapeId={shapeId as any}
+              shapeId={shapeId}
               rotate={rotate}
               flipH={flipH}
               flipV={flipV}

@@ -88,14 +88,24 @@ Pushing to `main` builds and publishes to GitHub Pages automatically
 
 ## Roadmap
 
-- [ ] Replace the `Vec3[]` mesh representation with `Float32Array` buffers (memory + speed)
-- [ ] Emit the flat base as a single fan instead of matching the top-surface density
-- [ ] Unify the quality presets so a level means the same thing for every shape
-- [ ] Share one radial mesh builder between circle / hexagon / pentagon
+- [x] Replace the `Vec3[]` mesh representation with `Float32Array` buffers (memory + speed)
+- [x] Emit the flat base as a single fan instead of matching the top-surface density
+- [x] Unify the quality presets so a level means the same thing for every shape
+- [x] Share one radial mesh builder between circle / hexagon / pentagon
+- [x] Wind every face outward and make the print orientation a real rotation
 - [ ] Live 3D preview of the generated mesh
 - [ ] Gamma / contrast curve so dark tones stop clipping
 - [ ] Colour split for every shape, not just pentagon
-- [ ] Watertight validation (edge-pairing check) before export
+- [ ] Keep the edge-pairing check running in CI so meshes cannot regress
+- [ ] Clear the last two lint errors, then make lint blocking
+
+## Mesh invariants
+
+The generators are expected to produce **closed, consistently wound** meshes:
+every directed edge `a→b` matched by exactly one `b→a`, no zero-area triangles,
+and a positive signed volume once the model is oriented for printing. That last
+one is the useful check — signed volume is translation-invariant only for a
+closed surface, so if translating the mesh changes it, there is a hole.
 
 ---
 
