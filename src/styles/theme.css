@@ -1,0 +1,89 @@
+:root {
+  --bg-0: #0b1220;
+  --bg-1: #0f172a;
+  --bg-2: #111c2f;
+
+  --panel: rgba(17, 28, 47, 0.85);
+  --panel-border: rgba(255,255,255,0.08);
+
+  --accent: #22d3ee;
+  --accent-soft: rgba(34,211,238,0.25);
+  --accent-glow: rgba(34,211,238,0.55);
+
+  --text-main: #e5eef7;
+  --text-dim: #8fa3b8;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+
+  --shadow-soft: 0 12px 40px rgba(0,0,0,0.45);
+  --shadow-inner: inset 0 1px 1px rgba(255,255,255,0.06);
+}
+
+/* ---------- PANEL ---------- */
+.panel {
+  background:
+    radial-gradient(120% 120% at 20% 0%, #16243a 0%, var(--panel) 40%),
+    var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(6px);
+}
+
+/* ---------- BUTTON ---------- */
+.btn {
+  background: linear-gradient(180deg, #163a4a, #0e2a35);
+  border: 1px solid var(--accent-soft);
+  color: var(--text-main);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 18px var(--accent-glow);
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, #1aa8c8, #0e7f9a);
+}
+
+/* ---------- INPUT ---------- */
+.input {
+  background: linear-gradient(#0c1426, #0a1222);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-main);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  box-shadow: var(--shadow-inner);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+/* ---------- SLIDER ---------- */
+.range {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #334155);
+}
+
+.range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+  cursor: pointer;
+}
