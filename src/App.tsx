@@ -140,6 +140,16 @@ body {
   opacity: 1;
 }
 
+.build-tag {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #64748b;
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+  user-select: all;
+  cursor: text;
+}
+
 .leftPanel::-webkit-scrollbar { width: 4px; }
 .leftPanel::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
 
@@ -414,7 +424,10 @@ export default function App() {
 
       <aside className="leftPanel">
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
-          <div className="brand-title">Litogen Lite</div>
+          <div className="brand-title">Litogen Lite+</div>
+          <div className="build-tag" title="Bug bildirirken bu satırı da yaz">
+            v{__APP_VERSION__} · {__BUILD_SHA__} · {__BUILD_DATE__}
+          </div>
         </div>
 
         <div className="section">
