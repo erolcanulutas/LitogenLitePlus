@@ -94,7 +94,8 @@ Pushing to `main` builds and publishes to GitHub Pages automatically
 - [x] Share one radial mesh builder between circle / hexagon / pentagon
 - [x] Wind every face outward and make the print orientation a real rotation
 - [x] Area-average the heightmap per vertex so detail finer than the mesh stops aliasing
-- [ ] Size mesh cells isotropically from a target resolution in mm
+- [x] Size mesh cells isotropically from a target resolution in mm
+- [ ] Adaptive subdivision: spend cells on detail, collapse flat regions
 - [ ] Live 3D preview of the generated mesh
 - [ ] Gamma / contrast curve so dark tones stop clipping
 - [ ] Colour split for every shape, not just pentagon

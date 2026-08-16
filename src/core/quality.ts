@@ -1,59 +1,44 @@
 export type Quality = "draft" | "normal" | "high";
 
 /**
- * Mesh density presets.
+ * Mesh density, expressed as the target size of one surface cell in
+ * millimetres.
  *
- * These used to be a single table that the triangle plugin quietly remapped:
- * picking "High" on a triangle actually built the "Normal" mesh, and the
- * shared table's real "high" row was unreachable. The remap existed for a good
- * reason — the two families of shapes scale completely differently — but it
- * meant the label in the UI did not describe what you got.
+ * This used to be abstract multipliers against the heightmap width, which had
+ * two problems: the number meant nothing physical, and the triangle plugin
+ * quietly remapped the table so "High" on a triangle built the "Normal" mesh.
+ * A length in mm can be reasoned about directly — compare it against the
+ * 0.4mm nozzle and the 0.2mm layer height and you know whether it is worth
+ * paying for.
  *
- * So there are two tables now, one per family, and neither is remapped at
- * runtime. The numbers reproduce what each shape produced before.
+ * The two families still need separate numbers, but for a real reason rather
+ * than a hidden remap: a barycentric grid covers area with N^2 triangles while
+ * a ring mesh needs 2*pi*(R/cell)^2, so the same cell size costs differently.
+ * The values below keep each shape near the file size it had before.
  */
 
-export type RadialDensity = {
-  /** Ring vertex count, as a multiple of the heightmap width. */
-  angMul: number;
-  /** Number of rings from the centre to the rim. */
-  radial: number;
-};
-
-/**
- * Circle, hexagon and pentagon. Triangle count grows linearly with each of
- * these, so the presets can afford to be generous.
- */
-export function radialDensity(q: Quality): RadialDensity {
+/** Circle, hexagon, pentagon. */
+export function radialCellMm(q: Quality): number {
   switch (q) {
     case "draft":
-      return { angMul: 0.8, radial: 80 };
+      return 0.31;
     case "high":
-      return { angMul: 2.8, radial: 360 };
+      return 0.078;
     case "normal":
     default:
-      return { angMul: 1.4, radial: 180 };
+      return 0.156;
   }
 }
 
-export type TriangleDensity = {
-  /** Barycentric subdivisions per side, as a multiple of the heightmap width. */
-  subdivMul: number;
-};
-
-/**
- * Triangle subdivides in both barycentric directions at once, so its triangle
- * count grows with the *square* of this number. It needs a much flatter curve
- * than the radial shapes to land at a comparable file size.
- */
-export function triangleDensity(q: Quality): TriangleDensity {
+/** Triangle, which subdivides barycentrically. */
+export function triangleCellMm(q: Quality): number {
   switch (q) {
     case "draft":
-      return { subdivMul: 0.45 };
+      return 0.193;
     case "high":
-      return { subdivMul: 1.4 };
+      return 0.062;
     case "normal":
     default:
-      return { subdivMul: 0.8 };
+      return 0.108;
   }
 }

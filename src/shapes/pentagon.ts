@@ -2,10 +2,10 @@ import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types"
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh, polygonBoundary } from "../core/radial";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
-import { radialDensity } from "../core/quality";
+import { radialCellMm } from "../core/quality";
 
 const SIDES = 5;
-const RADIAL_FACTOR = 0.8;
+const FRAME_RINGS = 4;
 
 const COS18 = Math.cos(Math.PI / 10);
 const COS36 = Math.cos(Math.PI / 5);
@@ -28,9 +28,8 @@ export const PentagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, resolution, quality } = params;
+    const { widthMm, quality } = params;
 
-    const q = radialDensity(quality);
     const range = maxT - minT;
 
     const R = Math.max(0.01, widthMm) / (2 * COS18);
@@ -41,13 +40,6 @@ export const PentagonShape: ShapePlugin = {
     const frameSize = Math.max(0, frameMm);
     const innerApothem = apothem - frameSize;
     const hasFrame = frameSize > 0.001 && innerApothem > 0.0001;
-    const innerFraction = hasFrame ? innerApothem / apothem : 1;
-
-    const totalRings = Math.max(10, Math.floor(q.radial * RADIAL_FACTOR));
-    const perEdge = Math.max(4, Math.floor((resolution * q.angMul) / SIDES));
-    const imageRings = hasFrame
-      ? Math.floor(totalRings * innerFraction)
-      : totalRings;
 
     // Vertex-up rotated by 36° puts one edge flat along the bottom.
     const theta0 = -Math.PI / 2 + Math.PI / SIDES;
@@ -67,13 +59,14 @@ export const PentagonShape: ShapePlugin = {
     const pxPerMm = heightmap.w / bboxW;
 
     return buildRadialMesh({
-      angularCount: SIDES * perEdge,
-      imageRings,
-      frameRings: totalRings - imageRings,
-      innerFraction,
+      perimeterMm: SIDES * 2 * R * Math.sin(Math.PI / SIDES),
+      radiusMm: apothem,
+      targetCellMm: radialCellMm(quality),
+      innerFraction: hasFrame ? innerApothem / apothem : 1,
+      frameRings: hasFrame ? FRAME_RINGS : 0,
       frameHeight: maxT,
 
-      boundaryAt: polygonBoundary(corners, perEdge),
+      boundaryAt: polygonBoundary(corners),
 
       heightAt: (x, y, footprintMm) => {
         const u = clamp01((x + bboxW / 2) / bboxW);

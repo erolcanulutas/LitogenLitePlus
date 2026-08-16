@@ -2,12 +2,10 @@ import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types"
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh, polygonBoundary } from "../core/radial";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
-import { radialDensity } from "../core/quality";
+import { radialCellMm } from "../core/quality";
 
 const SIDES = 6;
-
-/** Polygons need fewer rings than a circle to look the same. */
-const RADIAL_FACTOR = 0.8;
+const FRAME_RINGS = 4;
 
 function clamp01(v: number) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
@@ -21,9 +19,8 @@ export const HexagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, resolution, quality } = params;
+    const { widthMm, quality } = params;
 
-    const q = radialDensity(quality);
     const range = maxT - minT;
 
     const apothem = widthMm / 2;
@@ -32,13 +29,6 @@ export const HexagonShape: ShapePlugin = {
     const frameSize = Math.max(0, frameMm);
     const innerApothem = Math.max(0, apothem - frameSize);
     const hasFrame = frameSize > 0.001;
-    const innerFraction = hasFrame ? innerApothem / apothem : 1;
-
-    const totalRings = Math.max(10, Math.floor(q.radial * RADIAL_FACTOR));
-    const perEdge = Math.max(4, Math.floor((resolution * q.angMul) / SIDES));
-    const imageRings = hasFrame
-      ? Math.floor(totalRings * innerFraction)
-      : totalRings;
 
     const corners = Array.from({ length: SIDES }, (_, s) => {
       const a = (s * Math.PI) / 3;
@@ -52,13 +42,15 @@ export const HexagonShape: ShapePlugin = {
     const pxPerMm = heightmap.w / totalW;
 
     return buildRadialMesh({
-      angularCount: SIDES * perEdge,
-      imageRings,
-      frameRings: totalRings - imageRings,
-      innerFraction,
+      // A regular hexagon's side equals its circumradius.
+      perimeterMm: SIDES * circumradius,
+      radiusMm: apothem,
+      targetCellMm: radialCellMm(quality),
+      innerFraction: hasFrame ? innerApothem / apothem : 1,
+      frameRings: hasFrame ? FRAME_RINGS : 0,
       frameHeight: maxT,
 
-      boundaryAt: polygonBoundary(corners, perEdge),
+      boundaryAt: polygonBoundary(corners),
 
       heightAt: (x, y, footprintMm) => {
         const u = clamp01((x + circumradius) / totalW);

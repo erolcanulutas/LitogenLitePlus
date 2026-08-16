@@ -1,7 +1,10 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
-import { triangleDensity } from "../core/quality";
+import { triangleCellMm } from "../core/quality";
+
+/** Matches the ceiling in core/radial.ts: N^2 triangles must stay bounded. */
+const MAX_SUBDIVISIONS = 2000;
 
 /**
  * Equilateral triangle, built on a barycentric grid.
@@ -18,10 +21,12 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, resolution, quality } = params;
+    const { widthMm, quality } = params;
 
-    const { subdivMul } = triangleDensity(quality);
-    const N = Math.max(8, Math.floor(resolution * subdivMul));
+    const N = Math.min(
+      MAX_SUBDIVISIONS,
+      Math.max(8, Math.round(widthMm / triangleCellMm(quality))),
+    );
 
     const side = widthMm;
     const hTri = (side * Math.sqrt(3)) / 2;
