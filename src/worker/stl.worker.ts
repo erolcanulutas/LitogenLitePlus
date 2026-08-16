@@ -25,7 +25,15 @@ type JobRequest = {
 };
 
 type JobResponse =
-  | { id: number; ok: true; file: ArrayBuffer; extension: "stl" | "3mf" }
+  | {
+      id: number;
+      ok: true;
+      file: ArrayBuffer;
+      extension: "stl" | "3mf";
+      /** Copy of the exported triangles, for the on-page preview. */
+      preview: ArrayBuffer;
+      previewTriangles: number;
+    }
   | { id: number; ok: false; error: string };
 
 function clamp(v: number, a: number, b: number) {
@@ -133,17 +141,37 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       orientForPrinting(split.positions, split.triangleCount * 9);
 
       const file = await writeColored3MF(split);
+      const preview = split.positions.slice(0, split.triangleCount * 9);
 
-      const res: JobResponse = { id: msg.id, ok: true, file, extension: "3mf" };
-      (self as unknown as Worker).postMessage(res, { transfer: [file] });
+      const res: JobResponse = {
+        id: msg.id,
+        ok: true,
+        file,
+        extension: "3mf",
+        preview: preview.buffer,
+        previewTriangles: split.triangleCount,
+      };
+      (self as unknown as Worker).postMessage(res, {
+        transfer: [file, preview.buffer],
+      });
       return;
     }
 
     orientForPrinting(mesh.positions, mesh.triangleCount * 9);
     const file = writeBinarySTL(mesh);
+    const preview = mesh.positions.slice(0, mesh.triangleCount * 9);
 
-    const res: JobResponse = { id: msg.id, ok: true, file, extension: "stl" };
-    (self as unknown as Worker).postMessage(res, { transfer: [file] });
+    const res: JobResponse = {
+      id: msg.id,
+      ok: true,
+      file,
+      extension: "stl",
+      preview: preview.buffer,
+      previewTriangles: mesh.triangleCount,
+    };
+    (self as unknown as Worker).postMessage(res, {
+      transfer: [file, preview.buffer],
+    });
   } catch (e: unknown) {
     const res: JobResponse = {
       id: ev.data?.id ?? -1,

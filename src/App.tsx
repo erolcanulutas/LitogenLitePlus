@@ -3,6 +3,11 @@ import ImageEditor from "./ui/ImageEditor";
 import type { ImageEditorHandle } from "./ui/ImageEditor";
 
 import ImageControls from "./ui/ImageControls";
+import type { PreviewMesh } from "./ui/MeshPreview";
+
+// three.js is most of the bundle, and plenty of sessions never open the 3D
+// tab, so it is fetched on first use rather than on page load.
+const MeshPreview = React.lazy(() => import("./ui/MeshPreview"));
 import { SHAPES } from "./shapes";
 import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
@@ -138,6 +143,62 @@ body {
 .info-icon-wrapper:hover .tooltip-content {
   visibility: visible;
   opacity: 1;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.viewTabs {
+  display: flex;
+  gap: 4px;
+}
+
+.viewTab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.viewTab:hover { color: #cbd5e1; }
+
+.viewTab.active {
+  color: #a5f3fc;
+  border-color: #1e293b;
+  background: rgba(165, 243, 252, 0.08);
+}
+
+.shadeToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #64748b;
+  cursor: pointer;
+  user-select: none;
+}
+
+.preview-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: #475569;
+  font-size: 0.85rem;
+  pointer-events: none;
 }
 
 .build-tag {
@@ -290,6 +351,10 @@ export default function App() {
   const [quality, setQuality] = useState<Quality>("normal");
   const [smoothing, setSmoothing] = useState(1.0);
 
+  const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
+  const [view, setView] = useState<"editor" | "preview">("editor");
+  const [flatShading, setFlatShading] = useState(true);
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
     type: "error" | "success";
@@ -362,7 +427,7 @@ export default function App() {
     }
   };
 
-  async function generate() {
+  async function generate(download = true) {
     if (!imgData || isGenerating) return;
 
     setIsGenerating(true);
@@ -372,20 +437,26 @@ export default function App() {
     const w = ensureWorker();
 
     try {
-      const p = new Promise<{ file: ArrayBuffer; extension: "stl" | "3mf" }>(
-	  (resolve, reject) => {
-		const handler = (e: MessageEvent) => {
-		  if (e.data.ok) {
-			resolve({
-			  file: e.data.file,
-			  extension: e.data.extension,
-			});
-		  } else {
-			reject(e.data.error);
-		  }
+      const p = new Promise<{
+        file: ArrayBuffer;
+        extension: "stl" | "3mf";
+        preview: ArrayBuffer;
+        previewTriangles: number;
+      }>((resolve, reject) => {
+        const handler = (e: MessageEvent) => {
+          if (e.data.ok) {
+            resolve({
+              file: e.data.file,
+              extension: e.data.extension,
+              preview: e.data.preview,
+              previewTriangles: e.data.previewTriangles,
+            });
+          } else {
+            reject(e.data.error);
+          }
 
-		  w.removeEventListener("message", handler);
-		};
+          w.removeEventListener("message", handler);
+        };
 
         w.addEventListener("message", handler);
 
@@ -408,11 +479,28 @@ export default function App() {
 
       const result = await p;
 
-	if (jobIdRef.current === currentJobId) {
-	  const baseName = file?.name.replace(/\.[^/.]+$/, "") || "image";
-	  downloadArrayBuffer(result.file, `litogen-${baseName}.${result.extension}`);
-	  setStatusMsg({ type: "success", text: `${result.extension.toUpperCase()} Ready!` });
-	}
+      if (jobIdRef.current === currentJobId) {
+        setPreviewMesh({
+          positions: new Float32Array(result.preview),
+          triangleCount: result.previewTriangles,
+        });
+        setView("preview");
+
+        if (download) {
+          const baseName = file?.name.replace(/\.[^/.]+$/, "") || "image";
+          downloadArrayBuffer(
+            result.file,
+            `litogen-${baseName}.${result.extension}`,
+          );
+        }
+
+        setStatusMsg({
+          type: "success",
+          text: download
+            ? `${result.extension.toUpperCase()} Ready! · ${result.previewTriangles.toLocaleString()} tris`
+            : `${result.previewTriangles.toLocaleString()} triangles`,
+        });
+      }
     } catch {
       setStatusMsg({ type: "error", text: "Failed!" });
     } finally {
@@ -794,10 +882,20 @@ export default function App() {
           <button
             className="primaryBtn"
             style={{ width: "100%", opacity: isGenerating ? 0.7 : 1 }}
-            onClick={generate}
+            onClick={() => generate(true)}
             disabled={isGenerating}
           >
             {isGenerating ? "Processing..." : "Generate STL"}
+          </button>
+
+          <button
+            className="btn"
+            style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+            onClick={() => generate(false)}
+            disabled={isGenerating}
+            title="Build the model and show it in 3D without downloading"
+          >
+            Preview in 3D
           </button>
 
           {statusMsg && (
@@ -820,22 +918,73 @@ export default function App() {
           style={{ height: "100%", display: "flex", flexDirection: "column" }}
         >
           <div className="previewHeader">
-            <div className="previewTitle">Image Editor</div>
+            <div className="viewTabs">
+              <button
+                className={`viewTab ${view === "editor" ? "active" : ""}`}
+                onClick={() => setView("editor")}
+              >
+                Image Editor
+              </button>
+              <button
+                className={`viewTab ${view === "preview" ? "active" : ""}`}
+                onClick={() => setView("preview")}
+              >
+                3D Preview
+              </button>
+            </div>
+
+            {view === "preview" && (
+              <label className="shadeToggle">
+                <input
+                  type="checkbox"
+                  checked={flatShading}
+                  onChange={(e) => setFlatShading(e.target.checked)}
+                />
+                Flat shading
+              </label>
+            )}
           </div>
 
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <ImageEditor
-              ref={editorRef}
-              image={imgEl}
-              cropRatio={shape.cropRatio}
-              shapeId={shapeId}
-              rotate={rotate}
-              flipH={flipH}
-              flipV={flipV}
-              onImageData={setImgData}
-            />
+          {/* Both stay mounted: the editor owns the crop, and remounting the
+              WebGL context on every tab switch is wasteful. */}
+          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                visibility: view === "editor" ? "visible" : "hidden",
+              }}
+            >
+              <ImageEditor
+                ref={editorRef}
+                image={imgEl}
+                cropRatio={shape.cropRatio}
+                shapeId={shapeId}
+                rotate={rotate}
+                flipH={flipH}
+                flipV={flipV}
+                onImageData={setImgData}
+              />
+            </div>
+
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                visibility: view === "preview" ? "visible" : "hidden",
+              }}
+            >
+              {(view === "preview" || previewMesh) && (
+                <React.Suspense
+                  fallback={<div className="preview-empty">Loading viewer…</div>}
+                >
+                  <MeshPreview mesh={previewMesh} flatShading={flatShading} />
+                </React.Suspense>
+              )}
+            </div>
           </div>
 
+          {view === "editor" && (
           <ImageControls
             rotate={rotate}
             setRotate={setRotate}
@@ -850,6 +999,7 @@ export default function App() {
               editorRef.current?.reset();
             }}
           />
+          )}
         </div>
       </main>
     </div>
