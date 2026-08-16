@@ -288,6 +288,7 @@ export default function App() {
   const [frameMm, setFrameMm] = useState(1.5);
   const [splitHeightMm, setSplitHeightMm] = useState(0);
   const [quality, setQuality] = useState<Quality>("normal");
+  const [smoothing, setSmoothing] = useState(1.0);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
@@ -398,6 +399,7 @@ export default function App() {
           maxT,
           frameMm,
           quality,
+          smoothing,
           splitHeightMm,
           layerHeight: 0.2,
           emboss: "back",
@@ -739,6 +741,53 @@ export default function App() {
             <option value="normal">Normal</option>
             <option value="high">High</option>
           </select>
+
+          <div className="label-row" style={{ marginTop: 12 }}>
+            <label className="miniLabel">Edge Smoothing</label>
+            <InfoIcon text="Widens sampling beyond one mesh cell. Low keeps edges crisp but hard edges come out stair-stepped; high trades a little sharpness for clean edges. Photos ~1, logos and line art 1.5-3. Costs no extra triangles." />
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            <input
+              className="range"
+              type="range"
+              min={0.4}
+              max={3}
+              step={0.1}
+              value={smoothing}
+              onChange={(e) => setSmoothing(+Number(e.target.value).toFixed(1))}
+            />
+            <div className="spinRow">
+              <input
+                className="spinInput"
+                type="number"
+                min={0.4}
+                max={3}
+                step={0.1}
+                value={smoothing}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) {
+                    setSmoothing(+Math.max(0.4, Math.min(3, v)).toFixed(1));
+                  }
+                }}
+              />
+              <div className="spinBtns">
+                <button
+                  className="spinBtn"
+                  onClick={() => setSmoothing((v) => +Math.min(3, v + 0.1).toFixed(1))}
+                >
+                  ▲
+                </button>
+                <button
+                  className="spinBtn"
+                  onClick={() => setSmoothing((v) => +Math.max(0.4, v - 0.1).toFixed(1))}
+                >
+                  ▼
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div style={{ padding: "10px 0" }}>

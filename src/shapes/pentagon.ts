@@ -28,7 +28,7 @@ export const PentagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality } = params;
+    const { widthMm, quality, smoothing } = params;
 
     const range = maxT - minT;
 
@@ -71,7 +71,7 @@ export const PentagonShape: ShapePlugin = {
       heightAt: (x, y, footprintMm) => {
         const u = clamp01((x + bboxW / 2) / bboxW);
         const v = clamp01(1 - (y + bboxH / 2) / bboxH);
-        const lum = sampleHeightFiltered(sampler, u, v, 0.5 * footprintMm * pxPerMm);
+        const lum = sampleHeightFiltered(sampler, u, v, smoothing * footprintMm * pxPerMm);
         return emboss === "back" ? maxT - lum * range : minT + lum * range;
       },
     });

@@ -35,6 +35,20 @@ export type ShapeBuildParams = {
 
   // global quality preset
   quality: Quality;
+
+  /**
+   * Sampling radius as a multiple of the mesh cell, 0.4 to 3.
+   *
+   * A mesh cell can only place an edge on a cell boundary, so a hard edge in
+   * the image lands within half a cell of where it belongs and its outline
+   * comes out serrated. Sampling wider than one cell spreads the height change
+   * over several cells, turning that near-vertical wall into a ramp the
+   * wobble disappears into. It costs no triangles; it costs sharpness.
+   *
+   * Photos want roughly 1 — their edges are soft already. Logos and line art
+   * want 1.5 to 3, where the stair-stepping is what you notice first.
+   */
+  smoothing: number;
 };
 
 export type ShapePlugin = {

@@ -21,6 +21,7 @@ STL (or a two-colour 3MF) — everything runs locally in your browser.
 | 🖼️ | Image import with in-browser crop, rotate and flip |
 | 📐 | Millimetre-accurate width, thickness and frame control |
 | 🎨 | Colour split → two stacked bodies exported as **3MF** for multi-material printing |
+| 🪶 | **Edge smoothing** control: trade a little sharpness for clean edges on logos and line art, at no cost in triangles |
 | ⚡ | All heavy work runs in a **Web Worker** — the UI never blocks |
 | 🔒 | **Nothing is uploaded.** No backend, no API, no tracking |
 

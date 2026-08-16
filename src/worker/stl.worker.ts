@@ -21,6 +21,7 @@ type JobRequest = {
   emboss: EmbossSide;
   quality: Quality;
   splitHeightMm: number;
+  smoothing: number;
 };
 
 type JobResponse =
@@ -113,6 +114,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       frameMm: msg.frameMm,
       emboss: msg.emboss,
       quality: msg.quality,
+      smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
     };
 
     const shape = getShape(msg.shapeId);

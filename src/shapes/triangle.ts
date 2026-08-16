@@ -21,7 +21,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality } = params;
+    const { widthMm, quality, smoothing } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -40,7 +40,7 @@ export const TriangleShape: ShapePlugin = {
     const sampler = buildAreaSampler(heightmap);
     // The barycentric grid steps by side/N in both directions, so every vertex
     // stands in for a cell that wide. Filter over it instead of point sampling.
-    const footprintPx = 0.5 * (side / N) * (heightmap.w / side);
+    const footprintPx = smoothing * (side / N) * (heightmap.w / side);
 
     const thicknessAt = (u: number, v: number, w: number, x: number, y: number) => {
       if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return maxT;

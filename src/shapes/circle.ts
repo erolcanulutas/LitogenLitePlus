@@ -14,7 +14,7 @@ export const CircleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality } = params;
+    const { widthMm, quality, smoothing } = params;
 
     const range = maxT - minT;
 
@@ -44,7 +44,7 @@ export const CircleShape: ShapePlugin = {
       heightAt: (x, y, footprintMm) => {
         const u = (x + outerRadius) / (2 * outerRadius);
         const v = (outerRadius - y) / (2 * outerRadius);
-        const lum = sampleHeightFiltered(sampler, u, v, 0.5 * footprintMm * pxPerMm);
+        const lum = sampleHeightFiltered(sampler, u, v, smoothing * footprintMm * pxPerMm);
         return emboss === "back" ? maxT - lum * range : minT + lum * range;
       },
     });
