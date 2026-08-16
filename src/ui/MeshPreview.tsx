@@ -38,7 +38,13 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     host.appendChild(renderer.domElement);
+
+    // The backing store is sized in device pixels, so the canvas must be
+    // pinned in CSS pixels too — otherwise it lays out at its attribute size
+    // and overflows the panel by the pixel ratio on a HiDPI screen.
     renderer.domElement.style.display = "block";
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -90,6 +96,8 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
       const w = host.clientWidth;
       const h = host.clientHeight;
       if (w === 0 || h === 0) return;
+      // updateStyle is off on purpose: the canvas is pinned to 100% in CSS
+      // above, so three only needs to resize the backing store.
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -154,7 +162,12 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
   return (
     <div
       ref={hostRef}
-      style={{ width: "100%", height: "100%", position: "relative" }}
+      style={{
+        width: "100%",
+        height: "100%",
+        position: "relative",
+        overflow: "hidden",
+      }}
     >
       {!mesh && (
         <div className="preview-empty">

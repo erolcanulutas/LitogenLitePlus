@@ -969,7 +969,13 @@ export default function App() {
       <main className="rightPanel">
         <div
           className="previewCard"
-          style={{ height: "100%", display: "flex", flexDirection: "column" }}
+          style={{
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            minHeight: 0,
+          }}
         >
           <div className="previewHeader">
             <div className="viewTabs">
