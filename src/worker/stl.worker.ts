@@ -26,6 +26,8 @@ type JobRequest = {
   colors: string[];
   smoothing: number;
   levels: number;
+  /** "vertical" stands the model up; "flat" leaves it lying down. */
+  orientation: "vertical" | "flat";
 };
 
 type JobResponse =
@@ -47,17 +49,26 @@ function clamp(v: number, a: number, b: number) {
 }
 
 /**
- * Shapes are generated lying flat, with z as thickness. Printing wants them
- * standing up, so rotate -90° about X: (x, y, z) -> (x, -z, y), then drop the
- * result onto the bed.
+ * Shapes are generated lying flat, with z as thickness and the base already on
+ * z = 0 — which is exactly the "flat" print orientation, so that case needs no
+ * work at all.
  *
- * This is a real rotation. It used to be (x, y, z) -> (-x, -z, y), which has
+ * Standing the model up is a -90° rotation about X: (x, y, z) -> (x, -z, y),
+ * then drop onto the bed.
+ *
+ * That is a real rotation. It used to be (x, y, z) -> (-x, -z, y), which has
  * determinant -1 — a mirror. That flipped the handedness of every triangle, so
  * the generators compensated by winding their faces inward and by sampling the
  * heightmap at (1 - u). Three compensating errors that cancelled out. The
  * rotation is now proper, faces are wound outward, and the shapes sample at u.
  */
-function orientForPrinting(positions: Float32Array, floatCount: number): void {
+function orientForPrinting(
+  positions: Float32Array,
+  floatCount: number,
+  upright: boolean,
+): void {
+  if (!upright) return;
+
   let minZ = Infinity;
 
   for (let i = 0; i < floatCount; i += 3) {
@@ -145,10 +156,12 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     const shape = getShape(msg.shapeId);
     const mesh = shape.build(buildCtx, buildParams);
 
+    const upright = msg.orientation !== "flat";
+
     if (cuts.length > 0) {
       // Split while the mesh is still flat: the cuts are thicknesses.
       const split = splitMeshAtLevels(mesh, cuts);
-      orientForPrinting(split.positions, split.triangleCount * 9);
+      orientForPrinting(split.positions, split.triangleCount * 9, upright);
 
       const file = await writeColored3MF(split, msg.colors ?? []);
       const preview = split.positions.slice(0, split.triangleCount * 9);
@@ -168,7 +181,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       return;
     }
 
-    orientForPrinting(mesh.positions, mesh.triangleCount * 9);
+    orientForPrinting(mesh.positions, mesh.triangleCount * 9, upright);
     const file = writeBinarySTL(mesh);
     const preview = mesh.positions.slice(0, mesh.triangleCount * 9);
 

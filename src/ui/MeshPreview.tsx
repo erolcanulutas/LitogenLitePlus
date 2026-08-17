@@ -32,13 +32,16 @@ type Props = {
  * shading cannot show that, which is why a picture can look fine on screen and
  * come out muddy once printed.
  *
- * The model is oriented with the base at y = 0 and the relief cut into -y, so
- * a fragment's thickness is exactly -y. No extra data is needed.
+ * The relief always runs along the model's thinnest axis, with its base on
+ * zero, so a fragment's thickness is its coordinate on that axis. Which axis
+ * that is depends on the print orientation, so it is read off the bounding box
+ * rather than assumed.
  */
 const BACKLIT_VERT = `
+  uniform vec3 uAxis;
   varying float vThickness;
   void main() {
-    vThickness = -position.y;
+    vThickness = dot(position, uAxis);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -52,6 +55,28 @@ const BACKLIT_FRAG = `
     gl_FragColor = vec4(uTint * transmitted, 1.0);
   }
 `;
+
+/**
+ * The axis the relief runs along: the thinnest one, pointing from the flat
+ * back towards the picture surface.
+ */
+function reliefAxis(box: THREE.Box3): THREE.Vector3 {
+  const ex = box.max.x - box.min.x;
+  const ey = box.max.y - box.min.y;
+  const ez = box.max.z - box.min.z;
+
+  const axis = new THREE.Vector3();
+  if (ex <= ey && ex <= ez) axis.set(1, 0, 0);
+  else if (ey <= ez) axis.set(0, 1, 0);
+  else axis.set(0, 0, 1);
+
+  // Point away from the base plane, which sits on zero.
+  const lo = Math.abs(box.min.dot(axis));
+  const hi = Math.abs(box.max.dot(axis));
+  if (lo > hi) axis.negate();
+
+  return axis;
+}
 
 /**
  * Shows the generated mesh exactly as exported — same triangles, same
@@ -131,8 +156,17 @@ export default function MeshPreview({
 
       const dist = (s.radius * 1.6) / Math.tan((camera.fov * Math.PI) / 360);
       controls.target.copy(s.center);
-      // Look at the relief side: the model is extruded along -Y.
-      camera.position.set(s.center.x, s.center.y - dist, s.center.z);
+
+      // Face the picture, whichever way the model is oriented, and keep "up"
+      // off the view axis — otherwise the orbit degenerates.
+      const box = geo.boundingBox;
+      const axis = box ? reliefAxis(box) : new THREE.Vector3(0, -1, 0);
+      camera.up.set(0, 0, 1);
+      if (Math.abs(axis.z) > 0.5) camera.up.set(0, 1, 0);
+
+      camera.position
+        .copy(s.center)
+        .addScaledVector(axis, dist);
       camera.near = Math.max(0.1, dist / 100);
       camera.far = dist * 10;
       camera.updateProjectionMatrix();
@@ -211,7 +245,12 @@ export default function MeshPreview({
 
       // Falloff scaled to this model, so the thickest part always lands at
       // roughly 3% transmission whatever Max thickness is set to.
-      const maxThickness = Math.max(0.1, -(geo.boundingBox?.min.y ?? -1));
+      const box = geo.boundingBox ?? new THREE.Box3();
+      const axis = reliefAxis(box);
+      const maxThickness = Math.max(
+        0.1,
+        Math.max(Math.abs(box.min.dot(axis)), Math.abs(box.max.dot(axis))),
+      );
       const k = 3.5 / maxThickness;
 
       // A draw group per band lets each carry its own colour, matching what
@@ -229,6 +268,7 @@ export default function MeshPreview({
                 uniforms: {
                   uTint: { value: color },
                   uK: { value: k },
+                  uAxis: { value: axis.clone() },
                 },
                 vertexShader: BACKLIT_VERT,
                 fragmentShader: BACKLIT_FRAG,
@@ -278,7 +318,8 @@ export default function MeshPreview({
     const box = geometryRef.current?.boundingBox;
     if (!showGrid || !box) return;
 
-    const size = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    // The grid lies in XY, so it needs to cover those two extents.
+    const size = Math.max(box.max.x - box.min.x, box.max.y - box.min.y);
     if (!(size > 0)) return;
 
     // 10mm spacing, so it reads as a ruler as well as a floor.

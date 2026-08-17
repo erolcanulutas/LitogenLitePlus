@@ -229,6 +229,92 @@ body {
   pointer-events: none;
 }
 
+.segmented {
+  display: flex;
+  gap: 4px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.segment {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment:hover { color: #cbd5e1; }
+
+.segment.active {
+  color: #0f172a;
+  background: #a5f3fc;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.modalCard {
+  width: 100%;
+  max-width: 420px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.modalTitle {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin-bottom: 10px;
+}
+
+.modalBody {
+  margin: 0 0 18px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: #94a3b8;
+}
+
+.modalActions {
+  display: grid;
+  gap: 8px;
+}
+
+.linkBtn {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: #475569;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.linkBtn:hover { color: #94a3b8; }
+
 .bands {
   display: grid;
   gap: 6px;
@@ -426,6 +512,8 @@ function imageSignature(d: ImageData): string {
   return `${d.width}x${d.height}:${hash.toString(16)}`;
 }
 
+const FLAT_HINT_KEY = "litogen.hideFlatHint";
+
 /** Default palette for new bands: light at the bottom, darker going up. */
 const BAND_PALETTE = [
   "#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8",
@@ -479,6 +567,13 @@ export default function App() {
   const [smoothing, setSmoothing] = useState(1.0);
   const [levels, setLevels] = useState(0);
 
+  // Vertical prints the lithophane standing up; flat lays it down so the
+  // relief runs along the print axis.
+  const [orientation, setOrientation] = useState<"vertical" | "flat">(
+    "vertical",
+  );
+  const [flatHintOpen, setFlatHintOpen] = useState(false);
+
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
 
   // The preview shows whatever was generated last. Without tracking which
@@ -492,7 +587,7 @@ export default function App() {
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, minT, maxT, frameMm,
-    quality, smoothing, levels, layerHeight, splitLayers, colors,
+    quality, smoothing, levels, layerHeight, splitLayers, colors, orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
   const [view, setView] = useState<"editor" | "preview">("editor");
@@ -612,8 +707,21 @@ export default function App() {
     const next = nextBandBoundary();
     if (next === null) return;
 
+    const wasSingleColour = splitLayers.length === 0;
+
     setSplitLayers([...splitLayers, next]);
     setColors([...colors, BAND_PALETTE[colors.length % BAND_PALETTE.length]]);
+
+    // Standing up, the bands run through the model's depth, so every layer
+    // contains all of them and the printer swaps filament on each one. Worth
+    // saying once, at the moment it starts to matter.
+    if (
+      wasSingleColour &&
+      orientation === "vertical" &&
+      localStorage.getItem(FLAT_HINT_KEY) !== "1"
+    ) {
+      setFlatHintOpen(true);
+    }
   }
 
   function removeBand(index: number) {
@@ -697,6 +805,7 @@ export default function App() {
           quality,
           smoothing,
           levels,
+          orientation,
           splitHeightsMm: splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
           colors,
           layerHeight,
@@ -973,6 +1082,26 @@ export default function App() {
           </div>
 
           <div className="label-row">
+            <label className="miniLabel">Print Orientation</label>
+            <InfoIcon text="Vertical stands the lithophane up — best for single colour. Flat lays it down so the relief runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer." />
+          </div>
+
+          <div className="segmented">
+            <button
+              className={`segment ${orientation === "vertical" ? "active" : ""}`}
+              onClick={() => setOrientation("vertical")}
+            >
+              Vertical
+            </button>
+            <button
+              className={`segment ${orientation === "flat" ? "active" : ""}`}
+              onClick={() => setOrientation("flat")}
+            >
+              Flat
+            </button>
+          </div>
+
+          <div className="label-row" style={{ marginTop: 12 }}>
             <label className="miniLabel">Layer Height (mm)</label>
             <InfoIcon text="Your slicer's layer height. Colour bands are counted in these, so every boundary lands on a layer the printer can actually stop at." />
           </div>
@@ -1389,6 +1518,54 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {flatHintOpen && (
+        <div className="modalBackdrop" onClick={() => setFlatHintOpen(false)}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div className="modalTitle">Print this one flat?</div>
+            <p className="modalBody">
+              Standing up, the colour bands run through the model's depth, so
+              every layer contains all of them and the printer changes filament
+              on <em>each layer</em>.
+              <br />
+              <br />
+              Laid flat, the bands stack along the print axis instead — each one
+              becomes a contiguous run of layers, so it is a single change per
+              band. That is also what makes the layer numbers here line up with
+              your slicer.
+            </p>
+
+            <div className="modalActions">
+              <button
+                className="primaryBtn"
+                onClick={() => {
+                  setOrientation("flat");
+                  setFlatHintOpen(false);
+                }}
+              >
+                Switch to flat
+              </button>
+              <button
+                className="btn"
+                style={{ justifyContent: "center" }}
+                onClick={() => setFlatHintOpen(false)}
+              >
+                Keep vertical
+              </button>
+            </div>
+
+            <button
+              className="linkBtn"
+              onClick={() => {
+                localStorage.setItem(FLAT_HINT_KEY, "1");
+                setFlatHintOpen(false);
+              }}
+            >
+              Don't show this again
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
