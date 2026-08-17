@@ -81,7 +81,9 @@ const BACKLIT_FRAG = `
       lo = uBounds[i];
     }
 
-    gl_FragColor = vec4(transmitted, 1.0);
+    // Transmission is a linear quantity and three does not colour-manage a raw
+    // shader's output, so encode it here or everything reads far too dark.
+    gl_FragColor = vec4(pow(transmitted, vec3(1.0 / 2.2)), 1.0);
   }
 `;
 
@@ -304,6 +306,12 @@ export default function MeshPreview({
       if (backlit) {
         // One material for everything: the shader walks the whole stack per
         // fragment, so splitting the draw by band would tell it less, not more.
+        //
+        // The group still has to exist. three renders an array material by
+        // iterating geometry.groups, so leaving it empty means no draw calls at
+        // all and the model simply vanishes.
+        geo.addGroup(0, mesh.triangleCount * 3, 0);
+
         const bounds = new Float32Array(MAX_BANDS);
         const colors = Array.from(
           { length: MAX_BANDS },
