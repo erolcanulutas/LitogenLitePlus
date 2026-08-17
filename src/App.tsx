@@ -1280,6 +1280,8 @@ export default function App() {
                 rotate={rotate}
                 flipH={flipH}
                 flipV={flipV}
+                frameMm={frameMm}
+                widthMm={widthMm}
                 onImageData={handleImageData}
               />
             </div>

@@ -52,6 +52,10 @@ type Props = {
   rotate: number; // IMAGE rotation (background)
   flipH: boolean;
   flipV: boolean;
+  /** Frame band width in mm, for showing what it will cover. */
+  frameMm: number;
+  /** Print width in mm; the frame is only meaningful relative to it. */
+  widthMm: number;
   onImageData: (img: ImageData | null) => void;
 };
 
@@ -83,7 +87,10 @@ function unrotatePoint(x: number, y: number, deg: number) {
 
 const ImageEditor = forwardRef<ImageEditorHandle, Props>(
   (
-    { image, cropRatio, shapeId, rotate, flipH, flipV, onImageData },
+    {
+      image, cropRatio, shapeId, rotate, flipH, flipV,
+      frameMm, widthMm, onImageData,
+    },
     ref
   ) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -188,6 +195,54 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         ctx.closePath();
         return;
       }
+    };
+
+    /**
+     * How far in the frame reaches, as a scale factor on the outline.
+     *
+     * The generators hold the frame at full thickness for a fixed distance in
+     * from the edge, which for these shapes is the outline scaled about its
+     * centre. Each one measures that distance differently — a radius for the
+     * circle, an apothem for the polygons, an inradius for the triangle — so
+     * the factor is derived per shape rather than guessed.
+     */
+    const frameScale = (() => {
+      if (!(frameMm > 0.05) || !(widthMm > 0)) return 1;
+
+      switch (shapeId) {
+        case "circle":
+          return 1 - (2 * frameMm) / widthMm;
+        case "hexagon":
+          return 1 - (4 * frameMm) / (widthMm * Math.sqrt(3));
+        case "pentagon":
+          return (
+            1 -
+            (2 * frameMm * Math.cos(Math.PI / 10)) /
+              (widthMm * Math.cos(Math.PI / 5))
+          );
+        case "triangle":
+          return 1 - (6 * frameMm) / (widthMm * Math.sqrt(3));
+      }
+    })();
+
+    /**
+     * Draws the outline scaled about the point the frame shrinks towards.
+     *
+     * For the triangle that is the incentre, which sits a sixth of the height
+     * below the bounding box centre — scaling about the box centre instead
+     * would put the band in the wrong place on the sloped edges.
+     */
+    const drawShapeScaled = (
+      ctx: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      k: number,
+    ) => {
+      const dy = shapeId === "triangle" ? (h * (1 - k)) / 6 : 0;
+      ctx.save();
+      ctx.translate(0, dy);
+      drawShape(ctx, w * k, h * k);
+      ctx.restore();
     };
 
     /* ---------------------------------------------
@@ -302,6 +357,30 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.fill("evenodd");
       ctx.restore();
 
+      // 3b. Frame band — the flat border will sit here and hide whatever is
+      // under it, so show it before someone frames a detail into it.
+      if (frameScale > 0 && frameScale < 0.999) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(deg2rad(crop.rot));
+
+        ctx.beginPath();
+        drawShape(ctx, cropW, cropH);
+        drawShapeScaled(ctx, cropW, cropH, frameScale);
+        ctx.fillStyle = "rgba(2, 6, 23, 0.55)";
+        ctx.fill("evenodd");
+
+        ctx.beginPath();
+        drawShapeScaled(ctx, cropW, cropH, frameScale);
+        ctx.strokeStyle = "rgba(165, 243, 252, 0.5)";
+        ctx.lineWidth = 1 / viewScale;
+        ctx.setLineDash([5 / viewScale, 4 / viewScale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.restore();
+      }
+
       // 4. Overlay lines
       ctx.save();
       ctx.translate(cx, cy);
@@ -361,7 +440,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       // 5. Output generation
       triggerOutputGeneration(dw, dh);
-    }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale]);
+    }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
+        frameMm, widthMm]);
 
     /* ---------------------------------------------
      * Interaction Logic
