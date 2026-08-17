@@ -10,10 +10,6 @@ export type PreviewMesh = {
   bandStarts: number[];
   /** One CSS colour per band. */
   colors: string[];
-  /** Upper thickness of each band in mm, ascending; last is the full depth. */
-  bandBounds: number[];
-  /** Thinnest part of the plate in mm — the brightest the picture ever gets. */
-  minThickness: number;
 };
 
 type Props = {
@@ -24,125 +20,7 @@ type Props = {
   lightBackground: boolean;
   /** Ground grid under the model, for a sense of scale. */
   showGrid: boolean;
-  /** Light it from behind, the way a lithophane is actually looked at. */
-  backlit: boolean;
 };
-
-/**
- * Backlit shading.
- *
- * A lithophane is read by transmitted light, and transmission falls off
- * exponentially with thickness rather than linearly — Beer-Lambert. Surface
- * shading cannot show that, which is why a picture can look fine on screen and
- * come out muddy once printed.
- *
- * The relief always runs along the model's thinnest axis, with its base on
- * zero, so a fragment's thickness is its coordinate on that axis. Which axis
- * that is depends on the print orientation, so it is read off the bounding box
- * rather than assumed.
- */
-const BACKLIT_VERT = `
-  uniform vec3 uAxis;
-  varying float vThickness;
-  void main() {
-    vThickness = dot(position, uAxis);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-/**
- * Light crosses every band on its way out, not just the one at the surface,
- * so absorption is accumulated through the stack. Each band absorbs by its own
- * colour: white passes most of what reaches it, black stops nearly all of it,
- * and a coloured band tints whatever gets through.
- */
-const MAX_BANDS = 8;
-
-const BACKLIT_FRAG = `
-  uniform float uK;
-  uniform int uCount;
-  uniform float uBounds[${MAX_BANDS}];
-  uniform vec3 uColors[${MAX_BANDS}];
-  uniform float uMinT;
-  uniform float uNorm;
-  varying float vThickness;
-
-  void main() {
-    float total = max(vThickness, 0.0);
-
-    // Belt and braces: the back and rim are already stripped on the CPU, but
-    // anything that slips through would read as clear glass.
-    if (total < uMinT * 0.5) discard;
-
-    vec3 transmitted = vec3(1.0);
-    float lo = 0.0;
-
-    for (int i = 0; i < ${MAX_BANDS}; i++) {
-      if (i >= uCount) break;
-
-      float seg = clamp(total, lo, uBounds[i]) - lo;
-      if (seg > 0.0) {
-        // Absorption per mm, per channel: uK is what a white band costs, and
-        // darker pigment costs up to three times that.
-        vec3 sigma = uK * (1.0 + 2.0 * (vec3(1.0) - uColors[i]));
-        transmitted *= exp(-sigma * seg);
-      }
-      lo = uBounds[i];
-    }
-
-    // Scale so the thinnest part of the plate reads as white. A lithophane is
-    // looked at against a bright source and the eye adapts to it; without this
-    // even the brightest highlight sits at a middling grey and nothing looks
-    // lit at all.
-    transmitted = min(transmitted * uNorm, vec3(1.0));
-
-    // Transmission is a linear quantity and three does not colour-manage a raw
-    // shader's output, so encode it here or everything reads far too dark.
-    gl_FragColor = vec4(pow(transmitted, vec3(1.0 / 2.2)), 1.0);
-  }
-`;
-
-/**
- * Keeps only the picture surface, dropping the flat back and the rim wall.
- *
- * Backlit shading needs the plate's thickness at a point, and on the picture
- * surface that is simply the vertex's own position along the relief axis. It
- * is not recoverable on the back, which sits at zero and would read as clear
- * glass. Removing that geometry outright means looking from behind shows the
- * picture surface through its far side — the mirrored image, which is what the
- * back of a real lithophane gives you — with no reliance on how the discarded
- * faces happen to interact with the depth buffer.
- *
- * The surface never comes thinner than the plate's minimum, so thickness alone
- * separates it from the back and rim.
- */
-function pictureSurfaceOnly(
-  positions: Float32Array,
-  triangleCount: number,
-  axis: THREE.Vector3,
-  minThickness: number,
-): Float32Array {
-  const cut = minThickness * 0.5;
-  const kept: number[] = [];
-
-  for (let t = 0; t < triangleCount; t++) {
-    const o = t * 9;
-
-    let lowest = Infinity;
-    for (let v = 0; v < 3; v++) {
-      const d =
-        positions[o + v * 3] * axis.x +
-        positions[o + v * 3 + 1] * axis.y +
-        positions[o + v * 3 + 2] * axis.z;
-      if (d < lowest) lowest = d;
-    }
-    if (lowest < cut) continue;
-
-    for (let i = 0; i < 9; i++) kept.push(positions[o + i]);
-  }
-
-  return new Float32Array(kept);
-}
 
 /**
  * The axis the relief runs along: the thinnest one, pointing from the flat
@@ -176,7 +54,6 @@ export default function MeshPreview({
   flatShading,
   lightBackground,
   showGrid,
-  backlit,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
@@ -348,108 +225,32 @@ export default function MeshPreview({
       geo.computeVertexNormals();
       geo.computeBoundingBox();
 
-      // Falloff scaled to this model, so a white band reads roughly 50% at the
-      // thinnest point and 8% at the thickest, whatever Max is set to.
-      const box = geo.boundingBox ?? new THREE.Box3();
-      const axis = reliefAxis(box);
-      const maxThickness = Math.max(
-        0.1,
-        Math.max(Math.abs(box.min.dot(axis)), Math.abs(box.max.dot(axis))),
-      );
-      const k = 3.15 / maxThickness;
-
       const starts = mesh.bandStarts.length > 0 ? mesh.bandStarts : [0];
+      // A draw group per band lets each carry its own colour, matching what
+      // the exported 3MF assigns to the corresponding body.
+      for (let b = 0; b < starts.length; b++) {
+        const from = starts[b];
+        const to = b + 1 < starts.length ? starts[b + 1] : mesh.triangleCount;
 
-      if (backlit) {
-        // One material for everything: the shader walks the whole stack per
-        // fragment, so splitting the draw by band would tell it less, not more.
-        //
-        // Only the picture surface is drawn, so the back cannot appear as
-        // clear glass and the rim cannot flash bright along the edge.
-        const surface = pictureSurfaceOnly(
-          mesh.positions,
-          mesh.triangleCount,
-          axis,
-          Math.max(0.01, mesh.minThickness),
-        );
-        geo.setAttribute("position", new THREE.BufferAttribute(surface, 3));
-        geo.computeVertexNormals();
-
-        // The group still has to exist. three renders an array material by
-        // iterating geometry.groups, so leaving it empty means no draw calls at
-        // all and the model simply vanishes.
-        geo.addGroup(0, surface.length / 3, 0);
-
-        const bounds = new Float32Array(MAX_BANDS);
-        const colors = Array.from(
-          { length: MAX_BANDS },
-          () => new THREE.Color(0xffffff),
-        );
-
-        const count = Math.min(MAX_BANDS, starts.length);
-        for (let b = 0; b < count; b++) {
-          colors[b].set(mesh.colors[b] ?? "#f2f2f2");
-          bounds[b] =
-            mesh.bandBounds[b] ?? ((b + 1) / count) * maxThickness;
-        }
-        // The last band must reach the back, whatever rounding says.
-        bounds[count - 1] = Math.max(bounds[count - 1], maxThickness);
-
-        // Normalise on the thinnest point, using whichever channel the first
-        // band absorbs least: that channel reaches white and the others stay
-        // tinted, rather than the highlight being bleached neutral.
-        const minT = Math.min(
-          Math.max(0.01, mesh.minThickness),
-          maxThickness * 0.9,
-        );
-        const c0 = colors[0];
-        const sigmaMin =
-          k * (1 + 2 * (1 - Math.max(c0.r, c0.g, c0.b)));
-        const norm = Math.exp(sigmaMin * Math.min(minT, bounds[0]));
-
+        geo.addGroup(from * 3, (to - from) * 3, b);
         mats.push(
-          new THREE.ShaderMaterial({
-            uniforms: {
-              uK: { value: k },
-              uAxis: { value: axis.clone() },
-              uCount: { value: count },
-              uBounds: { value: bounds },
-              uColors: { value: colors },
-              uMinT: { value: minT },
-              uNorm: { value: norm },
-            },
-            vertexShader: BACKLIT_VERT,
-            fragmentShader: BACKLIT_FRAG,
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color(mesh.colors[b] ?? "#d8dee9"),
+            roughness: 0.72,
+            metalness: 0.02,
             side: THREE.DoubleSide,
+            flatShading,
           }),
         );
-      } else {
-        // A draw group per band lets each carry its own colour, matching what
-        // the exported 3MF assigns to the corresponding body.
-        for (let b = 0; b < starts.length; b++) {
-          const from = starts[b];
-          const to = b + 1 < starts.length ? starts[b + 1] : mesh.triangleCount;
-
-          geo.addGroup(from * 3, (to - from) * 3, b);
-          mats.push(
-            new THREE.MeshStandardMaterial({
-              color: new THREE.Color(mesh.colors[b] ?? "#d8dee9"),
-              roughness: 0.72,
-              metalness: 0.02,
-              side: THREE.DoubleSide,
-              flatShading,
-            }),
-          );
-        }
       }
     }
 
     geometryRef.current = geo;
     host.__swap(geo, mats);
     fitRef.current?.();
-    // Toggling a shading mode rebuilds the materials here rather than mutating
+    // Toggling flat shading rebuilds the materials here rather than mutating
     // them in a second effect; it is a manual switch, not a per-frame cost.
-  }, [mesh, flatShading, backlit]);
+  }, [mesh, flatShading]);
 
   useEffect(() => {
     const scene = sceneRef.current;

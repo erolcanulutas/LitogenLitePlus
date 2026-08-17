@@ -594,7 +594,6 @@ export default function App() {
   const [flatShading, setFlatShading] = useState(true);
   const [lightBackground, setLightBackground] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
-  const [backlit, setBacklit] = useState(false);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
@@ -821,13 +820,6 @@ export default function App() {
           triangleCount: result.previewTriangles,
           bandStarts: result.previewBands,
           colors: [...colors],
-          // Where each band ends through the thickness, so the backlit shader
-          // can accumulate absorption band by band.
-          bandBounds: [
-            ...splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
-            maxT,
-          ],
-          minThickness: minT,
         });
         setPreviewKey(settingsKey);
         setView("preview");
@@ -1395,6 +1387,7 @@ export default function App() {
               <label
                 className="shadeToggle"
                 title="Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model."
+                style={{ marginRight: 10 }}
               >
                 Backdrop
                 <input
@@ -1411,24 +1404,12 @@ export default function App() {
                 {previewStale && <span className="staleChip">out of date</span>}
                 <label
                   className="shadeToggle"
-                  title="Light it from behind, the way a lithophane is looked at. Transmission falls off exponentially with thickness, so this shows whether the picture will read once printed."
-                >
-                  <input
-                    type="checkbox"
-                    checked={backlit}
-                    onChange={(e) => setBacklit(e.target.checked)}
-                  />
-                  Backlit
-                </label>
-                <label
-                  className="shadeToggle"
                   title="Draw every triangle in one tone, the way a slicer does, so the mesh's real facets are visible. Off smooths the normals."
                 >
                   <input
                     type="checkbox"
                     checked={flatShading}
                     onChange={(e) => setFlatShading(e.target.checked)}
-                    disabled={backlit}
                   />
                   Flat shading
                 </label>
@@ -1493,7 +1474,6 @@ export default function App() {
                     flatShading={flatShading}
                     lightBackground={lightBackground}
                     showGrid={showGrid}
-                    backlit={backlit}
                   />
                 </React.Suspense>
               )}
