@@ -186,14 +186,9 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     geometryRef.current = geo;
     host.__swap(geo, mats);
     fitRef.current?.();
+    // Toggling flat shading rebuilds the materials here rather than mutating
+    // them in a second effect; it is a manual switch, not a per-frame cost.
   }, [mesh, flatShading]);
-
-  useEffect(() => {
-    for (const m of materialsRef.current) {
-      m.flatShading = flatShading;
-      m.needsUpdate = true;
-    }
-  }, [flatShading]);
 
   return (
     <div
