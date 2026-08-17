@@ -12,6 +12,8 @@ export type PreviewMesh = {
   colors: string[];
   /** Upper thickness of each band in mm, ascending; last is the full depth. */
   bandBounds: number[];
+  /** Thinnest part of the plate in mm — the brightest the picture ever gets. */
+  minThickness: number;
 };
 
 type Props = {
@@ -61,10 +63,19 @@ const BACKLIT_FRAG = `
   uniform int uCount;
   uniform float uBounds[${MAX_BANDS}];
   uniform vec3 uColors[${MAX_BANDS}];
+  uniform float uMinT;
+  uniform float uNorm;
   varying float vThickness;
 
   void main() {
     float total = max(vThickness, 0.0);
+
+    // The flat back sits at thickness zero, so shading it by its own depth
+    // would call it clear glass — it came out pure white. Drop it, and the
+    // picture surface is then seen from behind as well, which is what looking
+    // at the back of a real lithophane gives you.
+    if (total < uMinT * 0.5) discard;
+
     vec3 transmitted = vec3(1.0);
     float lo = 0.0;
 
@@ -80,6 +91,12 @@ const BACKLIT_FRAG = `
       }
       lo = uBounds[i];
     }
+
+    // Scale so the thinnest part of the plate reads as white. A lithophane is
+    // looked at against a bright source and the eye adapts to it; without this
+    // even the brightest highlight sits at a middling grey and nothing looks
+    // lit at all.
+    transmitted = min(transmitted * uNorm, vec3(1.0));
 
     // Transmission is a linear quantity and three does not colour-manage a raw
     // shader's output, so encode it here or everything reads far too dark.
@@ -327,6 +344,18 @@ export default function MeshPreview({
         // The last band must reach the back, whatever rounding says.
         bounds[count - 1] = Math.max(bounds[count - 1], maxThickness);
 
+        // Normalise on the thinnest point, using whichever channel the first
+        // band absorbs least: that channel reaches white and the others stay
+        // tinted, rather than the highlight being bleached neutral.
+        const minT = Math.min(
+          Math.max(0.01, mesh.minThickness),
+          maxThickness * 0.9,
+        );
+        const c0 = colors[0];
+        const sigmaMin =
+          k * (1 + 2 * (1 - Math.max(c0.r, c0.g, c0.b)));
+        const norm = Math.exp(sigmaMin * Math.min(minT, bounds[0]));
+
         mats.push(
           new THREE.ShaderMaterial({
             uniforms: {
@@ -335,6 +364,8 @@ export default function MeshPreview({
               uCount: { value: count },
               uBounds: { value: bounds },
               uColors: { value: colors },
+              uMinT: { value: minT },
+              uNorm: { value: norm },
             },
             vertexShader: BACKLIT_VERT,
             fragmentShader: BACKLIT_FRAG,

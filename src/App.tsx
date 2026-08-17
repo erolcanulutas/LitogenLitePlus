@@ -827,6 +827,7 @@ export default function App() {
             ...splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
             maxT,
           ],
+          minThickness: minT,
         });
         setPreviewKey(settingsKey);
         setView("preview");
