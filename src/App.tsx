@@ -408,6 +408,24 @@ const FOOTER_MESSAGES = [
   "Where technology meets nostalgia.",
 ];
 
+/**
+ * Cheap content fingerprint for the editor's output.
+ *
+ * The editor re-emits on every redraw, including ones that change nothing —
+ * a panel resize, say. Comparing content rather than identity keeps the
+ * preview from claiming to be out of date when the picture is unchanged.
+ */
+function imageSignature(d: ImageData): string {
+  const a = d.data;
+  let hash = 0x811c9dc5;
+  // A few thousand samples is ample to tell one crop from another.
+  const step = Math.max(4, ((a.length / 4000) | 0) & ~3);
+  for (let i = 0; i < a.length; i += step) {
+    hash = Math.imul(hash ^ a[i], 0x01000193) >>> 0;
+  }
+  return `${d.width}x${d.height}:${hash.toString(16)}`;
+}
+
 /** Default palette for new bands: light at the bottom, darker going up. */
 const BAND_PALETTE = [
   "#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8",
@@ -465,6 +483,7 @@ export default function App() {
   // disagreeing with the editor.
   const [imgVersion, setImgVersion] = useState(0);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const imgSigRef = useRef("");
 
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
@@ -517,6 +536,15 @@ export default function App() {
     setFrameMm(1.5);
     setSplitLayers([]);
     setColors(["#f2f2f2"]);
+  }
+
+  function handleImageData(d: ImageData | null) {
+    setImgData(d);
+    const sig = d ? imageSignature(d) : "";
+    if (sig !== imgSigRef.current) {
+      imgSigRef.current = sig;
+      setImgVersion((v) => v + 1);
+    }
   }
 
   function setBandColor(index: number, value: string) {
@@ -1252,10 +1280,7 @@ export default function App() {
                 rotate={rotate}
                 flipH={flipH}
                 flipV={flipV}
-                onImageData={(d) => {
-                  setImgData(d);
-                  setImgVersion((v) => v + 1);
-                }}
+                onImageData={handleImageData}
               />
             </div>
 

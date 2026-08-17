@@ -13,6 +13,16 @@ import type { ShapeId } from "../core/types";
  * Types
  * --------------------------------------------- */
 
+/**
+ * The crop, in units of the drawn image rather than the viewport.
+ *
+ * `w` is a fraction of the image's on-screen width and `cx`/`cy` are offsets
+ * from the image's centre in the same unit. Anchoring to the image is what
+ * makes the framing independent of the panel: these used to be fractions of
+ * the viewport, so anything that changed the panel's size — resizing the
+ * window, or switching tabs, which removes the controls strip below — rescaled
+ * the image without moving the box and silently re-cropped the picture.
+ */
 type Crop = {
   cx: number;
   cy: number;
@@ -81,11 +91,13 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
     const debounceTimerRef = useRef<number | null>(null);
     const viewRef = useRef({ w: 1, h: 1 });
+    /** On-screen size of the drawn image; the crop is measured against it. */
+    const fitRef = useRef({ dw: 1, dh: 1 });
 
     const DEFAULT_CROP: Crop = {
-      cx: 0.5,
-      cy: 0.5,
-      w: 0.4,
+      cx: 0,
+      cy: 0,
+      w: 0.8,
       rot: 0,
     };
 
@@ -198,9 +210,11 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
         const { w: W, h: H } = viewRef.current;
 
-        const scaleFactor = OUT_W / (crop.w * W);
-        const cropPixelX = crop.cx * W;
-        const cropPixelY = crop.cy * H;
+        // Crop is measured against the drawn image, so the same settings give
+        // the same output whatever size the panel happens to be.
+        const scaleFactor = OUT_W / (crop.w * dwBg);
+        const cropPixelX = W / 2 + crop.cx * dwBg;
+        const cropPixelY = H / 2 + crop.cy * dwBg;
 
         octx.save();
         octx.translate(OUT_W / 2, OUT_H / 2);
@@ -257,6 +271,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       const dw = iw * scale;
       const dh = ih * scale;
+      fitRef.current = { dw, dh };
 
       ctx.save();
       ctx.translate(W / 2, H / 2);
@@ -266,10 +281,10 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.restore();
 
       // Crop pixels
-      const cropW = crop.w * W;
+      const cropW = crop.w * dw;
       const cropH = cropW / cropRatio;
-      const cx = crop.cx * W;
-      const cy = crop.cy * H;
+      const cx = W / 2 + crop.cx * dw;
+      const cy = H / 2 + crop.cy * dw;
 
       // 3. Shadow Mask
       ctx.save();
@@ -380,10 +395,11 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       const { x, y } = getScenePointerPos(e);
       const { w: W, h: H } = viewRef.current;
+      const { dw } = fitRef.current;
 
-      const cx = crop.cx * W;
-      const cy = crop.cy * H;
-      const cropW = crop.w * W;
+      const cx = W / 2 + crop.cx * dw;
+      const cy = H / 2 + crop.cy * dw;
+      const cropW = crop.w * dw;
       const cropH = cropW / cropRatio;
 
       const local = unrotatePoint(x - cx, y - cy, crop.rot);
@@ -443,21 +459,22 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       const { x, y } = getScenePointerPos(e);
       const { w: W, h: H } = viewRef.current;
+      const { dw } = fitRef.current;
 
       const { mode, startX, startY, startCrop, startDist, startAngle } =
         dragRef.current;
 
       if (mode === "move") {
-        const dx = (x - startX) / W;
-        const dy = (y - startY) / H;
+        const dx = (x - startX) / dw;
+        const dy = (y - startY) / dw;
         setCrop({
           ...startCrop,
           cx: startCrop.cx + dx,
           cy: startCrop.cy + dy,
         });
       } else if (mode === "resize" && startDist !== undefined) {
-        const ccx = startCrop.cx * W;
-        const ccy = startCrop.cy * H;
+        const ccx = W / 2 + startCrop.cx * dw;
+        const ccy = H / 2 + startCrop.cy * dw;
         const local = unrotatePoint(x - ccx, y - ccy, startCrop.rot);
         const curDist = Math.hypot(local.x, local.y);
         const scale = curDist / startDist;
@@ -465,8 +482,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         newW = Math.max(MIN_WIDTH_RX, Math.min(newW, 2.0));
         setCrop({ ...startCrop, w: newW });
       } else if (mode === "rotate" && startAngle !== undefined) {
-        const ccx = startCrop.cx * W;
-        const ccy = startCrop.cy * H;
+        const ccx = W / 2 + startCrop.cx * dw;
+        const ccy = H / 2 + startCrop.cy * dw;
         const curAngle = Math.atan2(y - ccy, x - ccx);
         const deltaRad = curAngle - startAngle;
         const deltaDeg = (deltaRad * 180) / Math.PI;
