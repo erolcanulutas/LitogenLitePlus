@@ -10,6 +10,8 @@ export type PreviewMesh = {
   bandStarts: number[];
   /** One CSS colour per band. */
   colors: string[];
+  /** Upper thickness of each band in mm, ascending; last is the full depth. */
+  bandBounds: number[];
 };
 
 type Props = {
@@ -46,13 +48,40 @@ const BACKLIT_VERT = `
   }
 `;
 
+/**
+ * Light crosses every band on its way out, not just the one at the surface,
+ * so absorption is accumulated through the stack. Each band absorbs by its own
+ * colour: white passes most of what reaches it, black stops nearly all of it,
+ * and a coloured band tints whatever gets through.
+ */
+const MAX_BANDS = 8;
+
 const BACKLIT_FRAG = `
-  uniform vec3 uTint;
   uniform float uK;
+  uniform int uCount;
+  uniform float uBounds[${MAX_BANDS}];
+  uniform vec3 uColors[${MAX_BANDS}];
   varying float vThickness;
+
   void main() {
-    float transmitted = exp(-uK * max(vThickness, 0.0));
-    gl_FragColor = vec4(uTint * transmitted, 1.0);
+    float total = max(vThickness, 0.0);
+    vec3 transmitted = vec3(1.0);
+    float lo = 0.0;
+
+    for (int i = 0; i < ${MAX_BANDS}; i++) {
+      if (i >= uCount) break;
+
+      float seg = clamp(total, lo, uBounds[i]) - lo;
+      if (seg > 0.0) {
+        // Absorption per mm, per channel: uK is what a white band costs, and
+        // darker pigment costs up to three times that.
+        vec3 sigma = uK * (1.0 + 2.0 * (vec3(1.0) - uColors[i]));
+        transmitted *= exp(-sigma * seg);
+      }
+      lo = uBounds[i];
+    }
+
+    gl_FragColor = vec4(transmitted, 1.0);
   }
 `;
 
@@ -122,10 +151,23 @@ export default function MeshPreview({
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controlsRef.current = controls;
+    /**
+     * OrbitControls fixes its orbit axis from camera.up when constructed, so
+     * changing up afterwards leaves the orbit spinning about the wrong axis —
+     * which, once the model lies flat and the camera looks along what used to
+     * be up, degenerates into unusable rotation. Rebuilding is the reliable
+     * way to move that axis.
+     */
+    const makeControls = () => {
+      controlsRef.current?.dispose();
+      const c = new OrbitControls(camera, renderer.domElement);
+      c.enableDamping = true;
+      c.dampingFactor = 0.08;
+      controlsRef.current = c;
+      return c;
+    };
+
+    makeControls();
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
@@ -155,21 +197,25 @@ export default function MeshPreview({
 
 
       const dist = (s.radius * 1.6) / Math.tan((camera.fov * Math.PI) / 360);
-      controls.target.copy(s.center);
 
       // Face the picture, whichever way the model is oriented, and keep "up"
       // off the view axis — otherwise the orbit degenerates.
       const box = geo.boundingBox;
       const axis = box ? reliefAxis(box) : new THREE.Vector3(0, -1, 0);
-      camera.up.set(0, 0, 1);
-      if (Math.abs(axis.z) > 0.5) camera.up.set(0, 1, 0);
+      const up = Math.abs(axis.z) > 0.5
+        ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(0, 0, 1);
 
-      camera.position
-        .copy(s.center)
-        .addScaledVector(axis, dist);
+      const upChanged = !camera.up.equals(up);
+      camera.up.copy(up);
+
+      camera.position.copy(s.center).addScaledVector(axis, dist);
       camera.near = Math.max(0.1, dist / 100);
       camera.far = dist * 10;
       camera.updateProjectionMatrix();
+
+      const controls = upChanged ? makeControls() : controlsRef.current!;
+      controls.target.copy(s.center);
       controls.update();
     };
     fitRef.current = fit;
@@ -190,7 +236,7 @@ export default function MeshPreview({
 
     let raf = 0;
     const tick = () => {
-      controls.update();
+      controlsRef.current?.update();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
     };
@@ -212,7 +258,7 @@ export default function MeshPreview({
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
-      controls.dispose();
+      controlsRef.current?.dispose();
       mesh3d.geometry.dispose();
       for (const m of materialsRef.current) m.dispose();
       renderer.dispose();
@@ -243,45 +289,68 @@ export default function MeshPreview({
       geo.computeVertexNormals();
       geo.computeBoundingBox();
 
-      // Falloff scaled to this model, so the thickest part always lands at
-      // roughly 3% transmission whatever Max thickness is set to.
+      // Falloff scaled to this model, so a white band reads roughly 50% at the
+      // thinnest point and 8% at the thickest, whatever Max is set to.
       const box = geo.boundingBox ?? new THREE.Box3();
       const axis = reliefAxis(box);
       const maxThickness = Math.max(
         0.1,
         Math.max(Math.abs(box.min.dot(axis)), Math.abs(box.max.dot(axis))),
       );
-      const k = 3.5 / maxThickness;
+      const k = 3.15 / maxThickness;
 
-      // A draw group per band lets each carry its own colour, matching what
-      // the exported 3MF assigns to the corresponding body.
       const starts = mesh.bandStarts.length > 0 ? mesh.bandStarts : [0];
-      for (let b = 0; b < starts.length; b++) {
-        const from = starts[b];
-        const to = b + 1 < starts.length ? starts[b + 1] : mesh.triangleCount;
-        const color = new THREE.Color(mesh.colors[b] ?? "#d8dee9");
 
-        geo.addGroup(from * 3, (to - from) * 3, b);
-        mats.push(
-          backlit
-            ? new THREE.ShaderMaterial({
-                uniforms: {
-                  uTint: { value: color },
-                  uK: { value: k },
-                  uAxis: { value: axis.clone() },
-                },
-                vertexShader: BACKLIT_VERT,
-                fragmentShader: BACKLIT_FRAG,
-                side: THREE.DoubleSide,
-              })
-            : new THREE.MeshStandardMaterial({
-                color,
-                roughness: 0.72,
-                metalness: 0.02,
-                side: THREE.DoubleSide,
-                flatShading,
-              }),
+      if (backlit) {
+        // One material for everything: the shader walks the whole stack per
+        // fragment, so splitting the draw by band would tell it less, not more.
+        const bounds = new Float32Array(MAX_BANDS);
+        const colors = Array.from(
+          { length: MAX_BANDS },
+          () => new THREE.Color(0xffffff),
         );
+
+        const count = Math.min(MAX_BANDS, starts.length);
+        for (let b = 0; b < count; b++) {
+          colors[b].set(mesh.colors[b] ?? "#f2f2f2");
+          bounds[b] =
+            mesh.bandBounds[b] ?? ((b + 1) / count) * maxThickness;
+        }
+        // The last band must reach the back, whatever rounding says.
+        bounds[count - 1] = Math.max(bounds[count - 1], maxThickness);
+
+        mats.push(
+          new THREE.ShaderMaterial({
+            uniforms: {
+              uK: { value: k },
+              uAxis: { value: axis.clone() },
+              uCount: { value: count },
+              uBounds: { value: bounds },
+              uColors: { value: colors },
+            },
+            vertexShader: BACKLIT_VERT,
+            fragmentShader: BACKLIT_FRAG,
+            side: THREE.DoubleSide,
+          }),
+        );
+      } else {
+        // A draw group per band lets each carry its own colour, matching what
+        // the exported 3MF assigns to the corresponding body.
+        for (let b = 0; b < starts.length; b++) {
+          const from = starts[b];
+          const to = b + 1 < starts.length ? starts[b + 1] : mesh.triangleCount;
+
+          geo.addGroup(from * 3, (to - from) * 3, b);
+          mats.push(
+            new THREE.MeshStandardMaterial({
+              color: new THREE.Color(mesh.colors[b] ?? "#d8dee9"),
+              roughness: 0.72,
+              metalness: 0.02,
+              side: THREE.DoubleSide,
+              flatShading,
+            }),
+          );
+        }
       }
     }
 

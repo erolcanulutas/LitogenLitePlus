@@ -821,6 +821,12 @@ export default function App() {
           triangleCount: result.previewTriangles,
           bandStarts: result.previewBands,
           colors: [...colors],
+          // Where each band ends through the thickness, so the backlit shader
+          // can accumulate absorption band by band.
+          bandBounds: [
+            ...splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
+            maxT,
+          ],
         });
         setPreviewKey(settingsKey);
         setView("preview");
