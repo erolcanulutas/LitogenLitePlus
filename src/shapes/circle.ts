@@ -34,6 +34,8 @@ export const CircleShape: ShapePlugin = {
       frameHeight: maxT,
       splitZs,
 
+      angularMultiple: 4,
+
       boundaryAt: (s) => {
         const theta = s * Math.PI * 2;
         return {

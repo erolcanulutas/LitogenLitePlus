@@ -41,6 +41,15 @@ export type RadialSpec = {
   boundaryAt: (s: number) => { x: number; y: number };
 
   /**
+   * Ring vertex counts are rounded up to a multiple of this.
+   *
+   * Set it to a polygon's side count so samples always land on the corners.
+   * Otherwise a ring can step straight past them, cutting the points off and
+   * leaving the model measurably narrower than asked for.
+   */
+  angularMultiple: number;
+
+  /**
    * Brightness (0..1) at a point inside the image area.
    *
    * `footprintMm` is how much surface this one vertex stands in for — the
@@ -91,6 +100,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     innerFraction,
     frameRings,
     boundaryAt,
+    angularMultiple,
     lumAt,
     heightOf,
     levels,
@@ -134,11 +144,14 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   };
 
   /** Vertices on ring r: enough to keep the step along it near the target. */
-  const ringVerts = (r: number): number =>
-    Math.max(
+  const m = Math.max(1, Math.round(angularMultiple));
+  const ringVerts = (r: number): number => {
+    const want = Math.max(
       MIN_RING_VERTS,
       Math.round((perimeterMm * ringT(r)) / targetCellMm),
     );
+    return Math.ceil(want / m) * m;
+  };
 
   const maxVerts = ringVerts(totalRings);
 

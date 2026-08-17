@@ -67,6 +67,7 @@ export const PentagonShape: ShapePlugin = {
       frameHeight: maxT,
       splitZs,
 
+      angularMultiple: SIDES,
       boundaryAt: polygonBoundary(corners),
 
       levels,

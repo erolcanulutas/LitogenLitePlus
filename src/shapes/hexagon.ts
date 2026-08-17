@@ -14,7 +14,8 @@ function clamp01(v: number) {
 export const HexagonShape: ShapePlugin = {
   id: "hexagon",
   label: "Hexagon",
-  // widthMm is the flat-to-flat distance, so width/height = 2/sqrt(3).
+  // Corners sit left and right, so the bounding box is 2/sqrt(3) wider than
+  // it is tall.
   cropRatio: 2.0 / Math.sqrt(3),
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
@@ -23,8 +24,12 @@ export const HexagonShape: ShapePlugin = {
 
     const range = maxT - minT;
 
-    const apothem = widthMm / 2;
-    const circumradius = apothem * (2 / Math.sqrt(3));
+    // widthMm is the leftmost-to-rightmost distance, matching the label in the
+    // panel and every other shape. For a hexagon that is corner to corner, so
+    // it is the circumdiameter — not the flat-to-flat distance this used to
+    // take it for, which came out 2/sqrt(3) (15.5%) too wide.
+    const circumradius = widthMm / 2;
+    const apothem = circumradius * (Math.sqrt(3) / 2);
 
     const frameSize = Math.max(0, frameMm);
     const innerApothem = Math.max(0, apothem - frameSize);
@@ -51,6 +56,7 @@ export const HexagonShape: ShapePlugin = {
       frameHeight: maxT,
       splitZs,
 
+      angularMultiple: SIDES,
       boundaryAt: polygonBoundary(corners),
 
       levels,
