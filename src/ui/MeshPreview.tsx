@@ -70,10 +70,8 @@ const BACKLIT_FRAG = `
   void main() {
     float total = max(vThickness, 0.0);
 
-    // The flat back sits at thickness zero, so shading it by its own depth
-    // would call it clear glass — it came out pure white. Drop it, and the
-    // picture surface is then seen from behind as well, which is what looking
-    // at the back of a real lithophane gives you.
+    // Belt and braces: the back and rim are already stripped on the CPU, but
+    // anything that slips through would read as clear glass.
     if (total < uMinT * 0.5) discard;
 
     vec3 transmitted = vec3(1.0);
@@ -103,6 +101,48 @@ const BACKLIT_FRAG = `
     gl_FragColor = vec4(pow(transmitted, vec3(1.0 / 2.2)), 1.0);
   }
 `;
+
+/**
+ * Keeps only the picture surface, dropping the flat back and the rim wall.
+ *
+ * Backlit shading needs the plate's thickness at a point, and on the picture
+ * surface that is simply the vertex's own position along the relief axis. It
+ * is not recoverable on the back, which sits at zero and would read as clear
+ * glass. Removing that geometry outright means looking from behind shows the
+ * picture surface through its far side — the mirrored image, which is what the
+ * back of a real lithophane gives you — with no reliance on how the discarded
+ * faces happen to interact with the depth buffer.
+ *
+ * The surface never comes thinner than the plate's minimum, so thickness alone
+ * separates it from the back and rim.
+ */
+function pictureSurfaceOnly(
+  positions: Float32Array,
+  triangleCount: number,
+  axis: THREE.Vector3,
+  minThickness: number,
+): Float32Array {
+  const cut = minThickness * 0.5;
+  const kept: number[] = [];
+
+  for (let t = 0; t < triangleCount; t++) {
+    const o = t * 9;
+
+    let lowest = Infinity;
+    for (let v = 0; v < 3; v++) {
+      const d =
+        positions[o + v * 3] * axis.x +
+        positions[o + v * 3 + 1] * axis.y +
+        positions[o + v * 3 + 2] * axis.z;
+      if (d < lowest) lowest = d;
+    }
+    if (lowest < cut) continue;
+
+    for (let i = 0; i < 9; i++) kept.push(positions[o + i]);
+  }
+
+  return new Float32Array(kept);
+}
 
 /**
  * The axis the relief runs along: the thinnest one, pointing from the flat
@@ -324,10 +364,21 @@ export default function MeshPreview({
         // One material for everything: the shader walks the whole stack per
         // fragment, so splitting the draw by band would tell it less, not more.
         //
+        // Only the picture surface is drawn, so the back cannot appear as
+        // clear glass and the rim cannot flash bright along the edge.
+        const surface = pictureSurfaceOnly(
+          mesh.positions,
+          mesh.triangleCount,
+          axis,
+          Math.max(0.01, mesh.minThickness),
+        );
+        geo.setAttribute("position", new THREE.BufferAttribute(surface, 3));
+        geo.computeVertexNormals();
+
         // The group still has to exist. three renders an array material by
         // iterating geometry.groups, so leaving it empty means no draw calls at
         // all and the model simply vanishes.
-        geo.addGroup(0, mesh.triangleCount * 3, 0);
+        geo.addGroup(0, surface.length / 3, 0);
 
         const bounds = new Float32Array(MAX_BANDS);
         const colors = Array.from(
