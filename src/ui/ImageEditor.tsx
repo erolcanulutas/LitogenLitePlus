@@ -318,6 +318,12 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
 
+      // The whole canvas carries the backdrop, not just the crop: anything the
+      // photo does not cover ends up this colour, and seeing it everywhere
+      // makes that obvious while composing.
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, W, H);
+
       // Zoom
       ctx.save();
       ctx.translate(W / 2, H / 2);
@@ -345,15 +351,6 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const cropH = cropW / cropRatio;
       const cx = W / 2 + crop.cx * dw;
       const cy = H / 2 + crop.cy * dw;
-
-      // Backdrop first, so the parts of the crop the photo does not reach look
-      // here the way they will come out.
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(deg2rad(crop.rot));
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(-cropW / 2, -cropH / 2, cropW, cropH);
-      ctx.restore();
 
       ctx.save();
       ctx.translate(W / 2, H / 2);
@@ -633,7 +630,6 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
             width: "100%",
             height: "100%",
             borderRadius: 12,
-            background: "#020617",
             display: "block",
           }}
         />

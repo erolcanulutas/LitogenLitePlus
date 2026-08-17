@@ -499,6 +499,7 @@ export default function App() {
   const [flatShading, setFlatShading] = useState(true);
   const [lightBackground, setLightBackground] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
+  const [backlit, setBacklit] = useState(false);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
@@ -769,21 +770,6 @@ export default function App() {
             )}
           </label>
 
-          <div className="label-row" style={{ marginTop: 12 }}>
-            <label className="miniLabel">Backdrop</label>
-            <InfoIcon text="Fills any part of the crop the photo does not cover. Leave it white so bare corners print thin and let light through — without it they come out as the thickest, most opaque part of the model." />
-          </div>
-
-          <div className="bandRow">
-            <input
-              className="bandSwatch"
-              type="color"
-              value={bgColor}
-              onChange={(e) => setBgColor(e.target.value)}
-              title="Colour behind the photo"
-            />
-            <span className="bandTop">behind the photo</span>
-          </div>
         </div>
 
         <div className="section">
@@ -1269,14 +1255,44 @@ export default function App() {
               </button>
             </div>
 
+            {view === "editor" && (
+              <label
+                className="shadeToggle"
+                title="Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model."
+              >
+                Backdrop
+                <input
+                  className="bandSwatch"
+                  type="color"
+                  value={bgColor}
+                  onChange={(e) => setBgColor(e.target.value)}
+                />
+              </label>
+            )}
+
             {view === "preview" && (
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {previewStale && <span className="staleChip">out of date</span>}
-                <label className="shadeToggle">
+                <label
+                  className="shadeToggle"
+                  title="Light it from behind, the way a lithophane is looked at. Transmission falls off exponentially with thickness, so this shows whether the picture will read once printed."
+                >
+                  <input
+                    type="checkbox"
+                    checked={backlit}
+                    onChange={(e) => setBacklit(e.target.checked)}
+                  />
+                  Backlit
+                </label>
+                <label
+                  className="shadeToggle"
+                  title="Draw every triangle in one tone, the way a slicer does, so the mesh's real facets are visible. Off smooths the normals."
+                >
                   <input
                     type="checkbox"
                     checked={flatShading}
                     onChange={(e) => setFlatShading(e.target.checked)}
+                    disabled={backlit}
                   />
                   Flat shading
                 </label>
@@ -1341,6 +1357,7 @@ export default function App() {
                     flatShading={flatShading}
                     lightBackground={lightBackground}
                     showGrid={showGrid}
+                    backlit={backlit}
                   />
                 </React.Suspense>
               )}

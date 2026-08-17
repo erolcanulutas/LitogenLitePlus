@@ -144,7 +144,11 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   };
 
   /** Vertices on ring r: enough to keep the step along it near the target. */
-  const m = Math.max(1, Math.round(angularMultiple));
+  // Guarded: a bad value here would poison every ring count and yield an
+  // empty mesh rather than an obviously wrong one.
+  const m = Number.isFinite(angularMultiple)
+    ? Math.max(1, Math.round(angularMultiple))
+    : 1;
   const ringVerts = (r: number): number => {
     const want = Math.max(
       MIN_RING_VERTS,

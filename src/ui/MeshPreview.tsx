@@ -20,7 +20,38 @@ type Props = {
   lightBackground: boolean;
   /** Ground grid under the model, for a sense of scale. */
   showGrid: boolean;
+  /** Light it from behind, the way a lithophane is actually looked at. */
+  backlit: boolean;
 };
+
+/**
+ * Backlit shading.
+ *
+ * A lithophane is read by transmitted light, and transmission falls off
+ * exponentially with thickness rather than linearly — Beer-Lambert. Surface
+ * shading cannot show that, which is why a picture can look fine on screen and
+ * come out muddy once printed.
+ *
+ * The model is oriented with the base at y = 0 and the relief cut into -y, so
+ * a fragment's thickness is exactly -y. No extra data is needed.
+ */
+const BACKLIT_VERT = `
+  varying float vThickness;
+  void main() {
+    vThickness = -position.y;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const BACKLIT_FRAG = `
+  uniform vec3 uTint;
+  uniform float uK;
+  varying float vThickness;
+  void main() {
+    float transmitted = exp(-uK * max(vThickness, 0.0));
+    gl_FragColor = vec4(uTint * transmitted, 1.0);
+  }
+`;
 
 /**
  * Shows the generated mesh exactly as exported — same triangles, same
@@ -32,10 +63,11 @@ export default function MeshPreview({
   flatShading,
   lightBackground,
   showGrid,
+  backlit,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
-  const materialsRef = useRef<THREE.MeshStandardMaterial[]>([]);
+  const materialsRef = useRef<THREE.Material[]>([]);
   const controlsRef = useRef<OrbitControls | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -83,7 +115,7 @@ export default function MeshPreview({
     // Material list, one per colour band; filled in when a mesh arrives.
     const mesh3d = new THREE.Mesh(
       new THREE.BufferGeometry(),
-      [] as THREE.MeshStandardMaterial[],
+      [] as THREE.Material[],
     );
     scene.add(mesh3d);
 
@@ -96,26 +128,6 @@ export default function MeshPreview({
       const s = geo.boundingSphere;
       if (!s) return;
 
-      if (gridRef.current) {
-        scene.remove(gridRef.current);
-        gridRef.current.geometry.dispose();
-        (gridRef.current.material as THREE.Material).dispose();
-        gridRef.current = null;
-      }
-
-      if (s.radius > 0) {
-        // Round the spacing to something a ruler would recognise.
-        const span = Math.ceil((s.radius * 3) / 10) * 10;
-        const grid = new THREE.GridHelper(span, Math.max(2, span / 10));
-        // GridHelper lies in XZ; the model stands with Z up.
-        grid.rotation.x = Math.PI / 2;
-        grid.position.set(s.center.x, s.center.y, geo.boundingBox?.min.z ?? 0);
-        // Visibility is applied by the effect below, which also re-runs when
-        // a new mesh rebuilds this.
-        grid.visible = false;
-        gridRef.current = grid;
-        scene.add(grid);
-      }
 
       const dist = (s.radius * 1.6) / Math.tan((camera.fov * Math.PI) / 360);
       controls.target.copy(s.center);
@@ -152,7 +164,7 @@ export default function MeshPreview({
 
     const swapGeometry = (
       next: THREE.BufferGeometry,
-      mats: THREE.MeshStandardMaterial[],
+      mats: THREE.Material[],
     ) => {
       mesh3d.geometry.dispose();
       for (const m of materialsRef.current) m.dispose();
@@ -180,14 +192,14 @@ export default function MeshPreview({
       | (HTMLDivElement & {
           __swap?: (
             g: THREE.BufferGeometry,
-            m: THREE.MeshStandardMaterial[],
+            m: THREE.Material[],
           ) => void;
         })
       | null;
     if (!host?.__swap) return;
 
     const geo = new THREE.BufferGeometry();
-    const mats: THREE.MeshStandardMaterial[] = [];
+    const mats: THREE.Material[] = [];
 
     if (mesh && mesh.triangleCount > 0) {
       geo.setAttribute(
@@ -195,6 +207,12 @@ export default function MeshPreview({
         new THREE.BufferAttribute(mesh.positions, 3),
       );
       geo.computeVertexNormals();
+      geo.computeBoundingBox();
+
+      // Falloff scaled to this model, so the thickest part always lands at
+      // roughly 3% transmission whatever Max thickness is set to.
+      const maxThickness = Math.max(0.1, -(geo.boundingBox?.min.y ?? -1));
+      const k = 3.5 / maxThickness;
 
       // A draw group per band lets each carry its own colour, matching what
       // the exported 3MF assigns to the corresponding body.
@@ -202,16 +220,27 @@ export default function MeshPreview({
       for (let b = 0; b < starts.length; b++) {
         const from = starts[b];
         const to = b + 1 < starts.length ? starts[b + 1] : mesh.triangleCount;
+        const color = new THREE.Color(mesh.colors[b] ?? "#d8dee9");
 
         geo.addGroup(from * 3, (to - from) * 3, b);
         mats.push(
-          new THREE.MeshStandardMaterial({
-            color: new THREE.Color(mesh.colors[b] ?? "#d8dee9"),
-            roughness: 0.72,
-            metalness: 0.02,
-            side: THREE.DoubleSide,
-            flatShading,
-          }),
+          backlit
+            ? new THREE.ShaderMaterial({
+                uniforms: {
+                  uTint: { value: color },
+                  uK: { value: k },
+                },
+                vertexShader: BACKLIT_VERT,
+                fragmentShader: BACKLIT_FRAG,
+                side: THREE.DoubleSide,
+              })
+            : new THREE.MeshStandardMaterial({
+                color,
+                roughness: 0.72,
+                metalness: 0.02,
+                side: THREE.DoubleSide,
+                flatShading,
+              }),
         );
       }
     }
@@ -219,9 +248,9 @@ export default function MeshPreview({
     geometryRef.current = geo;
     host.__swap(geo, mats);
     fitRef.current?.();
-    // Toggling flat shading rebuilds the materials here rather than mutating
+    // Toggling a shading mode rebuilds the materials here rather than mutating
     // them in a second effect; it is a manual switch, not a per-frame cost.
-  }, [mesh, flatShading]);
+  }, [mesh, flatShading, backlit]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -230,10 +259,42 @@ export default function MeshPreview({
     }
   }, [lightBackground]);
 
-  // Also keyed on the mesh: a new model rebuilds the grid to fit it.
+  /**
+   * The grid is built here rather than alongside the geometry, so that
+   * anything else which rebuilds the geometry — toggling flat shading, say —
+   * cannot quietly drop it.
+   */
   useEffect(() => {
-    if (gridRef.current) gridRef.current.visible = showGrid;
-  }, [showGrid, mesh]);
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (gridRef.current) {
+      scene.remove(gridRef.current);
+      gridRef.current.geometry.dispose();
+      (gridRef.current.material as THREE.Material).dispose();
+      gridRef.current = null;
+    }
+
+    const box = geometryRef.current?.boundingBox;
+    if (!showGrid || !box) return;
+
+    const size = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    if (!(size > 0)) return;
+
+    // 10mm spacing, so it reads as a ruler as well as a floor.
+    const span = Math.max(20, Math.ceil((size * 2) / 10) * 10);
+    const grid = new THREE.GridHelper(span, span / 10);
+    // GridHelper lies in XZ; this model stands with Z up.
+    grid.rotation.x = Math.PI / 2;
+    grid.position.set(
+      (box.min.x + box.max.x) / 2,
+      (box.min.y + box.max.y) / 2,
+      box.min.z,
+    );
+
+    gridRef.current = grid;
+    scene.add(grid);
+  }, [showGrid, mesh, lightBackground]);
 
   return (
     <div

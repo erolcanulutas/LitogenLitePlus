@@ -78,6 +78,7 @@ export async function writeColored3MF(
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+  <Default Extension="config" ContentType="application/xml"/>
 </Types>`,
   );
 
@@ -131,6 +132,32 @@ export async function writeColored3MF(
 </model>`;
 
   zip.folder("3D")!.file("3dmodel.model", model);
+
+  // Bambu Studio and Orca read filament assignment from here rather than from
+  // the core spec's materials, so without it every band lands on filament 1
+  // and has to be reassigned by hand. Slicers that do not know this file
+  // ignore it.
+  //
+  // Note this assigns a slot, not a colour: what comes out is whatever
+  // filament is loaded in that slot. A file cannot dictate the colour.
+  const parts = bandStarts.map(
+    (_, b) =>
+      `    <part id="${FIRST_BAND_ID + b}" subtype="normal_part">
+      <metadata key="name" value="Band ${b + 1}"/>
+      <metadata key="extruder" value="${b + 1}"/>
+    </part>`,
+  );
+
+  zip.folder("Metadata")!.file(
+    "model_settings.config",
+    `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="${assemblyId}">
+    <metadata key="name" value="Lithophane"/>
+${parts.join("\n")}
+  </object>
+</config>`,
+  );
 
   return await zip.generateAsync({
     type: "arraybuffer",
