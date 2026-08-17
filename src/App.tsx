@@ -188,6 +188,34 @@ body {
   user-select: none;
 }
 
+.staleChip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.staleBanner {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: 90%;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fde68a;
+  font-size: 0.78rem;
+  text-align: center;
+  pointer-events: none;
+}
+
 .preview-empty {
   position: absolute;
   inset: 0;
@@ -430,6 +458,20 @@ export default function App() {
   const [levels, setLevels] = useState(0);
 
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
+
+  // The preview shows whatever was generated last. Without tracking which
+  // settings produced it, changing the crop and switching tabs shows the old
+  // model with no hint that it is out of date — which reads as the generator
+  // disagreeing with the editor.
+  const [imgVersion, setImgVersion] = useState(0);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+
+  /** Everything the generated mesh depends on. */
+  const settingsKey = JSON.stringify([
+    imgVersion, shapeId, widthMm, minT, maxT, frameMm,
+    quality, smoothing, levels, layerHeight, splitLayers, colors,
+  ]);
+  const previewStale = previewMesh !== null && previewKey !== settingsKey;
   const [view, setView] = useState<"editor" | "preview">("editor");
   const [flatShading, setFlatShading] = useState(true);
 
@@ -636,6 +678,7 @@ export default function App() {
           bandStarts: result.previewBands,
           colors: [...colors],
         });
+        setPreviewKey(settingsKey);
         setView("preview");
 
         if (download) {
@@ -1177,14 +1220,17 @@ export default function App() {
             </div>
 
             {view === "preview" && (
-              <label className="shadeToggle">
-                <input
-                  type="checkbox"
-                  checked={flatShading}
-                  onChange={(e) => setFlatShading(e.target.checked)}
-                />
-                Flat shading
-              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {previewStale && <span className="staleChip">out of date</span>}
+                <label className="shadeToggle">
+                  <input
+                    type="checkbox"
+                    checked={flatShading}
+                    onChange={(e) => setFlatShading(e.target.checked)}
+                  />
+                  Flat shading
+                </label>
+              </div>
             )}
           </div>
 
@@ -1206,7 +1252,10 @@ export default function App() {
                 rotate={rotate}
                 flipH={flipH}
                 flipV={flipV}
-                onImageData={setImgData}
+                onImageData={(d) => {
+                  setImgData(d);
+                  setImgVersion((v) => v + 1);
+                }}
               />
             </div>
 
@@ -1223,6 +1272,13 @@ export default function App() {
                 >
                   <MeshPreview mesh={previewMesh} flatShading={flatShading} />
                 </React.Suspense>
+              )}
+
+              {previewStale && (
+                <div className="staleBanner">
+                  Settings changed since this was built — press{" "}
+                  <strong>Preview in 3D</strong> to rebuild.
+                </div>
               )}
             </div>
           </div>
