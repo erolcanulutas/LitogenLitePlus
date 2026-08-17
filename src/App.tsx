@@ -380,6 +380,12 @@ const FOOTER_MESSAGES = [
   "Where technology meets nostalgia.",
 ];
 
+/** Default palette for new bands: light at the bottom, darker going up. */
+const BAND_PALETTE = [
+  "#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8",
+  "#047857", "#b45309", "#6d28d9", "#0f172a",
+];
+
 function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
   const blob = new Blob([buf], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
@@ -471,30 +477,35 @@ export default function App() {
     setColors(["#f2f2f2"]);
   }
 
-  /** Default palette for new bands: light at the bottom, darker going up. */
-  const BAND_PALETTE = ["#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8", "#047857",
-                        "#b45309", "#6d28d9", "#0f172a"];
-
   function setBandColor(index: number, value: string) {
     setColors((prev) => prev.map((c, i) => (i === index ? value : c)));
   }
 
-  /** Drops or pulls in band boundaries that no longer fit a thinner model. */
+  /**
+   * Drops or pulls in band boundaries that no longer fit a thinner model.
+   *
+   * Splits and colours have to move together, so both are worked out here and
+   * set outright. Deriving one inside the other's updater does not work —
+   * updaters run later, not during the call.
+   */
   function clampBandsTo(newMaxT: number) {
     const limit = Math.max(1, Math.round(newMaxT / layerHeight)) - 1;
-    setSplitLayers((prev) => {
-      const next: number[] = [];
-      for (const s of prev) {
-        const v = Math.min(s, limit - (prev.length - 1 - next.length));
-        if (v >= 1 && (next.length === 0 || v > next[next.length - 1])) {
-          next.push(v);
-        }
+
+    const next: number[] = [];
+    for (const s of splitLayers) {
+      const v = Math.min(s, limit);
+      if (v >= 1 && (next.length === 0 || v > next[next.length - 1])) {
+        next.push(v);
       }
-      if (next.length !== prev.length) {
-        setColors((c) => c.slice(0, next.length + 1));
-      }
-      return next;
-    });
+    }
+
+    if (next.length === splitLayers.length) {
+      if (next.some((v, i) => v !== splitLayers[i])) setSplitLayers(next);
+      return;
+    }
+
+    setSplitLayers(next);
+    setColors(colors.slice(0, next.length + 1));
   }
 
   /** Sets a band's last layer, keeping the list strictly increasing. */
@@ -511,22 +522,21 @@ export default function App() {
     });
   }
 
+  /** Where a new boundary would go: halfway to the top, on a layer. */
+  function nextBandBoundary(): number | null {
+    const last = splitLayers.length > 0 ? splitLayers[splitLayers.length - 1] : 0;
+    const next = Math.round((last + totalLayers) / 2);
+    if (splitLayers.length >= 7) return null;
+    if (next <= last || next > totalLayers - 1) return null;
+    return next;
+  }
+
   function addBand() {
-    let added = false;
-    setSplitLayers((prev) => {
-      const last = prev.length > 0 ? prev[prev.length - 1] : 0;
-      // Halfway between the last boundary and the top, on a layer.
-      const next = Math.round((last + totalLayers) / 2);
-      if (next <= last || next > totalLayers - 1) return prev;
-      added = true;
-      return [...prev, next];
-    });
-    if (added) {
-      setColors((prev) => [
-        ...prev,
-        BAND_PALETTE[prev.length % BAND_PALETTE.length],
-      ]);
-    }
+    const next = nextBandBoundary();
+    if (next === null) return;
+
+    setSplitLayers([...splitLayers, next]);
+    setColors([...colors, BAND_PALETTE[colors.length % BAND_PALETTE.length]]);
   }
 
   function removeBand(index: number) {
@@ -808,23 +818,16 @@ export default function App() {
             <div className="spinBtns">
               <button
                 className="spinBtn"
-                onClick={() => {
-                  setMaxT((v) => {
-                    const next = +(v + 0.1).toFixed(2);
-                    return next;
-                  });
-                }}
+                onClick={() => setMaxT(+(maxT + 0.1).toFixed(2))}
               >
                 ▲
               </button>
               <button
                 className="spinBtn"
                 onClick={() => {
-                  setMaxT((v) => {
-                    const next = +(v - 0.1).toFixed(2);
-                    clampBandsTo(next);
-                    return next;
-                  });
+                  const next = +(maxT - 0.1).toFixed(2);
+                  setMaxT(next);
+                  clampBandsTo(next);
                 }}
               >
                 ▼
@@ -977,7 +980,12 @@ export default function App() {
             className="btn"
             style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
             onClick={addBand}
-            disabled={splitLayers.length >= 7 || splitLayers.length >= totalLayers - 1}
+            disabled={nextBandBoundary() === null}
+            title={
+              nextBandBoundary() === null
+                ? "No layers left to give a new band — raise Max thickness or lower Layer height"
+                : undefined
+            }
           >
             + Add color band
           </button>
