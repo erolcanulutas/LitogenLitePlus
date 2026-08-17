@@ -234,7 +234,13 @@ body {
 .bandTop {
   flex: 1;
   font-size: 0.78rem;
-  color: #64748b;
+  color: #94a3b8;
+}
+
+.bandHint {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: #475569;
 }
 
 .bandDrop {
@@ -403,10 +409,16 @@ export default function App() {
   const [minT, setMinT] = useState(0.8);
   const [maxT, setMaxT] = useState(3.0);
   const [frameMm, setFrameMm] = useState(1.5);
-  // Band boundaries, ascending, plus one colour per band (so one more colour
-  // than boundaries). No boundaries means a single-colour STL.
-  const [splits, setSplits] = useState<number[]>([]);
+  const [layerHeight, setLayerHeight] = useState(0.2);
+
+  // Band boundaries as layer counts through the thickness, ascending, plus one
+  // colour per band (so one more colour than boundaries). Empty means a
+  // single-colour STL. Counting in layers keeps every boundary on something
+  // the printer can actually land on.
+  const [splitLayers, setSplitLayers] = useState<number[]>([]);
   const [colors, setColors] = useState<string[]>(["#f2f2f2"]);
+
+  const totalLayers = Math.max(1, Math.round(maxT / layerHeight));
   const [quality, setQuality] = useState<Quality>("normal");
   const [smoothing, setSmoothing] = useState(1.0);
   const [levels, setLevels] = useState(0);
@@ -455,7 +467,7 @@ export default function App() {
     setMaxT(3.0);
     setMinT(0.8);
     setFrameMm(1.5);
-    setSplits([]);
+    setSplitLayers([]);
     setColors(["#f2f2f2"]);
   }
 
@@ -467,28 +479,58 @@ export default function App() {
     setColors((prev) => prev.map((c, i) => (i === index ? value : c)));
   }
 
+  /** Drops or pulls in band boundaries that no longer fit a thinner model. */
+  function clampBandsTo(newMaxT: number) {
+    const limit = Math.max(1, Math.round(newMaxT / layerHeight)) - 1;
+    setSplitLayers((prev) => {
+      const next: number[] = [];
+      for (const s of prev) {
+        const v = Math.min(s, limit - (prev.length - 1 - next.length));
+        if (v >= 1 && (next.length === 0 || v > next[next.length - 1])) {
+          next.push(v);
+        }
+      }
+      if (next.length !== prev.length) {
+        setColors((c) => c.slice(0, next.length + 1));
+      }
+      return next;
+    });
+  }
+
+  /** Sets a band's last layer, keeping the list strictly increasing. */
   function setSplitAt(index: number, value: number) {
     if (Number.isNaN(value)) return;
-    setSplits((prev) =>
-      prev.map((s, i) =>
-        i === index ? +Math.max(0.1, Math.min(maxT - 0.1, value)).toFixed(2) : s,
-      ),
-    );
+    setSplitLayers((prev) => {
+      const lowest = index > 0 ? prev[index - 1] + 1 : 1;
+      const highest =
+        index + 1 < prev.length ? prev[index + 1] - 1 : totalLayers - 1;
+      if (highest < lowest) return prev;
+
+      const clamped = Math.max(lowest, Math.min(highest, Math.round(value)));
+      return prev.map((s, i) => (i === index ? clamped : s));
+    });
   }
 
   function addBand() {
-    setSplits((prev) => {
+    let added = false;
+    setSplitLayers((prev) => {
       const last = prev.length > 0 ? prev[prev.length - 1] : 0;
-      const next = +((last + maxT) / 2).toFixed(2);
-      // Refuse to add a band with no thickness left to give it.
-      if (next >= maxT - 0.05) return prev;
+      // Halfway between the last boundary and the top, on a layer.
+      const next = Math.round((last + totalLayers) / 2);
+      if (next <= last || next > totalLayers - 1) return prev;
+      added = true;
       return [...prev, next];
     });
-    setColors((prev) => [...prev, BAND_PALETTE[prev.length % BAND_PALETTE.length]]);
+    if (added) {
+      setColors((prev) => [
+        ...prev,
+        BAND_PALETTE[prev.length % BAND_PALETTE.length],
+      ]);
+    }
   }
 
   function removeBand(index: number) {
-    setSplits((prev) => prev.filter((_, i) => i !== index));
+    setSplitLayers((prev) => prev.filter((_, i) => i !== index));
     setColors((prev) => prev.filter((_, i) => i !== index + 1));
   }
 
@@ -536,6 +578,7 @@ export default function App() {
         extension: "stl" | "3mf";
         preview: ArrayBuffer;
         previewTriangles: number;
+        previewBands: number[];
       }>((resolve, reject) => {
         const handler = (e: MessageEvent) => {
           if (e.data.ok) {
@@ -544,6 +587,7 @@ export default function App() {
               extension: e.data.extension,
               preview: e.data.preview,
               previewTriangles: e.data.previewTriangles,
+              previewBands: e.data.previewBands,
             });
           } else {
             reject(e.data.error);
@@ -566,9 +610,9 @@ export default function App() {
           quality,
           smoothing,
           levels,
-          splitHeightsMm: splits,
+          splitHeightsMm: splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
           colors,
-          layerHeight: 0.2,
+          layerHeight,
           emboss: "back",
         });
       });
@@ -579,6 +623,8 @@ export default function App() {
         setPreviewMesh({
           positions: new Float32Array(result.preview),
           triangleCount: result.previewTriangles,
+          bandStarts: result.previewBands,
+          colors: [...colors],
         });
         setView("preview");
 
@@ -756,9 +802,7 @@ export default function App() {
               onChange={(e) => {
                 const v = +e.target.value;
                 setMaxT(v);
-                setSplits((prev) =>
-                  prev.map((s) => +Math.min(s, v - 0.1).toFixed(2)),
-                );
+                clampBandsTo(v);
               }}
             />
             <div className="spinBtns">
@@ -778,9 +822,7 @@ export default function App() {
                 onClick={() => {
                   setMaxT((v) => {
                     const next = +(v - 0.1).toFixed(2);
-                    setSplits((prev) =>
-                      prev.map((s) => +Math.min(s, next - 0.1).toFixed(2)),
-                    );
+                    clampBandsTo(next);
                     return next;
                   });
                 }}
@@ -849,56 +891,93 @@ export default function App() {
           </div>
 
           <div className="label-row">
-            <label className="miniLabel">Color Bands</label>
-            <InfoIcon text="Slices the lithophane into stacked bodies at the given thicknesses and exports a 3MF instead of an STL. The bodies arrive as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL." />
+            <label className="miniLabel">Layer Height (mm)</label>
+            <InfoIcon text="Your slicer's layer height. Colour bands are counted in these, so every boundary lands on a layer the printer can actually stop at." />
+          </div>
+
+          <div className="spinRow">
+            <input
+              className="spinInput"
+              type="number"
+              min={0.04}
+              max={0.4}
+              step={0.02}
+              value={layerHeight}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v >= 0.04 && v <= 0.4) {
+                  setLayerHeight(+v.toFixed(2));
+                }
+              }}
+            />
+          </div>
+
+          <div className="label-row" style={{ marginTop: 12 }}>
+            <label className="miniLabel">
+              Color Bands · {totalLayers} layers
+            </label>
+            <InfoIcon text="Slices the lithophane into stacked bodies through its thickness and exports a 3MF instead of an STL. The bodies come out as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL." />
           </div>
 
           <div className="bands">
-            {colors.map((color, b) => (
-              <div className="bandRow" key={b}>
-                <input
-                  className="bandSwatch"
-                  type="color"
-                  value={color}
-                  onChange={(e) => setBandColor(b, e.target.value)}
-                  title={`Band ${b + 1} colour`}
-                />
+            {colors.map((color, b) => {
+              const first = b === 0 ? 1 : splitLayers[b - 1] + 1;
+              const isTop = b >= splitLayers.length;
+              const last = isTop ? totalLayers : splitLayers[b];
 
-                {b < splits.length ? (
-                  <>
-                    <input
-                      className="spinInput bandHeight"
-                      type="number"
-                      min={0.1}
-                      max={maxT}
-                      step={0.1}
-                      value={splits[b]}
-                      onChange={(e) => setSplitAt(b, Number(e.target.value))}
-                    />
-                    <span className="bandUnit">mm</span>
-                    <button
-                      className="bandDrop"
-                      onClick={() => removeBand(b)}
-                      title="Remove this band"
-                    >
-                      ×
-                    </button>
-                  </>
-                ) : (
-                  <span className="bandTop">
-                    up to {maxT.toFixed(1)} mm
-                    {splits.length > 0 && " (top)"}
-                  </span>
-                )}
-              </div>
-            ))}
+              return (
+                <div className="bandRow" key={b}>
+                  <input
+                    className="bandSwatch"
+                    type="color"
+                    value={color}
+                    onChange={(e) => setBandColor(b, e.target.value)}
+                    title={`Band ${b + 1} colour`}
+                  />
+
+                  <span className="bandUnit">layer {first} –</span>
+
+                  {isTop ? (
+                    <span className="bandTop">
+                      {last}
+                      {splitLayers.length > 0 && " (top)"}
+                    </span>
+                  ) : (
+                    <>
+                      <input
+                        className="spinInput bandHeight"
+                        type="number"
+                        min={1}
+                        max={totalLayers - 1}
+                        step={1}
+                        value={last}
+                        onChange={(e) => setSplitAt(b, Number(e.target.value))}
+                      />
+                      <button
+                        className="bandDrop"
+                        onClick={() => removeBand(b)}
+                        title="Remove this band"
+                      >
+                        ×
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="bandHint">
+            {splitLayers.length === 0
+              ? `single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick`
+              : `${(layerHeight).toFixed(2)} mm per layer · exports as 3MF`}
           </div>
 
           <button
             className="btn"
             style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
             onClick={addBand}
-            disabled={splits.length >= 7}
+            disabled={splitLayers.length >= 7 || splitLayers.length >= totalLayers - 1}
           >
             + Add color band
           </button>

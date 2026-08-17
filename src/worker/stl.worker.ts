@@ -37,6 +37,8 @@ type JobResponse =
       /** Copy of the exported triangles, for the on-page preview. */
       preview: ArrayBuffer;
       previewTriangles: number;
+      /** Start triangle of each colour band, so the preview can tint them. */
+      previewBands: number[];
     }
   | { id: number; ok: false; error: string };
 
@@ -158,6 +160,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
         extension: "3mf",
         preview: preview.buffer,
         previewTriangles: split.triangleCount,
+        previewBands: split.bandStarts,
       };
       (self as unknown as Worker).postMessage(res, {
         transfer: [file, preview.buffer],
@@ -176,6 +179,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       extension: "stl",
       preview: preview.buffer,
       previewTriangles: mesh.triangleCount,
+      previewBands: [0],
     };
     (self as unknown as Worker).postMessage(res, {
       transfer: [file, preview.buffer],

@@ -6,6 +6,10 @@ export type PreviewMesh = {
   /** 9 floats per triangle, in the exported (upright) orientation. */
   positions: Float32Array;
   triangleCount: number;
+  /** Start triangle of each colour band, lowest first. */
+  bandStarts: number[];
+  /** One CSS colour per band. */
+  colors: string[];
 };
 
 type Props = {
@@ -22,7 +26,7 @@ type Props = {
 export default function MeshPreview({ mesh, flatShading }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const materialsRef = useRef<THREE.MeshStandardMaterial[]>([]);
   const controlsRef = useRef<OrbitControls | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
 
@@ -65,16 +69,11 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     rim.position.set(1.2, 0.8, -0.6);
     scene.add(rim);
 
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xd8dee9,
-      roughness: 0.72,
-      metalness: 0.02,
-      side: THREE.DoubleSide,
-      flatShading: true,
-    });
-    materialRef.current = material;
-
-    const mesh3d = new THREE.Mesh(new THREE.BufferGeometry(), material);
+    // Material list, one per colour band; filled in when a mesh arrives.
+    const mesh3d = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      [] as THREE.MeshStandardMaterial[],
+    );
     scene.add(mesh3d);
 
     // Frames the model regardless of its size.
@@ -118,9 +117,15 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     };
     tick();
 
-    const swapGeometry = (next: THREE.BufferGeometry) => {
+    const swapGeometry = (
+      next: THREE.BufferGeometry,
+      mats: THREE.MeshStandardMaterial[],
+    ) => {
       mesh3d.geometry.dispose();
+      for (const m of materialsRef.current) m.dispose();
       mesh3d.geometry = next;
+      mesh3d.material = mats;
+      materialsRef.current = mats;
     };
     (host as HTMLDivElement & { __swap?: typeof swapGeometry }).__swap =
       swapGeometry;
@@ -130,37 +135,64 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
       observer.disconnect();
       controls.dispose();
       mesh3d.geometry.dispose();
-      material.dispose();
+      for (const m of materialsRef.current) m.dispose();
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
   }, []);
 
-  // New mesh -> new geometry, then reframe.
+  // New mesh -> new geometry and one material per band, then reframe.
   useEffect(() => {
     const host = hostRef.current as
-      | (HTMLDivElement & { __swap?: (g: THREE.BufferGeometry) => void })
+      | (HTMLDivElement & {
+          __swap?: (
+            g: THREE.BufferGeometry,
+            m: THREE.MeshStandardMaterial[],
+          ) => void;
+        })
       | null;
     if (!host?.__swap) return;
 
     const geo = new THREE.BufferGeometry();
+    const mats: THREE.MeshStandardMaterial[] = [];
+
     if (mesh && mesh.triangleCount > 0) {
       geo.setAttribute(
         "position",
         new THREE.BufferAttribute(mesh.positions, 3),
       );
       geo.computeVertexNormals();
+
+      // A draw group per band lets each carry its own colour, matching what
+      // the exported 3MF assigns to the corresponding body.
+      const starts = mesh.bandStarts.length > 0 ? mesh.bandStarts : [0];
+      for (let b = 0; b < starts.length; b++) {
+        const from = starts[b];
+        const to = b + 1 < starts.length ? starts[b + 1] : mesh.triangleCount;
+
+        geo.addGroup(from * 3, (to - from) * 3, b);
+        mats.push(
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color(mesh.colors[b] ?? "#d8dee9"),
+            roughness: 0.72,
+            metalness: 0.02,
+            side: THREE.DoubleSide,
+            flatShading,
+          }),
+        );
+      }
     }
+
     geometryRef.current = geo;
-    host.__swap(geo);
+    host.__swap(geo, mats);
     fitRef.current?.();
-  }, [mesh]);
+  }, [mesh, flatShading]);
 
   useEffect(() => {
-    const m = materialRef.current;
-    if (!m) return;
-    m.flatShading = flatShading;
-    m.needsUpdate = true;
+    for (const m of materialsRef.current) {
+      m.flatShading = flatShading;
+      m.needsUpdate = true;
+    }
   }, [flatShading]);
 
   return (
