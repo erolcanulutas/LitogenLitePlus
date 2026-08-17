@@ -52,6 +52,14 @@ type Props = {
   rotate: number; // IMAGE rotation (background)
   flipH: boolean;
   flipV: boolean;
+  /**
+   * Colour for anything the photo does not cover.
+   *
+   * Without it those pixels come out transparent, which reads as luminance 0
+   * — solid black — and prints as the thickest, most opaque part of the model.
+   * White is usually what is wanted: thin, and light passes through.
+   */
+  bgColor: string;
   /** Frame band width in mm, for showing what it will cover. */
   frameMm: number;
   /** Print width in mm; the frame is only meaningful relative to it. */
@@ -89,7 +97,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
   (
     {
       image, cropRatio, shapeId, rotate, flipH, flipV,
-      frameMm, widthMm, onImageData,
+      bgColor, frameMm, widthMm, onImageData,
     },
     ref
   ) => {
@@ -271,6 +279,10 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         const cropPixelX = W / 2 + crop.cx * dwBg;
         const cropPixelY = H / 2 + crop.cy * dwBg;
 
+        // Anything the photo does not reach must still be a real colour.
+        octx.fillStyle = bgColor;
+        octx.fillRect(0, 0, OUT_W, OUT_H);
+
         octx.save();
         octx.translate(OUT_W / 2, OUT_H / 2);
         octx.rotate(deg2rad(-crop.rot));
@@ -328,18 +340,27 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const dh = ih * scale;
       fitRef.current = { dw, dh };
 
+      // Crop pixels
+      const cropW = crop.w * dw;
+      const cropH = cropW / cropRatio;
+      const cx = W / 2 + crop.cx * dw;
+      const cy = H / 2 + crop.cy * dw;
+
+      // Backdrop first, so the parts of the crop the photo does not reach look
+      // here the way they will come out.
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(deg2rad(crop.rot));
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(-cropW / 2, -cropH / 2, cropW, cropH);
+      ctx.restore();
+
       ctx.save();
       ctx.translate(W / 2, H / 2);
       ctx.rotate(rad);
       ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
       ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
       ctx.restore();
-
-      // Crop pixels
-      const cropW = crop.w * dw;
-      const cropH = cropW / cropRatio;
-      const cx = W / 2 + crop.cx * dw;
-      const cy = H / 2 + crop.cy * dw;
 
       // 3. Shadow Mask
       ctx.save();
@@ -441,7 +462,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       // 5. Output generation
       triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
-        frameMm, widthMm]);
+        frameMm, widthMm, bgColor]);
 
     /* ---------------------------------------------
      * Interaction Logic

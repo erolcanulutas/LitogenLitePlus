@@ -451,6 +451,10 @@ export default function App() {
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
   const [imgData, setImgData] = useState<ImageData | null>(null);
 
+  // Fills whatever the photo does not cover. White by default: untouched
+  // corners then come out thin and bright rather than solid and opaque.
+  const [bgColor, setBgColor] = useState("#ffffff");
+
   const [rotate, setRotate] = useState(0);
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
@@ -493,6 +497,8 @@ export default function App() {
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
   const [view, setView] = useState<"editor" | "preview">("editor");
   const [flatShading, setFlatShading] = useState(true);
+  const [lightBackground, setLightBackground] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
@@ -762,6 +768,22 @@ export default function App() {
               <span>📂 Select Image or Drag&Drop</span>
             )}
           </label>
+
+          <div className="label-row" style={{ marginTop: 12 }}>
+            <label className="miniLabel">Backdrop</label>
+            <InfoIcon text="Fills any part of the crop the photo does not cover. Leave it white so bare corners print thin and let light through — without it they come out as the thickest, most opaque part of the model." />
+          </div>
+
+          <div className="bandRow">
+            <input
+              className="bandSwatch"
+              type="color"
+              value={bgColor}
+              onChange={(e) => setBgColor(e.target.value)}
+              title="Colour behind the photo"
+            />
+            <span className="bandTop">behind the photo</span>
+          </div>
         </div>
 
         <div className="section">
@@ -1258,6 +1280,22 @@ export default function App() {
                   />
                   Flat shading
                 </label>
+                <label className="shadeToggle">
+                  <input
+                    type="checkbox"
+                    checked={lightBackground}
+                    onChange={(e) => setLightBackground(e.target.checked)}
+                  />
+                  Light background
+                </label>
+                <label className="shadeToggle">
+                  <input
+                    type="checkbox"
+                    checked={showGrid}
+                    onChange={(e) => setShowGrid(e.target.checked)}
+                  />
+                  Grid
+                </label>
               </div>
             )}
           </div>
@@ -1280,6 +1318,7 @@ export default function App() {
                 rotate={rotate}
                 flipH={flipH}
                 flipV={flipV}
+                bgColor={bgColor}
                 frameMm={frameMm}
                 widthMm={widthMm}
                 onImageData={handleImageData}
@@ -1297,7 +1336,12 @@ export default function App() {
                 <React.Suspense
                   fallback={<div className="preview-empty">Loading viewer…</div>}
                 >
-                  <MeshPreview mesh={previewMesh} flatShading={flatShading} />
+                  <MeshPreview
+                    mesh={previewMesh}
+                    flatShading={flatShading}
+                    lightBackground={lightBackground}
+                    showGrid={showGrid}
+                  />
                 </React.Suspense>
               )}
 

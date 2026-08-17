@@ -16,6 +16,10 @@ type Props = {
   mesh: PreviewMesh | null;
   /** Flat shading shows every facet, which is how a slicer draws it. */
   flatShading: boolean;
+  /** Pale backdrop, so dark filament colours stay readable. */
+  lightBackground: boolean;
+  /** Ground grid under the model, for a sense of scale. */
+  showGrid: boolean;
 };
 
 /**
@@ -23,12 +27,19 @@ type Props = {
  * orientation — so faceting and edge quality can be judged without a round
  * trip through a slicer.
  */
-export default function MeshPreview({ mesh, flatShading }: Props) {
+export default function MeshPreview({
+  mesh,
+  flatShading,
+  lightBackground,
+  showGrid,
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const materialsRef = useRef<THREE.MeshStandardMaterial[]>([]);
   const controlsRef = useRef<OrbitControls | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
 
   // Scene lives for the lifetime of the panel; only the geometry swaps.
   useEffect(() => {
@@ -36,7 +47,7 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     if (!host) return;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b1220);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 5000);
     // The exported model stands with +Z up. OrbitControls puts its poles on
@@ -76,13 +87,35 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     );
     scene.add(mesh3d);
 
-    // Frames the model regardless of its size.
+    // Frames the model regardless of its size, and sizes the grid to match.
     const fit = () => {
       const geo = geometryRef.current;
       if (!geo) return;
       geo.computeBoundingSphere();
+      geo.computeBoundingBox();
       const s = geo.boundingSphere;
       if (!s) return;
+
+      if (gridRef.current) {
+        scene.remove(gridRef.current);
+        gridRef.current.geometry.dispose();
+        (gridRef.current.material as THREE.Material).dispose();
+        gridRef.current = null;
+      }
+
+      if (s.radius > 0) {
+        // Round the spacing to something a ruler would recognise.
+        const span = Math.ceil((s.radius * 3) / 10) * 10;
+        const grid = new THREE.GridHelper(span, Math.max(2, span / 10));
+        // GridHelper lies in XZ; the model stands with Z up.
+        grid.rotation.x = Math.PI / 2;
+        grid.position.set(s.center.x, s.center.y, geo.boundingBox?.min.z ?? 0);
+        // Visibility is applied by the effect below, which also re-runs when
+        // a new mesh rebuilds this.
+        grid.visible = false;
+        gridRef.current = grid;
+        scene.add(grid);
+      }
 
       const dist = (s.radius * 1.6) / Math.tan((camera.fov * Math.PI) / 360);
       controls.target.copy(s.center);
@@ -189,6 +222,18 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     // Toggling flat shading rebuilds the materials here rather than mutating
     // them in a second effect; it is a manual switch, not a per-frame cost.
   }, [mesh, flatShading]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (scene) {
+      scene.background = new THREE.Color(lightBackground ? 0xe8ecf2 : 0x0b1220);
+    }
+  }, [lightBackground]);
+
+  // Also keyed on the mesh: a new model rebuilds the grid to fit it.
+  useEffect(() => {
+    if (gridRef.current) gridRef.current.visible = showGrid;
+  }, [showGrid, mesh]);
 
   return (
     <div
