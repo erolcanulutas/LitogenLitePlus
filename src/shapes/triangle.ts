@@ -2,6 +2,7 @@ import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types"
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
 import { emitTerracedTriangle } from "../core/terrace";
+import { emitWallColumn } from "../core/wall";
 import { triangleCellMm } from "../core/quality";
 
 /** Matches the ceiling in core/radial.ts: N^2 triangles must stay bounded. */
@@ -25,7 +26,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZ } = params;
+    const { widthMm, quality, smoothing, levels, splitZs } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -180,33 +181,12 @@ export const TriangleShape: ShapePlugin = {
     // --- rim ---------------------------------------------------------------
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
-
-      // Put a vertex ring at splitZ so a later colour cut runs along real
-      // edges rather than through these quads' diagonals.
-      const cut =
-        splitZ > 0 && splitZ < Math.min(edgeZ[i], edgeZ[j]) ? splitZ : 0;
-
-      if (cut > 0) {
-        mb.addQuad(
-          edgeX[i], edgeY[i], cut,
-          edgeX[i], edgeY[i], 0,
-          edgeX[j], edgeY[j], 0,
-          edgeX[j], edgeY[j], cut,
-        );
-        mb.addQuad(
-          edgeX[i], edgeY[i], edgeZ[i],
-          edgeX[i], edgeY[i], cut,
-          edgeX[j], edgeY[j], cut,
-          edgeX[j], edgeY[j], edgeZ[j],
-        );
-      } else {
-        mb.addQuad(
-          edgeX[i], edgeY[i], edgeZ[i],
-          edgeX[i], edgeY[i], 0,
-          edgeX[j], edgeY[j], 0,
-          edgeX[j], edgeY[j], edgeZ[j],
-        );
-      }
+      emitWallColumn(
+        mb,
+        edgeX[i], edgeY[i], edgeZ[i],
+        edgeX[j], edgeY[j], edgeZ[j],
+        splitZs,
+      );
     }
 
     return mb.finish();

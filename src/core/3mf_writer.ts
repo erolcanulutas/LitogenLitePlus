@@ -1,20 +1,24 @@
 import JSZip from "jszip";
-import type { SplitMesh } from "./split_mesh";
+import type { BandedMesh } from "./split_mesh";
 
 function clean(n: number) {
   if (!Number.isFinite(n)) return 0;
   return +n.toFixed(6);
 }
 
+/** "#rrggbb" or "#rrggbbaa" -> the "#RRGGBBAA" 3MF wants. */
+function displayColor(css: string): string {
+  const hex = css.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+  if (hex.length === 6) return `#${hex}FF`;
+  if (hex.length === 8) return `#${hex}`;
+  return "#CCCCCCFF";
+}
+
 /**
  * Serialises one contiguous run of triangles as a 3MF <mesh>, welding
  * vertices by position so the body is a proper solid rather than a soup.
  */
-function meshXml(
-  positions: Float32Array,
-  from: number,
-  to: number,
-): string {
+function meshXml(positions: Float32Array, from: number, to: number): string {
   const vertsXml: string[] = [];
   const vertexMap = new Map<string, number>();
 
@@ -50,15 +54,22 @@ function meshXml(
 }
 
 /**
- * Two-body 3MF for multi-material printing.
+ * Multi-material 3MF.
  *
- * The halves go in as two separate objects, each carrying its own base
- * material, because that is what slicers actually act on — they assign
- * filament per object. Tagging triangles of a single body with different
- * materials is valid 3MF but PrusaSlicer and Bambu Studio both ignore it, so
- * that produced a file that looked right and printed in one colour.
+ * Each colour band goes in as its own object so a slicer can assign filament
+ * to it — tagging triangles of a single body with different materials is valid
+ * 3MF but PrusaSlicer and Bambu Studio both ignore it, which produced a file
+ * that looked right and printed in one colour.
+ *
+ * The bands are then gathered under one assembly object referencing them as
+ * <components>, and that is the only thing placed in <build>. A slicer
+ * therefore shows a single part made of several bodies: they move together and
+ * stay registered, rather than arriving as loose objects that can drift apart.
  */
-export async function writeColored3MF(mesh: SplitMesh): Promise<ArrayBuffer> {
+export async function writeColored3MF(
+  mesh: BandedMesh,
+  colors: readonly string[],
+): Promise<ArrayBuffer> {
   const zip = new JSZip();
 
   zip.file(
@@ -78,27 +89,44 @@ export async function writeColored3MF(mesh: SplitMesh): Promise<ArrayBuffer> {
 </Relationships>`,
   );
 
-  const { positions, triangleCount, belowCount } = mesh;
+  const { positions, triangleCount, bandStarts } = mesh;
+  const bandCount = bandStarts.length;
 
-  const lower = meshXml(positions, 0, belowCount);
-  const upper = meshXml(positions, belowCount, triangleCount);
+  const bases: string[] = [];
+  const objects: string[] = [];
+  const components: string[] = [];
+
+  // ids: 1 is the material group, 2..n+1 the bands, n+2 the assembly.
+  const FIRST_BAND_ID = 2;
+
+  for (let b = 0; b < bandCount; b++) {
+    const from = bandStarts[b];
+    const to = b + 1 < bandCount ? bandStarts[b + 1] : triangleCount;
+    const id = FIRST_BAND_ID + b;
+    const color = displayColor(colors[b] ?? "#CCCCCC");
+
+    bases.push(`<base name="Band ${b + 1}" displaycolor="${color}"/>`);
+    objects.push(
+      `<object id="${id}" type="model" name="Band ${b + 1}" pid="1" pindex="${b}">${meshXml(positions, from, to)}</object>`,
+    );
+    components.push(`<component objectid="${id}"/>`);
+  }
+
+  const assemblyId = FIRST_BAND_ID + bandCount;
 
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <metadata name="Application">Litogen Lite+</metadata>
   <resources>
-    <basematerials id="1">
-      <base name="Base" displaycolor="#FFFFFFFF"/>
-      <base name="Highlight" displaycolor="#111111FF"/>
-    </basematerials>
-
-    <object id="2" type="model" name="Base" pid="1" pindex="0">${lower}</object>
-    <object id="3" type="model" name="Highlight" pid="1" pindex="1">${upper}</object>
+    <basematerials id="1">${bases.join("")}</basematerials>
+    ${objects.join("\n    ")}
+    <object id="${assemblyId}" type="model" name="Lithophane">
+      <components>${components.join("")}</components>
+    </object>
   </resources>
 
   <build>
-    <item objectid="2"/>
-    <item objectid="3"/>
+    <item objectid="${assemblyId}"/>
   </build>
 </model>`;
 

@@ -3,7 +3,7 @@
 import { imageToHeightmap } from "../core/heightmap";
 import { writeBinarySTL } from "../core/stl_writer";
 import { writeColored3MF } from "../core/3mf_writer";
-import { splitMeshAtZ } from "../core/split_mesh";
+import { splitMeshAtLevels } from "../core/split_mesh";
 import type { EmbossSide } from "../core/types";
 import { getShape } from "../shapes";
 import type { Quality } from "../core/quality";
@@ -20,7 +20,10 @@ type JobRequest = {
   frameMm: number;
   emboss: EmbossSide;
   quality: Quality;
-  splitHeightMm: number;
+  /** Colour-band boundaries in mm. Empty means a single-colour STL. */
+  splitHeightsMm: number[];
+  /** One CSS colour per band, so one more than splitHeightsMm. */
+  colors: string[];
   smoothing: number;
   levels: number;
 };
@@ -115,8 +118,14 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       emboss: msg.emboss,
     };
 
-    const wantsSplit =
-      msg.splitHeightMm > 0 && msg.splitHeightMm < msg.maxT;
+    // Strictly increasing, strictly inside the model, and far enough apart to
+    // leave a band with actual thickness.
+    const cuts: number[] = [];
+    for (const h of [...(msg.splitHeightsMm ?? [])].sort((a, b) => a - b)) {
+      if (!(h > 0) || h >= msg.maxT) continue;
+      if (cuts.length > 0 && h - cuts[cuts.length - 1] < 1e-3) continue;
+      cuts.push(h);
+    }
 
     const buildParams = {
       widthMm: msg.widthMm,
@@ -128,18 +137,18 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       quality: msg.quality,
       smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
       levels: msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0,
-      splitZ: wantsSplit ? msg.splitHeightMm : 0,
+      splitZs: cuts,
     };
 
     const shape = getShape(msg.shapeId);
     const mesh = shape.build(buildCtx, buildParams);
 
-    if (wantsSplit) {
-      // Split while the mesh is still flat: splitHeightMm is a thickness.
-      const split = splitMeshAtZ(mesh, msg.splitHeightMm);
+    if (cuts.length > 0) {
+      // Split while the mesh is still flat: the cuts are thicknesses.
+      const split = splitMeshAtLevels(mesh, cuts);
       orientForPrinting(split.positions, split.triangleCount * 9);
 
-      const file = await writeColored3MF(split);
+      const file = await writeColored3MF(split, msg.colors ?? []);
       const preview = split.positions.slice(0, split.triangleCount * 9);
 
       const res: JobResponse = {

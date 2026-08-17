@@ -63,13 +63,12 @@ export type ShapeBuildParams = {
   levels: number;
 
   /**
-   * Height the model will later be cut at for a colour split, or 0.
+   * Heights the model will later be cut at for a colour split, ascending.
    *
-   * The generator puts a vertex ring on the rim wall at exactly this height so
-   * the cut runs along real edges. Otherwise it crosses the wall quads'
-   * diagonals and leaves T-junctions the cap cannot pair with.
+   * The generator puts a vertex ring on the rim wall at each one so the cuts
+   * run along real edges. See core/wall.ts.
    */
-  splitZ: number;
+  splitZs: readonly number[];
 };
 
 export type ShapePlugin = {

@@ -19,7 +19,7 @@ export const HexagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZ } = params;
+    const { widthMm, quality, smoothing, levels, splitZs } = params;
 
     const range = maxT - minT;
 
@@ -49,7 +49,7 @@ export const HexagonShape: ShapePlugin = {
       innerFraction: hasFrame ? innerApothem / apothem : 1,
       frameRings: hasFrame ? FRAME_RINGS : 0,
       frameHeight: maxT,
-      splitZ,
+      splitZs,
 
       boundaryAt: polygonBoundary(corners),
 

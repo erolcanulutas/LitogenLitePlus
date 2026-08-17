@@ -3,30 +3,70 @@ import { MeshBuilder, type Mesh } from "./mesh";
 const EPS = 1e-7;
 
 /**
- * The two halves of a colour-split model, each a closed solid in its own
+ * A model cut into horizontal colour bands, each a closed solid in its own
  * right, concatenated into one buffer.
  *
- * Keeping them separately watertight is the whole point: slicers assign
- * filament per object, so a multi-colour print needs two real bodies. Tagging
+ * Keeping every band separately watertight is the whole point: slicers assign
+ * filament per body, so a multi-colour print needs real solids. Tagging
  * triangles of a single body with different materials is legal 3MF but most
  * slicers ignore it, and an open shell gets rejected outright.
  */
-export type SplitMesh = {
+export type BandedMesh = {
   positions: Float32Array;
   triangleCount: number;
-  /** Triangles [0, belowCount) are the lower body, the rest the upper one. */
-  belowCount: number;
+  /** Start triangle of each band, lowest first. Length is the band count. */
+  bandStarts: number[];
 };
 
 /**
- * Cuts a heightfield model along a horizontal plane and caps both halves.
+ * Cuts a model into bands at the given heights, bottom-up.
+ *
+ * Each cut leaves a closed solid below and a closed solid above, so the upper
+ * body can simply be cut again for the next level. The floor a band inherits
+ * from the previous cut faces downwards and is ignored when the next
+ * cross-section is worked out, which is what makes the recursion safe.
+ *
+ * @param levels Cut heights, ascending, strictly inside the model.
+ */
+export function splitMeshAtLevels(
+  mesh: Mesh,
+  levels: readonly number[],
+): BandedMesh {
+  const bands: Mesh[] = [];
+
+  let remaining = mesh;
+  for (const z of levels) {
+    const { lower, upper } = splitOnce(remaining, z);
+    bands.push(lower);
+    remaining = upper;
+  }
+  bands.push(remaining);
+
+  let total = 0;
+  for (const b of bands) total += b.triangleCount;
+
+  const positions = new Float32Array(total * 9);
+  const bandStarts: number[] = [];
+
+  let at = 0;
+  for (const b of bands) {
+    bandStarts.push(at / 9);
+    positions.set(b.positions, at);
+    at += b.triangleCount * 9;
+  }
+
+  return { positions, triangleCount: total, bandStarts };
+}
+
+/**
+ * Cuts a model along one horizontal plane and caps both halves.
  *
  * Clipping alone leaves each half open where the plane passed through, so the
  * cross-section is triangulated too: the lower body gets a lid at the plane,
  * the upper body a floor. Both come from the same clipped polygons, wound
  * opposite ways, so they meet exactly.
  */
-export function splitMeshAtZ(mesh: Mesh, splitZ: number): SplitMesh {
+function splitOnce(mesh: Mesh, splitZ: number): { lower: Mesh; upper: Mesh } {
   const { positions, triangleCount } = mesh;
 
   const below = new MeshBuilder(triangleCount);
@@ -71,19 +111,7 @@ export function splitMeshAtZ(mesh: Mesh, splitZ: number): SplitMesh {
     if (facesUp) capFromPolygon(below, above, poly, aboveCount, splitZ);
   }
 
-  const belowMesh = below.finish();
-  const aboveMesh = above.finish();
-  const total = belowMesh.triangleCount + aboveMesh.triangleCount;
-
-  const merged = new Float32Array(total * 9);
-  merged.set(belowMesh.positions, 0);
-  merged.set(aboveMesh.positions, belowMesh.positions.length);
-
-  return {
-    positions: merged,
-    triangleCount: total,
-    belowCount: belowMesh.triangleCount,
-  };
+  return { lower: below.finish(), upper: above.finish() };
 }
 
 /** Lid on the lower body (+Z) and floor on the upper one (-Z). */

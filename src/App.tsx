@@ -201,6 +201,62 @@ body {
   pointer-events: none;
 }
 
+.bands {
+  display: grid;
+  gap: 6px;
+}
+
+.bandRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bandSwatch {
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #1e293b;
+  cursor: pointer;
+  flex: none;
+}
+
+.bandHeight { flex: 1; min-width: 0; }
+
+.bandUnit {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex: none;
+}
+
+.bandTop {
+  flex: 1;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.bandDrop {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bandDrop:hover {
+  color: #fca5a5;
+  border-color: #7f1d1d;
+  background: rgba(127, 29, 29, 0.2);
+}
+
 .build-tag {
   font-size: 0.65rem;
   font-weight: 500;
@@ -347,7 +403,10 @@ export default function App() {
   const [minT, setMinT] = useState(0.8);
   const [maxT, setMaxT] = useState(3.0);
   const [frameMm, setFrameMm] = useState(1.5);
-  const [splitHeightMm, setSplitHeightMm] = useState(0);
+  // Band boundaries, ascending, plus one colour per band (so one more colour
+  // than boundaries). No boundaries means a single-colour STL.
+  const [splits, setSplits] = useState<number[]>([]);
+  const [colors, setColors] = useState<string[]>(["#f2f2f2"]);
   const [quality, setQuality] = useState<Quality>("normal");
   const [smoothing, setSmoothing] = useState(1.0);
   const [levels, setLevels] = useState(0);
@@ -396,7 +455,41 @@ export default function App() {
     setMaxT(3.0);
     setMinT(0.8);
     setFrameMm(1.5);
-    setSplitHeightMm(0);
+    setSplits([]);
+    setColors(["#f2f2f2"]);
+  }
+
+  /** Default palette for new bands: light at the bottom, darker going up. */
+  const BAND_PALETTE = ["#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8", "#047857",
+                        "#b45309", "#6d28d9", "#0f172a"];
+
+  function setBandColor(index: number, value: string) {
+    setColors((prev) => prev.map((c, i) => (i === index ? value : c)));
+  }
+
+  function setSplitAt(index: number, value: number) {
+    if (Number.isNaN(value)) return;
+    setSplits((prev) =>
+      prev.map((s, i) =>
+        i === index ? +Math.max(0.1, Math.min(maxT - 0.1, value)).toFixed(2) : s,
+      ),
+    );
+  }
+
+  function addBand() {
+    setSplits((prev) => {
+      const last = prev.length > 0 ? prev[prev.length - 1] : 0;
+      const next = +((last + maxT) / 2).toFixed(2);
+      // Refuse to add a band with no thickness left to give it.
+      if (next >= maxT - 0.05) return prev;
+      return [...prev, next];
+    });
+    setColors((prev) => [...prev, BAND_PALETTE[prev.length % BAND_PALETTE.length]]);
+  }
+
+  function removeBand(index: number) {
+    setSplits((prev) => prev.filter((_, i) => i !== index));
+    setColors((prev) => prev.filter((_, i) => i !== index + 1));
   }
 
   function ensureWorker() {
@@ -473,7 +566,8 @@ export default function App() {
           quality,
           smoothing,
           levels,
-          splitHeightMm,
+          splitHeightsMm: splits,
+          colors,
           layerHeight: 0.2,
           emboss: "back",
         });
@@ -662,7 +756,9 @@ export default function App() {
               onChange={(e) => {
                 const v = +e.target.value;
                 setMaxT(v);
-                setSplitHeightMm((s) => +(Math.min(s, v).toFixed(2)));
+                setSplits((prev) =>
+                  prev.map((s) => +Math.min(s, v - 0.1).toFixed(2)),
+                );
               }}
             />
             <div className="spinBtns">
@@ -682,7 +778,9 @@ export default function App() {
                 onClick={() => {
                   setMaxT((v) => {
                     const next = +(v - 0.1).toFixed(2);
-                    setSplitHeightMm((s) => +(Math.min(s, next).toFixed(2)));
+                    setSplits((prev) =>
+                      prev.map((s) => +Math.min(s, next - 0.1).toFixed(2)),
+                    );
                     return next;
                   });
                 }}
@@ -751,61 +849,59 @@ export default function App() {
           </div>
 
           <div className="label-row">
-            <label className="miniLabel">Color Split (mm)</label>
-            <InfoIcon text="Splits the lithophane into two stacked STL bodies at this thickness for multicolor printing. Set to 0 to disable." />
+            <label className="miniLabel">Color Bands</label>
+            <InfoIcon text="Slices the lithophane into stacked bodies at the given thicknesses and exports a 3MF instead of an STL. The bodies arrive as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL." />
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <input
-              className="range"
-              type="range"
-              min={0}
-              max={maxT}
-              step={0.1}
-              value={splitHeightMm}
-              onChange={(e) =>
-                setSplitHeightMm(+Number(e.target.value).toFixed(2))
-              }
-            />
+          <div className="bands">
+            {colors.map((color, b) => (
+              <div className="bandRow" key={b}>
+                <input
+                  className="bandSwatch"
+                  type="color"
+                  value={color}
+                  onChange={(e) => setBandColor(b, e.target.value)}
+                  title={`Band ${b + 1} colour`}
+                />
 
-            <div className="spinRow">
-              <input
-                className="spinInput"
-                type="number"
-                min={0}
-                max={maxT}
-                step={0.1}
-                value={splitHeightMm}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  const clamped = Math.max(0, Math.min(maxT, v));
-                  setSplitHeightMm(+clamped.toFixed(2));
-                }}
-              />
-              <div className="spinBtns">
-                <button
-                  className="spinBtn"
-                  onClick={() =>
-                    setSplitHeightMm((v) =>
-                      +(Math.min(maxT, v + 0.1)).toFixed(2)
-                    )
-                  }
-                >
-                  ▲
-                </button>
-                <button
-                  className="spinBtn"
-                  onClick={() =>
-                    setSplitHeightMm((v) =>
-                      +(Math.max(0, v - 0.1)).toFixed(2)
-                    )
-                  }
-                >
-                  ▼
-                </button>
+                {b < splits.length ? (
+                  <>
+                    <input
+                      className="spinInput bandHeight"
+                      type="number"
+                      min={0.1}
+                      max={maxT}
+                      step={0.1}
+                      value={splits[b]}
+                      onChange={(e) => setSplitAt(b, Number(e.target.value))}
+                    />
+                    <span className="bandUnit">mm</span>
+                    <button
+                      className="bandDrop"
+                      onClick={() => removeBand(b)}
+                      title="Remove this band"
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : (
+                  <span className="bandTop">
+                    up to {maxT.toFixed(1)} mm
+                    {splits.length > 0 && " (top)"}
+                  </span>
+                )}
               </div>
-            </div>
+            ))}
           </div>
+
+          <button
+            className="btn"
+            style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+            onClick={addBand}
+            disabled={splits.length >= 7}
+          >
+            + Add color band
+          </button>
 
           <button
             className="btn"

@@ -1,5 +1,6 @@
 import { MeshBuilder, type Mesh } from "./mesh";
 import { emitTerracedTriangle } from "./terrace";
+import { emitWallColumn } from "./wall";
 
 /**
  * Shared generator for every shape built out of concentric rings: circle,
@@ -64,15 +65,12 @@ export type RadialSpec = {
   frameHeight: number;
 
   /**
-   * Height at which the model will later be cut for a colour split, or 0.
+   * Heights the model will later be cut at for a colour split, ascending.
    *
-   * The rim wall is emitted as two stacked bands with a vertex ring exactly
-   * here, so the cut lands on existing vertices. Without it the cut crosses
-   * the wall quads' diagonals and lands on a point the cap does not share —
-   * geometrically coincident, but a T-junction that leaves both halves
-   * reporting open edges.
+   * The rim wall gets a vertex ring at each one so the cuts land on existing
+   * vertices. See core/wall.ts for why that matters.
    */
-  splitZ: number;
+  splitZs: readonly number[];
 };
 
 /** Smallest ring worth emitting; below this the centre fan takes over. */
@@ -97,7 +95,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     heightOf,
     levels,
     frameHeight,
-    splitZ,
+    splitZs,
   } = spec;
 
   let targetCellMm = spec.targetCellMm;
@@ -276,33 +274,12 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   // --- rim wall ------------------------------------------------------------
   for (let i = 0; i < rimN; i++) {
     const j = (i + 1) % rimN;
-
-    // Split the band at splitZ when it lies below both ends, so a later cut
-    // runs along real edges instead of through the quads' diagonals.
-    const cut =
-      splitZ > 0 && splitZ < Math.min(inZ[i], inZ[j]) ? splitZ : 0;
-
-    if (cut > 0) {
-      mb.addQuad(
-        inX[i], inY[i], cut,
-        inX[i], inY[i], 0,
-        inX[j], inY[j], 0,
-        inX[j], inY[j], cut,
-      );
-      mb.addQuad(
-        inX[i], inY[i], inZ[i],
-        inX[i], inY[i], cut,
-        inX[j], inY[j], cut,
-        inX[j], inY[j], inZ[j],
-      );
-    } else {
-      mb.addQuad(
-        inX[i], inY[i], inZ[i],
-        inX[i], inY[i], 0,
-        inX[j], inY[j], 0,
-        inX[j], inY[j], inZ[j],
-      );
-    }
+    emitWallColumn(
+      mb,
+      inX[i], inY[i], inZ[i],
+      inX[j], inY[j], inZ[j],
+      splitZs,
+    );
   }
 
   return mb.finish();

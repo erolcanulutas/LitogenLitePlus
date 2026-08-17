@@ -20,7 +20,7 @@ STL (or a two-colour 3MF) — everything runs locally in your browser.
 | ⬠ | **Pentagon** lithophanes |
 | 🖼️ | Image import with in-browser crop, rotate and flip |
 | 📐 | Millimetre-accurate width, thickness and frame control |
-| 🎨 | Colour split → two stacked bodies exported as **3MF** for multi-material printing |
+| 🎨 | **Colour bands**: slice into as many stacked bodies as you like, pick a colour per band, exported as **3MF** — one part made of several bodies, so they stay registered |
 | ✒️ | **Graphic mode**: cuts the mesh along the picture's own contours, so logos and line art get mathematically straight edges instead of stair-stepped ones |
 | 🖥️ | **In-page 3D preview** of the exact exported mesh |
 | 🪶 | **Edge smoothing** control: trade a little sharpness for clean edges, at no cost in triangles |

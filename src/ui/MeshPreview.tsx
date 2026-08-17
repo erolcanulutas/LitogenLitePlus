@@ -35,6 +35,10 @@ export default function MeshPreview({ mesh, flatShading }: Props) {
     scene.background = new THREE.Color(0x0b1220);
 
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 5000);
+    // The exported model stands with +Z up. OrbitControls puts its poles on
+    // the camera's up axis, so leaving three's default +Y here would park them
+    // sideways: yaw would feel free while pitch hit a wall early.
+    camera.up.set(0, 0, 1);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     host.appendChild(renderer.domElement);
