@@ -3,6 +3,7 @@ import ImageEditor from "./ui/ImageEditor";
 import type { ImageEditorHandle } from "./ui/ImageEditor";
 
 import ImageControls from "./ui/ImageControls";
+import BandSlider from "./ui/BandSlider";
 import type { PreviewMesh } from "./ui/MeshPreview";
 
 // three.js is most of the bundle, and plenty of sessions never open the 3D
@@ -315,17 +316,6 @@ body {
 
 .linkBtn:hover { color: #94a3b8; }
 
-.bands {
-  display: grid;
-  gap: 6px;
-}
-
-.bandRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .bandSwatch {
   width: 34px;
   height: 30px;
@@ -337,44 +327,117 @@ body {
   flex: none;
 }
 
-.bandHeight { flex: 1; min-width: 0; }
-
-.bandUnit {
-  font-size: 0.75rem;
-  color: #64748b;
-  flex: none;
+.bandSlider {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.bandTop {
-  flex: 1;
-  font-size: 0.78rem;
-  color: #94a3b8;
+.bandTrack {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b1220;
 }
+
+.bandSeg {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.bandSegPick {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.bandKnob {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  margin-bottom: -11px;
+  display: flex;
+  align-items: center;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.bandKnob::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: #f8fafc;
+  box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.55);
+}
+
+.bandKnob:focus-visible { outline: none; }
+.bandKnob:focus-visible::before { background: #a5f3fc; }
+
+.bandKnobPill {
+  position: relative;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid #475569;
+  background: rgba(2, 6, 23, 0.9);
+  color: #e2e8f0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.bandKnobDrop {
+  position: relative;
+  margin-left: auto;
+  margin-right: 6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #475569;
+  border-radius: 50%;
+  background: rgba(2, 6, 23, 0.9);
+  color: #cbd5e1;
+  font-family: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bandKnobDrop:hover {
+  color: #fca5a5;
+  border-color: #7f1d1d;
+  background: rgba(127, 29, 29, 0.9);
+}
+
+.bandEnd {
+  font-size: 0.66rem;
+  color: #475569;
+  margin: 4px 2px 0;
+}
+
+.bandEndTop { margin: 0 2px 4px; }
 
 .bandHint {
   margin-top: 6px;
   font-size: 0.7rem;
   color: #475569;
-}
-
-.bandDrop {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border: 1px solid #334155;
-  border-radius: 6px;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.bandDrop:hover {
-  color: #fca5a5;
-  border-color: #7f1d1d;
-  background: rgba(127, 29, 29, 0.2);
 }
 
 .build-tag {
@@ -1144,58 +1207,20 @@ export default function App() {
             <InfoIcon text="Slices the lithophane into stacked bodies through its thickness and exports a 3MF instead of an STL. The bodies come out as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL." />
           </div>
 
-          <div className="bands">
-            {colors.map((color, b) => {
-              const first = b === 0 ? 1 : splitLayers[b - 1] + 1;
-              const isTop = b >= splitLayers.length;
-              const last = isTop ? totalLayers : splitLayers[b];
-
-              return (
-                <div className="bandRow" key={b}>
-                  <input
-                    className="bandSwatch"
-                    type="color"
-                    value={color}
-                    onChange={(e) => setBandColor(b, e.target.value)}
-                    title={`Band ${b + 1} colour`}
-                  />
-
-                  <span className="bandUnit">layer {first} –</span>
-
-                  {isTop ? (
-                    <span className="bandTop">
-                      {last}
-                      {splitLayers.length > 0 && " (top)"}
-                    </span>
-                  ) : (
-                    <>
-                      <input
-                        className="spinInput bandHeight"
-                        type="number"
-                        min={1}
-                        max={totalLayers - 1}
-                        step={1}
-                        value={last}
-                        onChange={(e) => setSplitAt(b, Number(e.target.value))}
-                      />
-                      <button
-                        className="bandDrop"
-                        onClick={() => removeBand(b)}
-                        title="Remove this band"
-                      >
-                        ×
-                      </button>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <BandSlider
+            totalLayers={totalLayers}
+            splitLayers={splitLayers}
+            colors={colors}
+            layerHeight={layerHeight}
+            onMoveSplit={setSplitAt}
+            onColor={setBandColor}
+            onRemoveSplit={removeBand}
+          />
 
           <div className="bandHint">
             {splitLayers.length === 0
-              ? `single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick`
-              : `${(layerHeight).toFixed(2)} mm per layer · exports as 3MF`}
+              ? `single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
+              : `drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 
           <button
