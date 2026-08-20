@@ -30,7 +30,8 @@ type Crop = {
   rot: number;
 };
 
-type DragMode = "move" | "resize" | "rotate" | null;
+/** "resize" keeps the proportions; "box" drives one or both sides directly. */
+type DragMode = "move" | "resize" | "box" | "rotate" | null;
 
 type DragState = {
   mode: DragMode;
@@ -39,6 +40,11 @@ type DragState = {
   startCrop: Crop;
   startDist?: number;
   startAngle?: number;
+  /** For "box": which sides the grabbed grip drives. */
+  axisX?: boolean;
+  axisY?: boolean;
+  /** For "box": the ratio when the drag began, so the untouched side holds. */
+  startRatio?: number;
 };
 
 export type ImageEditorHandle = {
@@ -65,6 +71,13 @@ type Props = {
   /** Print width in mm; the frame is only meaningful relative to it. */
   widthMm: number;
   /**
+   * The crop box may be dragged to any proportions rather than being held to
+   * `cropRatio`. Side grips appear, and the ratio it ends up at is reported
+   * back through `onCropRatioChange` — the shape is built to match it.
+   */
+  freeRatio?: boolean;
+  onCropRatioChange?: (ratio: number) => void;
+  /**
    * Rotation step in degrees for the crop box's handle, or 0 to leave it free.
    *
    * Only the drag is quantised. Turning snapping on does not pull an angle
@@ -80,10 +93,20 @@ type Props = {
 
 const HANDLE_SIZE = 8;
 const ROT_HANDLE_PFX = 20;
+/**
+ * How far inside the top edge the rotation grip goes when there is no room
+ * for it outside. Wide enough to keep clear of the top side grip, which sits
+ * on the edge itself.
+ */
+const ROT_HANDLE_INSIDE = 44;
 const MIN_WIDTH_RX = 0.05;
 
 function deg2rad(deg: number) {
   return (deg * Math.PI) / 180;
+}
+
+function rotatePoint(x: number, y: number, deg: number) {
+  return unrotatePoint(x, y, -deg);
 }
 
 function unrotatePoint(x: number, y: number, deg: number) {
@@ -104,7 +127,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
   (
     {
       image, cropRatio, shapeId, rotate, flipH, flipV,
-      bgColor, frameMm, widthMm, snapDeg, onImageData,
+      bgColor, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
+      onImageData,
     },
     ref
   ) => {
@@ -135,10 +159,39 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       },
     }));
 
+    /**
+     * Local-space Y of the rotation grip.
+     *
+     * It normally hangs just outside the top edge. A crop box that fills the
+     * view puts it past the edge of the canvas, where it cannot be grabbed at
+     * all — and that is the default state, since the box starts at most of the
+     * image — so it moves to just inside the edge instead. draw() and the hit
+     * test both come through here, so they cannot disagree about it.
+     */
+    const rotHandleLocalY = (cropH: number, cx: number, cy: number) => {
+      const outside = -cropH / 2 - ROT_HANDLE_PFX / viewScale;
+
+      const { w: W, h: H } = viewRef.current;
+      const p = rotatePoint(0, outside, crop.rot);
+      // Scene to on-screen, undoing the zoom about the view centre.
+      const sx = (cx + p.x - W / 2) * viewScale + W / 2;
+      const sy = (cy + p.y - H / 2) * viewScale + H / 2;
+
+      const m = HANDLE_SIZE + 6;
+      const reachable = sx >= m && sx <= W - m && sy >= m && sy <= H - m;
+
+      return reachable ? outside : -cropH / 2 + ROT_HANDLE_INSIDE / viewScale;
+    };
+
     /* ---------------------------------------------
      * Shape Path Drawing
      * --------------------------------------------- */
     const drawShape = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+      if (shapeId === "rectangle") {
+        ctx.rect(-w / 2, -h / 2, w, h);
+        return;
+      }
+
       if (shapeId === "circle") {
         ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
         return;
@@ -222,22 +275,39 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      * the factor is derived per shape rather than guessed.
      */
     const frameScale = (() => {
-      if (!(frameMm > 0.05) || !(widthMm > 0)) return 1;
+      if (!(frameMm > 0.05) || !(widthMm > 0)) return { kx: 1, ky: 1 };
 
-      switch (shapeId) {
-        case "circle":
-          return 1 - (2 * frameMm) / widthMm;
-        case "hexagon":
-          return 1 - (4 * frameMm) / (widthMm * Math.sqrt(3));
-        case "pentagon":
-          return (
-            1 -
-            (2 * frameMm * Math.cos(Math.PI / 10)) /
-              (widthMm * Math.cos(Math.PI / 5))
-          );
-        case "triangle":
-          return 1 - (6 * frameMm) / (widthMm * Math.sqrt(3));
+      // The rectangle is the only shape whose two axes inset by different
+      // fractions, because it is the only one whose proportions are free: the
+      // band is frameMm wide on every side of a box that is not square.
+      if (shapeId === "rectangle") {
+        const heightMm = cropRatio > 0 ? widthMm / cropRatio : widthMm;
+        return {
+          kx: 1 - (2 * frameMm) / widthMm,
+          ky: heightMm > 0 ? 1 - (2 * frameMm) / heightMm : 1,
+        };
       }
+
+      const k = (() => {
+        switch (shapeId) {
+          case "circle":
+            return 1 - (2 * frameMm) / widthMm;
+          case "hexagon":
+            return 1 - (4 * frameMm) / (widthMm * Math.sqrt(3));
+          case "pentagon":
+            return (
+              1 -
+              (2 * frameMm * Math.cos(Math.PI / 10)) /
+                (widthMm * Math.cos(Math.PI / 5))
+            );
+          case "triangle":
+            return 1 - (6 * frameMm) / (widthMm * Math.sqrt(3));
+          default:
+            return 1;
+        }
+      })();
+
+      return { kx: k, ky: k };
     })();
 
     /**
@@ -251,12 +321,13 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx: CanvasRenderingContext2D,
       w: number,
       h: number,
-      k: number,
+      kx: number,
+      ky: number,
     ) => {
-      const dy = shapeId === "triangle" ? (h * (1 - k)) / 6 : 0;
+      const dy = shapeId === "triangle" ? (h * (1 - ky)) / 6 : 0;
       ctx.save();
       ctx.translate(0, dy);
-      drawShape(ctx, w * k, h * k);
+      drawShape(ctx, w * kx, h * ky);
       ctx.restore();
     };
 
@@ -384,19 +455,23 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       // 3b. Frame band — the flat border will sit here and hide whatever is
       // under it, so show it before someone frames a detail into it.
-      if (frameScale > 0 && frameScale < 0.999) {
+      if (
+        frameScale.kx > 0 &&
+        frameScale.ky > 0 &&
+        (frameScale.kx < 0.999 || frameScale.ky < 0.999)
+      ) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(deg2rad(crop.rot));
 
         ctx.beginPath();
         drawShape(ctx, cropW, cropH);
-        drawShapeScaled(ctx, cropW, cropH, frameScale);
+        drawShapeScaled(ctx, cropW, cropH, frameScale.kx, frameScale.ky);
         ctx.fillStyle = "rgba(2, 6, 23, 0.55)";
         ctx.fill("evenodd");
 
         ctx.beginPath();
-        drawShapeScaled(ctx, cropW, cropH, frameScale);
+        drawShapeScaled(ctx, cropW, cropH, frameScale.kx, frameScale.ky);
         ctx.strokeStyle = "rgba(165, 243, 252, 0.5)";
         ctx.lineWidth = 1 / viewScale;
         ctx.setLineDash([5 / viewScale, 4 / viewScale]);
@@ -448,7 +523,23 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         ctx.stroke();
       });
 
-      const rotY = -cropH / 2 - (ROT_HANDLE_PFX / viewScale);
+      if (freeRatio) {
+        // Side grips: one axis each, so the box can be stretched horizontally
+        // or vertically without disturbing the other pair of sides.
+        [
+          { x: -cropW / 2, y: 0 },
+          { x: cropW / 2, y: 0 },
+          { x: 0, y: -cropH / 2 },
+          { x: 0, y: cropH / 2 },
+        ].forEach((p) => {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, effHandleSize * 0.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
+
+      const rotY = rotHandleLocalY(cropH, cx, cy);
       ctx.beginPath();
       ctx.moveTo(0, -cropH / 2);
       ctx.lineTo(0, rotY);
@@ -466,7 +557,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       // 5. Output generation
       triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
-        frameMm, widthMm, bgColor]);
+        frameMm, widthMm, bgColor, freeRatio]);
 
     /* ---------------------------------------------
      * Interaction Logic
@@ -516,7 +607,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       const tol = (HANDLE_SIZE + 10) / viewScale;
 
-      const rotY = -halfH - ROT_HANDLE_PFX / viewScale;
+      const rotY = rotHandleLocalY(cropH, cx, cy);
       const distRot = Math.hypot(lx - 0, ly - rotY);
 
       if (distRot <= tol) {
@@ -531,21 +622,47 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         return;
       }
 
-      if (
-        (Math.abs(lx - -halfW) < tol && Math.abs(ly - -halfH) < tol) ||
-        (Math.abs(lx - halfW) < tol && Math.abs(ly - -halfH) < tol) ||
-        (Math.abs(lx - halfW) < tol && Math.abs(ly - halfH) < tol) ||
-        (Math.abs(lx - -halfW) < tol && Math.abs(ly - halfH) < tol)
-      ) {
-        const dist = Math.hypot(lx, ly);
-        dragRef.current = {
-          mode: "resize",
-          startX: x,
-          startY: y,
-          startCrop: { ...crop },
-          startDist: dist,
-        };
+      const onCorner =
+        Math.abs(Math.abs(lx) - halfW) < tol &&
+        Math.abs(Math.abs(ly) - halfH) < tol;
+
+      if (onCorner) {
+        dragRef.current = freeRatio
+          ? {
+              mode: "box",
+              startX: x,
+              startY: y,
+              startCrop: { ...crop },
+              axisX: true,
+              axisY: true,
+              startRatio: cropRatio,
+            }
+          : {
+              mode: "resize",
+              startX: x,
+              startY: y,
+              startCrop: { ...crop },
+              startDist: Math.hypot(lx, ly),
+            };
         return;
+      }
+
+      if (freeRatio) {
+        const onSide = Math.abs(Math.abs(lx) - halfW) < tol && Math.abs(ly) < tol;
+        const onCap = Math.abs(Math.abs(ly) - halfH) < tol && Math.abs(lx) < tol;
+
+        if (onSide || onCap) {
+          dragRef.current = {
+            mode: "box",
+            startX: x,
+            startY: y,
+            startCrop: { ...crop },
+            axisX: onSide,
+            axisY: onCap,
+            startRatio: cropRatio,
+          };
+          return;
+        }
       }
 
       if (lx >= -halfW && lx <= halfW && ly >= -halfH && ly <= halfH) {
@@ -566,8 +683,10 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const { w: W, h: H } = viewRef.current;
       const { dw } = fitRef.current;
 
-      const { mode, startX, startY, startCrop, startDist, startAngle } =
-        dragRef.current;
+      const {
+        mode, startX, startY, startCrop, startDist, startAngle,
+        axisX, axisY, startRatio,
+      } = dragRef.current;
 
       if (mode === "move") {
         const dx = (x - startX) / dw;
@@ -586,6 +705,23 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         let newW = startCrop.w * scale;
         newW = Math.max(MIN_WIDTH_RX, Math.min(newW, 2.0));
         setCrop({ ...startCrop, w: newW });
+      } else if (mode === "box" && startRatio !== undefined) {
+        const ccx = W / 2 + startCrop.cx * dw;
+        const ccy = H / 2 + startCrop.cy * dw;
+        const local = unrotatePoint(x - ccx, y - ccy, startCrop.rot);
+
+        // Both sides are measured from the centre, the way the proportional
+        // resize already works, so the box grows about its middle. The side
+        // the grip does not drive is held at the size it started at — hence
+        // startRatio, which the live ratio has already moved away from.
+        const side = (v: number) => Math.max(MIN_WIDTH_RX, Math.min(2.0, v));
+        const nextW = side(axisX ? (2 * Math.abs(local.x)) / dw : startCrop.w);
+        const nextH = side(
+          axisY ? (2 * Math.abs(local.y)) / dw : startCrop.w / startRatio,
+        );
+
+        setCrop({ ...startCrop, w: nextW });
+        onCropRatioChange?.(nextW / nextH);
       } else if (mode === "rotate" && startAngle !== undefined) {
         const ccx = W / 2 + startCrop.cx * dw;
         const ccy = H / 2 + startCrop.cy * dw;

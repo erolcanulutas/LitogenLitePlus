@@ -601,6 +601,16 @@ export default function App() {
 
   const shape = useMemo(() => SHAPES.find((s) => s.id === shapeId)!, [shapeId]);
 
+  /**
+   * Proportions of the shapes that do not fix their own.
+   *
+   * Held here rather than in the editor because the mesh needs it too: for a
+   * rectangle the printed height is whatever the crop box was dragged to, so
+   * the number has to reach the worker as well as the canvas.
+   */
+  const [boxRatio, setBoxRatio] = useState(1.5);
+  const cropRatio = shape.freeRatio ? boxRatio : shape.cropRatio;
+
   const [file, setFile] = useState<File | null>(null);
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
   const [imgData, setImgData] = useState<ImageData | null>(null);
@@ -629,6 +639,9 @@ export default function App() {
   const [splitLayers, setSplitLayers] = useState<number[]>([]);
   const [colors, setColors] = useState<string[]>(["#f2f2f2"]);
 
+  /** What the crop box's proportions come to in millimetres. */
+  const heightMm = widthMm / cropRatio;
+
   const totalLayers = Math.max(1, Math.round(maxT / layerHeight));
   const [quality, setQuality] = useState<Quality>("normal");
   const [smoothing, setSmoothing] = useState(1.0);
@@ -653,7 +666,7 @@ export default function App() {
 
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
-    imgVersion, shapeId, widthMm, minT, maxT, frameMm,
+    imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
     quality, smoothing, levels, layerHeight, splitLayers, colors, orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
@@ -729,6 +742,12 @@ export default function App() {
       imgSigRef.current = sig;
       setImgVersion((v) => v + 1);
     }
+  }
+
+  /** Proportions the crop box reports back, held to something printable. */
+  function handleCropRatio(ratio: number) {
+    if (!Number.isFinite(ratio) || ratio <= 0) return;
+    setBoxRatio(Math.max(0.1, Math.min(10, ratio)));
   }
 
   function setBandColor(index: number, value: string) {
@@ -879,7 +898,7 @@ export default function App() {
           shapeId,
           image: imgData,
           widthMm,
-          heightMm: widthMm,
+          heightMm: +heightMm.toFixed(4),
           minT,
           maxT,
           frameMm,
@@ -1014,6 +1033,13 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          {shape.freeRatio && (
+            <div className="bandHint">
+              height {heightMm.toFixed(1)} mm · drag the crop box's side or
+              corner grips to change it
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button
@@ -1510,7 +1536,9 @@ export default function App() {
               <ImageEditor
                 ref={editorRef}
                 image={imgEl}
-                cropRatio={shape.cropRatio}
+                cropRatio={cropRatio}
+                freeRatio={shape.freeRatio}
+                onCropRatioChange={handleCropRatio}
                 shapeId={shapeId}
                 rotate={rotate}
                 flipH={flipH}

@@ -4,7 +4,12 @@ import type { Mesh } from "./mesh";
 export type EmbossSide = "front" | "back";
 
 /** Ids of the registered shape plugins. */
-export type ShapeId = "triangle" | "circle" | "hexagon" | "pentagon";
+export type ShapeId =
+  | "triangle"
+  | "circle"
+  | "hexagon"
+  | "pentagon"
+  | "rectangle";
 
 export type Heightmap = {
   w: number;
@@ -29,6 +34,15 @@ export type ShapeBuildParams = {
 
   // size (mm)
   widthMm: number;
+
+  /**
+   * Height in mm.
+   *
+   * Every shape but the rectangle fixes its proportions and derives this from
+   * widthMm itself, so they ignore it. The rectangle takes whatever the
+   * editor's crop box was dragged to.
+   */
+  heightMm: number;
 
   // heightmap width; shapes scale their mesh density against it
   resolution: number;
@@ -77,6 +91,12 @@ export type ShapePlugin = {
 
   /** Editor crop ratio (W/H). Triangle needs 2/sqrt(3), circle 1, etc. */
   cropRatio: number;
+
+  /**
+   * When set, `cropRatio` is only a starting point: the editor lets the crop
+   * box be dragged to any proportions and the shape is built to match.
+   */
+  freeRatio?: boolean;
 
   build: (ctx: BuildContext, params: ShapeBuildParams) => Mesh;
 };

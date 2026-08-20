@@ -30,6 +30,17 @@ export function radialCellMm(q: Quality): number {
   }
 }
 
+/**
+ * Rectangle, which fills a plain grid.
+ *
+ * A grid costs 2*(W/c)*(H/c) triangles against a ring mesh's 2*pi*(R/c)^2 —
+ * within a quarter of each other over the same footprint, so the radial
+ * numbers carry over rather than earning a table of their own.
+ */
+export function gridCellMm(q: Quality): number {
+  return radialCellMm(q);
+}
+
 /** Triangle, which subdivides barycentrically. */
 export function triangleCellMm(q: Quality): number {
   switch (q) {

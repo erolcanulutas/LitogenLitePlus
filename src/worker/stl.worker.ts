@@ -142,6 +142,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
 
     const buildParams = {
       widthMm: msg.widthMm,
+      heightMm: msg.heightMm,
       resolution: hmRaw.w,
       minT: msg.minT,
       maxT: msg.maxT,
