@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
 
 export type PreviewMesh = {
   /** 9 floats per triangle, in the exported (upright) orientation. */
@@ -58,7 +58,6 @@ export default function MeshPreview({
   const hostRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const materialsRef = useRef<THREE.Material[]>([]);
-  const controlsRef = useRef<OrbitControls | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
@@ -72,9 +71,8 @@ export default function MeshPreview({
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 5000);
-    // The exported model stands with +Z up. OrbitControls puts its poles on
-    // the camera's up axis, so leaving three's default +Y here would park them
-    // sideways: yaw would feel free while pitch hit a wall early.
+    // The exported model stands with +Z up, which is what the opening framing
+    // takes as the screen's up direction. Dragging is free to leave it there.
     camera.up.set(0, 0, 1);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -88,22 +86,27 @@ export default function MeshPreview({
     renderer.domElement.style.height = "100%";
 
     /**
-     * OrbitControls fixes its orbit axis from camera.up when constructed, so
-     * changing up afterwards leaves the orbit spinning about the wrong axis —
-     * which, once the model lies flat and the camera looks along what used to
-     * be up, degenerates into unusable rotation. Rebuilding is the reliable
-     * way to move that axis.
+     * A trackball, not an orbit.
+     *
+     * OrbitControls turns the camera in spherical coordinates about a fixed up
+     * axis and clamps the polar angle to just inside each pole, so dragging up
+     * past the top of the model stops dead. No setting lifts that: the clamp
+     * to [EPS, PI - EPS] is applied after the configurable limits, not by
+     * them. Defending that up axis also meant rebuilding the controls whenever
+     * the model's orientation changed.
+     *
+     * A trackball has no pole and no up axis to keep. It rotates about
+     * whatever axis the drag implies, so the model tumbles as freely and as
+     * far as the drag goes, in any direction, over the top and round again.
      */
-    const makeControls = () => {
-      controlsRef.current?.dispose();
-      const c = new OrbitControls(camera, renderer.domElement);
-      c.enableDamping = true;
-      c.dampingFactor = 0.08;
-      controlsRef.current = c;
-      return c;
-    };
-
-    makeControls();
+    const controls = new TrackballControls(camera, renderer.domElement);
+    // Roughly the angle per pixel OrbitControls gave, which is what the feel
+    // was tuned against. A trackball's own default is about six times slower.
+    controls.rotateSpeed = 5.0;
+    controls.zoomSpeed = 1.2;
+    controls.panSpeed = 0.8;
+    // staticMoving stays off, so a flick keeps a little glide.
+    controls.dynamicDampingFactor = 0.15;
 
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
@@ -142,7 +145,6 @@ export default function MeshPreview({
         ? new THREE.Vector3(0, 1, 0)
         : new THREE.Vector3(0, 0, 1);
 
-      const upChanged = !camera.up.equals(up);
       camera.up.copy(up);
 
       camera.position.copy(s.center).addScaledVector(axis, dist);
@@ -150,7 +152,6 @@ export default function MeshPreview({
       camera.far = dist * 10;
       camera.updateProjectionMatrix();
 
-      const controls = upChanged ? makeControls() : controlsRef.current!;
       controls.target.copy(s.center);
       controls.update();
     };
@@ -165,6 +166,9 @@ export default function MeshPreview({
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      // The drag maths works off a cached rect for the element, so a resize
+      // that is not announced leaves rotation reading the old geometry.
+      controls.handleResize();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
@@ -172,7 +176,7 @@ export default function MeshPreview({
 
     let raf = 0;
     const tick = () => {
-      controlsRef.current?.update();
+      controls.update();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
     };
@@ -194,7 +198,7 @@ export default function MeshPreview({
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
-      controlsRef.current?.dispose();
+      controls.dispose();
       mesh3d.geometry.dispose();
       for (const m of materialsRef.current) m.dispose();
 
