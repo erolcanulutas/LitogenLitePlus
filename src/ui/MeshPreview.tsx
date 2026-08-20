@@ -197,7 +197,18 @@ export default function MeshPreview({
       controlsRef.current?.dispose();
       mesh3d.geometry.dispose();
       for (const m of materialsRef.current) m.dispose();
+
+      if (gridRef.current) {
+        gridRef.current.geometry.dispose();
+        (gridRef.current.material as THREE.Material).dispose();
+        gridRef.current = null;
+      }
+
+      // Picking a new photo unmounts this panel, so the context is torn down
+      // and rebuilt every time round. dispose() leaves the context itself to
+      // the garbage collector, and a browser only keeps so many alive.
       renderer.dispose();
+      renderer.forceContextLoss();
       host.removeChild(renderer.domElement);
     };
   }, []);

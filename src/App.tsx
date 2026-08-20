@@ -631,6 +631,22 @@ export default function App() {
     setStatusMsg(null);
   }, [file]);
 
+  /**
+   * Takes in a new picture, and drops whatever was built from the last one.
+   *
+   * The model on the 3D tab belongs to the previous photo, so leaving it
+   * standing means a fresh import is answered with the old one still on
+   * screen. Clearing it also sends the view back to the editor, which is
+   * where the new picture has to be cropped anyway.
+   */
+  function pickFile(next: File | null) {
+    setFile(next);
+    setStatusMsg(null);
+    setPreviewMesh(null);
+    setPreviewKey(null);
+    setView("editor");
+  }
+
   function resetThicknessDefaults() {
     setMaxT(3.0);
     setMinT(0.8);
@@ -751,8 +767,7 @@ export default function App() {
       const droppedFile = e.dataTransfer.files[0];
 
       if (droppedFile.type.startsWith("image/")) {
-        setFile(droppedFile);
-        setStatusMsg(null);
+        pickFile(droppedFile);
       }
     }
   };
@@ -869,7 +884,7 @@ export default function App() {
               type="file"
               accept="image/*"
               style={{ display: "none" }}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
             />
             {file ? (
               <span>📷 {file.name.slice(0, 10)}...</span>
