@@ -577,6 +577,9 @@ function imageSignature(d: ImageData): string {
 
 const FLAT_HINT_KEY = "litogen.hideFlatHint";
 
+/** Step the editor's rotation lands on while snapping is switched on. */
+const ROTATION_SNAP_DEG = 10;
+
 /** Default palette for new bands: light at the bottom, darker going up. */
 const BAND_PALETTE = [
   "#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8",
@@ -609,6 +612,7 @@ export default function App() {
   const [rotate, setRotate] = useState(0);
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
+  const [snapRotation, setSnapRotation] = useState(false);
 
   const editorRef = useRef<ImageEditorHandle>(null);
 
@@ -1424,19 +1428,39 @@ export default function App() {
             </div>
 
             {view === "editor" && (
-              <label
-                className="shadeToggle"
-                title="Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model."
-                style={{ marginRight: 10 }}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  marginRight: 10,
+                }}
               >
-                Backdrop
-                <input
-                  className="bandSwatch"
-                  type="color"
-                  value={bgColor}
-                  onChange={(e) => setBgColor(e.target.value)}
-                />
-              </label>
+                <label
+                  className="shadeToggle"
+                  title={`Rotation lands on multiples of ${ROTATION_SNAP_DEG}° — both the crop box's handle and the rotation slider below. Off, either is free.`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={snapRotation}
+                    onChange={(e) => setSnapRotation(e.target.checked)}
+                  />
+                  Snap {ROTATION_SNAP_DEG}°
+                </label>
+
+                <label
+                  className="shadeToggle"
+                  title="Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model."
+                >
+                  Backdrop
+                  <input
+                    className="bandSwatch"
+                    type="color"
+                    value={bgColor}
+                    onChange={(e) => setBgColor(e.target.value)}
+                  />
+                </label>
+              </div>
             )}
 
             {view === "preview" && (
@@ -1494,6 +1518,7 @@ export default function App() {
                 bgColor={bgColor}
                 frameMm={frameMm}
                 widthMm={widthMm}
+                snapDeg={snapRotation ? ROTATION_SNAP_DEG : 0}
                 onImageData={handleImageData}
               />
             </div>
@@ -1535,6 +1560,7 @@ export default function App() {
             setFlipH={setFlipH}
             flipV={flipV}
             setFlipV={setFlipV}
+            snapDeg={snapRotation ? ROTATION_SNAP_DEG : 0}
             onReset={() => {
               setRotate(0);
               setFlipH(false);

@@ -64,6 +64,13 @@ type Props = {
   frameMm: number;
   /** Print width in mm; the frame is only meaningful relative to it. */
   widthMm: number;
+  /**
+   * Rotation step in degrees for the crop box's handle, or 0 to leave it free.
+   *
+   * Only the drag is quantised. Turning snapping on does not pull an angle
+   * that is already off-step into line; the next drag does that.
+   */
+  snapDeg: number;
   onImageData: (img: ImageData | null) => void;
 };
 
@@ -97,7 +104,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
   (
     {
       image, cropRatio, shapeId, rotate, flipH, flipV,
-      bgColor, frameMm, widthMm, onImageData,
+      bgColor, frameMm, widthMm, snapDeg, onImageData,
     },
     ref
   ) => {
@@ -585,7 +592,13 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         const curAngle = Math.atan2(y - ccy, x - ccx);
         const deltaRad = curAngle - startAngle;
         const deltaDeg = (deltaRad * 180) / Math.PI;
-        setCrop({ ...startCrop, rot: startCrop.rot + deltaDeg });
+        // Snap the resulting angle, not the delta: quantising the delta would
+        // leave whatever offset the box already carried and drift with it.
+        const rot = startCrop.rot + deltaDeg;
+        setCrop({
+          ...startCrop,
+          rot: snapDeg > 0 ? Math.round(rot / snapDeg) * snapDeg : rot,
+        });
       }
     };
 
