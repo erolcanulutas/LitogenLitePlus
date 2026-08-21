@@ -62,6 +62,12 @@ export type RadialSpec = {
   heightOf: (lum: number) => number;
 
   /**
+   * Surface height per brightness band, darkest first, for terraced output.
+   * Empty falls back to the even spacing the band count implies.
+   */
+  toneZs: readonly number[];
+
+  /**
    * Brightness bands for terraced output, or 0 for a smooth surface.
    *
    * Smooth is right for photographs. Terraced is right for line art: it cuts
@@ -104,6 +110,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     lumAt,
     heightOf,
     levels,
+    toneZs,
     frameHeight,
     splitZs,
   } = spec;
@@ -121,8 +128,12 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   const totalRings = imageRings + frameRings;
 
   const terraced = levels >= 2;
-  /** Height of a whole band, taken at its middle. */
-  const bandHeight = (band: number) => heightOf((band + 0.5) / levels);
+  /**
+   * Height of a whole band: whatever the panel set for this tone, or the
+   * middle of the band if it has not been touched.
+   */
+  const bandHeight = (band: number) =>
+    toneZs[band] ?? heightOf((band + 0.5) / levels);
   const heightForLum = (l: number) =>
     terraced
       ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))

@@ -366,13 +366,28 @@ body {
   position: absolute;
   left: 0;
   right: 0;
+  height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/*
+ * The grab area keeps to the right of the track so it never contends with a
+ * tone mark at the same height, and it is where the readout and the remove
+ * button live.
+ */
+.bandKnobGrab {
+  position: absolute;
+  left: 48%;
+  right: 0;
+  top: -11px;
   height: 22px;
-  margin-bottom: -11px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   padding-right: 6px;
+  pointer-events: auto;
   cursor: ns-resize;
   touch-action: none;
 }
@@ -389,8 +404,8 @@ body {
   box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.55);
 }
 
-.bandKnob:focus-visible { outline: none; }
-.bandKnob:focus-visible::before { background: #a5f3fc; }
+.bandKnobGrab:focus-visible { outline: none; }
+.bandKnob:has(.bandKnobGrab:focus-visible)::before { background: #a5f3fc; }
 
 .bandKnobPill {
   position: relative;
@@ -426,6 +441,78 @@ body {
   background: rgba(127, 29, 29, 0.9);
 }
 
+/*
+ * Tones, down the left in dashed amber so they read as a different kind of
+ * thing from the colour boundaries: one is where the surface stops, the other
+ * is where the filament changes.
+ */
+/*
+ * Above the boundary line, because the two coincide by default: a new band is
+ * placed on a tone. Amber dash to the left of a white line across the rest is
+ * what a boundary sitting where it should looks like.
+ */
+.toneMark {
+  position: absolute;
+  left: 0;
+  width: 46%;
+  height: 20px;
+  margin-bottom: -10px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+/*
+ * The label first and only a short dash after it, so a tone reads as a mark
+ * at a height. Drawn as a rule across the track it read as a divider, and
+ * four of them looked like they cut the track into five.
+ */
+.toneMarkRule {
+  flex: 1;
+  margin-left: 6px;
+  border-top: 2px dashed #fbbf24;
+}
+
+.toneMark:focus-visible { outline: none; }
+.toneMark:focus-visible .toneMarkRule { border-top-color: #a5f3fc; }
+.toneMark:focus-visible .toneMarkPill { border-color: #a5f3fc; }
+
+.toneMarkPill {
+  position: relative;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  background: rgba(2, 6, 23, 0.9);
+  color: #fde68a;
+  font-size: 0.6rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A band nothing reaches, hatched so it reads as unreachable, not just dark. */
+.bandSegBuried::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(2, 6, 23, 0.55) 0 5px,
+    rgba(2, 6, 23, 0) 5px 10px
+  );
+  pointer-events: none;
+}
+
+.bandWarn {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: #fbbf24;
+}
+
 .bandEnd {
   font-size: 0.66rem;
   color: #475569;
@@ -433,6 +520,9 @@ body {
 }
 
 .bandEndTop { margin: 0 2px 4px; }
+
+/* Named, and tinted with the tones, because it is one of the same heights. */
+.bandEndFrame { color: #b08a3c; }
 
 .bandHint {
   margin-top: 6px;
@@ -651,6 +741,15 @@ export default function App() {
   const [splitLayers, setSplitLayers] = useState<number[]>([]);
   const [colors, setColors] = useState<string[]>(["#f2f2f2"]);
 
+  /**
+   * Where each tone's surface sits, in layers, darkest and so thickest first.
+   *
+   * Derived from the tone count until someone drags one, which is what the
+   * override holds. A change of tone count drops the override, since heights
+   * for a different number of tones mean nothing.
+   */
+  const [toneOverride, setToneOverride] = useState<number[] | null>(null);
+
   /** What the crop box's proportions come to in millimetres. */
   const heightMm = widthMm / cropRatio;
 
@@ -663,6 +762,65 @@ export default function App() {
   const [graphic, setGraphic] = useState(false);
   const [toneLevels, setToneLevels] = useState(2);
   const levels = graphic ? toneLevels : 0;
+
+  /**
+   * Where a given number of tones would sit, in layers, thickest first.
+   *
+   * Taken for a count rather than read off the current one, because placing
+   * the colour bands for a count has to happen in the same breath as setting
+   * it, before the state has moved.
+   */
+  function toneLayersOf(count: number): number[] {
+    const hold = (v: number) => Math.max(1, Math.min(totalLayers, Math.round(v)));
+
+    if (toneOverride && toneOverride.length === count) {
+      return toneOverride.map(hold);
+    }
+
+    // Evenly across the thickness, the way the generator spaces them when it
+    // is not told otherwise: band k sits at the middle of its brightness slice.
+    const even: number[] = [];
+    for (let k = 0; k < count; k++) {
+      even.push(hold((maxT - ((k + 0.5) / count) * (maxT - minT)) / layerHeight));
+    }
+    return even;
+  }
+
+  const toneLayers = useMemo(
+    () => toneLayersOf(toneLevels),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [toneLevels, toneOverride, totalLayers, minT, maxT, layerHeight],
+  );
+
+  /**
+   * Colour bands that no tone can reach.
+   *
+   * A band shows its colour where the surface stops inside it. Terraced, the
+   * surface only ever stops at a tone height, or at the top of the frame, so
+   * a band with none of those between its first and last layer is buried
+   * under the one above and prints where nobody will see it.
+   */
+  const buriedBands = useMemo(() => {
+    if (!graphic) return [] as number[];
+
+    const ends = new Set<number>(toneLayers);
+    if (frameMm > 0.05) ends.add(totalLayers);
+
+    const out: number[] = [];
+    for (let b = 0; b <= splitLayers.length; b++) {
+      const first = b === 0 ? 1 : splitLayers[b - 1] + 1;
+      const last = b < splitLayers.length ? splitLayers[b] : totalLayers;
+      let reached = false;
+      for (const e of ends) {
+        if (e >= first && e <= last) {
+          reached = true;
+          break;
+        }
+      }
+      if (!reached) out.push(b);
+    }
+    return out;
+  }, [graphic, toneLayers, splitLayers, totalLayers, frameMm]);
 
   // Vertical prints the lithophane standing up; flat lays it down so the
   // relief runs along the print axis.
@@ -691,7 +849,8 @@ export default function App() {
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
-    quality, smoothing, levels, layerHeight, splitLayers, colors, orientation,
+    quality, smoothing, levels, toneLayers, layerHeight, splitLayers, colors,
+    orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
   const [view, setView] = useState<"editor" | "preview">("editor");
@@ -808,31 +967,15 @@ export default function App() {
   }
 
   /**
-   * Layer each tone's surface lands on, thickest first.
-   *
-   * The generator spaces tones evenly across the brightness range and puts
-   * each at the middle of its slice. This is the same arithmetic, rounded to
-   * a whole layer so the panel and the print agree on where they are.
-   */
-  function toneLayersFor(count: number): number[] {
-    const out: number[] = [];
-    for (let k = 0; k < count; k++) {
-      const z = maxT - ((k + 0.5) / count) * (maxT - minT);
-      out.push(Math.max(1, Math.min(totalLayers, Math.round(z / layerHeight))));
-    }
-    return out;
-  }
-
-  /**
    * Gives a tone count its colour bands: one band per tone, so four tones
    * come out as three boundaries and four pieces.
    *
-   * A boundary goes on the tone itself, which leaves that tone in the band
-   * below and hands the bands above everything thicker. Colours already
+   * A boundary sits on the tone itself, which leaves that tone in the band
+   * below it and hands the bands above everything thicker. Colours already
    * picked are kept; a new band takes the next one from the palette.
    */
   function applyToneBands(count: number) {
-    const rising = toneLayersFor(count).sort((a, b) => a - b);
+    const rising = toneLayersOf(count).sort((a, b) => a - b);
 
     const next: number[] = [];
     for (const layer of rising.slice(0, count - 1)) {
@@ -850,6 +993,16 @@ export default function App() {
       }
       return out;
     });
+  }
+
+  /** Sets a tone's height, keeping the list from rising with the index. */
+  function setToneAt(index: number, value: number) {
+    if (Number.isNaN(value)) return;
+    const next = [...toneLayers];
+    const ceiling = index > 0 ? next[index - 1] : totalLayers;
+    const floor = index + 1 < next.length ? next[index + 1] : 1;
+    next[index] = Math.max(floor, Math.min(ceiling, Math.round(value)));
+    setToneOverride(next);
   }
 
   /** Sets a band's last layer, keeping the list strictly increasing. */
@@ -880,7 +1033,7 @@ export default function App() {
     const last = splitLayers.length > 0 ? splitLayers[splitLayers.length - 1] : 0;
 
     if (graphic) {
-      const rising = toneLayersFor(toneLevels).sort((a, b) => a - b);
+      const rising = [...toneLayers].sort((a, b) => a - b);
       const at = rising[splitLayers.length];
       if (at !== undefined && at > last && at <= totalLayers - 1) return at;
     }
@@ -993,6 +1146,9 @@ export default function App() {
           levels,
           orientation,
           splitHeightsMm: splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
+          toneHeightsMm: graphic
+            ? toneLayers.map((n) => +(n * layerHeight).toFixed(4))
+            : [],
           colors,
           layerHeight,
           emboss: "back",
@@ -1426,15 +1582,33 @@ export default function App() {
             splitLayers={splitLayers}
             colors={colors}
             layerHeight={layerHeight}
+            toneLayers={toneLayers}
+            showTones={graphic}
+            frameLayer={frameMm > 0.05 ? totalLayers : null}
+            buried={buriedBands}
             onMoveSplit={setSplitAt}
+            onMoveTone={setToneAt}
             onColor={setBandColor}
             onRemoveSplit={removeBand}
           />
 
+          {buriedBands.length > 0 && (
+            <div className="bandWarn">
+              {buriedBands.length === 1
+                ? `Band ${buriedBands[0] + 1} sits between tones — nothing on the surface stops inside it, so its colour stays buried under the band above.`
+                : `Bands ${buriedBands
+                    .map((n) => n + 1)
+                    .join(", ")} sit between tones — nothing on the surface stops inside them, so those colours stay buried under the band above.`}{" "}
+              Move a boundary onto a tone mark, or drop the band.
+            </div>
+          )}
+
           <div className="bandHint">
             {splitLayers.length === 0
               ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
-              : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
+              : graphic
+                ? `Drag a divider to move it · amber marks are the heights the surface stops at · exports as 3MF`
+                : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 
           <button
