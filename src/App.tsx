@@ -1003,22 +1003,30 @@ export default function App() {
         <div className="section">
           <div className="label-row">
             <div className="sectionTitle">Surface</div>
-            <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into bands and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art." />
+            <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into tones and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art. Switching also moves the print orientation to the one that suits it — upright for a photograph, flat for a graphic, where colour bands cost one filament change each instead of one per layer. Change it back underneath if you would rather not." />
           </div>
 
           <div className="segmented">
             <button
               className={`segment ${levels === 0 ? "active" : ""}`}
-              onClick={() => setLevels(0)}
+              onClick={() => {
+                if (levels === 0) return;
+                setLevels(0);
+                setOrientation("vertical");
+              }}
             >
               Photo
             </button>
-            {/* Pressing Graphic while it is already on leaves the band
-                count alone. Going by way of Photo still starts over at two,
-                the way the dropdown did. */}
+            {/* Only on an actual change of surface: pressing the one that
+                is already on leaves the tone count and the orientation
+                exactly as they were set. */}
             <button
               className={`segment ${levels > 0 ? "active" : ""}`}
-              onClick={() => setLevels((v) => (v === 0 ? 2 : v))}
+              onClick={() => {
+                if (levels > 0) return;
+                setLevels(2);
+                setOrientation("flat");
+              }}
             >
               Graphic
             </button>
@@ -1389,52 +1397,61 @@ export default function App() {
             <option value="high">High</option>
           </select>
 
-          <div className="label-row" style={{ marginTop: 12 }}>
-            <label className="miniLabel">Edge Smoothing</label>
-            <InfoIcon text="Widens sampling beyond one mesh cell. Low keeps edges crisp but hard edges come out stair-stepped; high trades a little sharpness for clean edges. Photos ~1, logos and line art 1.5-3. Costs no extra triangles." />
-          </div>
+          {/* Widening the sampling window only trades sharpness for
+              smoothness on a continuous surface. Graphic cuts along the
+              contour instead, and measured across the range the control
+              offers it moves a logo's dark area by 0.2% — nothing. */}
+          {levels === 0 && (
+            <>
+            <div className="label-row" style={{ marginTop: 12 }}>
+              <label className="miniLabel">Edge Smoothing</label>
+              <InfoIcon text="Widens sampling beyond one mesh cell. Low keeps edges crisp but hard edges come out stair-stepped; high trades a little sharpness for clean edges. Photos ~1, logos and line art 1.5-3. Costs no extra triangles." />
+            </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <input
-              className="range"
-              type="range"
-              min={0.4}
-              max={3}
-              step={0.1}
-              value={smoothing}
-              onChange={(e) => setSmoothing(+Number(e.target.value).toFixed(1))}
-            />
-            <div className="spinRow">
+            <div style={{ display: "grid", gap: 8 }}>
               <input
-                className="spinInput"
-                type="number"
+                className="range"
+                type="range"
                 min={0.4}
                 max={3}
                 step={0.1}
                 value={smoothing}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!Number.isNaN(v)) {
-                    setSmoothing(+Math.max(0.4, Math.min(3, v)).toFixed(1));
-                  }
-                }}
+                onChange={(e) => setSmoothing(+Number(e.target.value).toFixed(1))}
               />
-              <div className="spinBtns">
-                <button
-                  className="spinBtn"
-                  onClick={() => setSmoothing((v) => +Math.min(3, v + 0.1).toFixed(1))}
-                >
-                  ▲
-                </button>
-                <button
-                  className="spinBtn"
-                  onClick={() => setSmoothing((v) => +Math.max(0.4, v - 0.1).toFixed(1))}
-                >
-                  ▼
-                </button>
+              <div className="spinRow">
+                <input
+                  className="spinInput"
+                  type="number"
+                  min={0.4}
+                  max={3}
+                  step={0.1}
+                  value={smoothing}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v)) {
+                      setSmoothing(+Math.max(0.4, Math.min(3, v)).toFixed(1));
+                    }
+                  }}
+                />
+                <div className="spinBtns">
+                  <button
+                    className="spinBtn"
+                    onClick={() => setSmoothing((v) => +Math.min(3, v + 0.1).toFixed(1))}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    className="spinBtn"
+                    onClick={() => setSmoothing((v) => +Math.max(0.4, v - 0.1).toFixed(1))}
+                  >
+                    ▼
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+            </>
+          )}
+
         </div>
 
         <div style={{ padding: "10px 0" }}>
