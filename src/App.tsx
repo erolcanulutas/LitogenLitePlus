@@ -767,12 +767,13 @@ export default function App() {
   const [colors, setColors] = useState<string[]>(["#f2f2f2"]);
 
   /**
-   * Where one tone gives way to the next, in layers, ascending.
+   * The printed height of each tone but the darkest, in layers, ascending.
    *
-   * N tones are N - 1 boundaries, the same way N colour bands are N - 1 of
-   * them: the marks divide the thickness into regions rather than sitting on
-   * anything. Held only once someone drags one; a change of tone count drops
-   * it, since boundaries for a different number of tones mean nothing.
+   * A terraced surface is a staircase, and these are its treads. The darkest
+   * tone is the full thickness and needs no mark of its own — the axis
+   * already names it — which is why N tones come with N - 1 marks. Held only
+   * once someone drags one; a change of tone count drops it, since heights
+   * for a different number of tones mean nothing.
    */
   const [toneOverride, setToneOverride] = useState<number[] | null>(null);
 
@@ -807,9 +808,6 @@ export default function App() {
    * the colour bands for a count has to happen in the same breath as setting
    * it, before the state has moved.
    */
-  /** Thinnest the picture ever gets, in layers: the floor of the tone range. */
-  const minLayer = Math.max(1, Math.round(minT / layerHeight));
-
   /**
    * The N - 1 boundaries for a count of N tones, in layers, ascending.
    *
@@ -818,51 +816,43 @@ export default function App() {
    * the state has moved.
    */
   function toneDividersOf(count: number): number[] {
-    const hold = (v: number) =>
-      Math.max(minLayer, Math.min(totalLayers - 1, Math.round(v)));
+    const hold = (v: number) => Math.max(1, Math.min(totalLayers - 1, Math.round(v)));
 
     if (toneOverride && toneOverride.length === count - 1) {
       return toneOverride.map(hold);
     }
 
-    // Evenly across the thickness, which is where the generator puts them
-    // when it is not told otherwise.
+    // Evenly down the thickness, the darkest tread at the top and the
+    // lightest on Min, so the two numbers in the Thickness section are the
+    // two ends of the staircase.
     const even: number[] = [];
     for (let k = count - 1; k >= 1; k--) {
-      even.push(hold((maxT - (k / count) * (maxT - minT)) / layerHeight));
+      even.push(hold((maxT - (k * (maxT - minT)) / (count - 1)) / layerHeight));
     }
     return even;
   }
 
   /**
-   * Surface height of each tone, thickest first: the middle of its region.
+   * Surface height of every tone, thickest first.
    *
-   * The marks say where a tone ends, not where its surface sits, so the
-   * surface is taken as the middle of what is left between two of them —
-   * which for evenly spread marks is exactly where the generator would have
-   * put it anyway.
+   * The treads themselves, with the full thickness on the front for the
+   * darkest tone. What the panel shows is therefore what the model is built
+   * to, layer for layer, rather than a boundary the surface never touches.
    */
   function tonePlateausOf(dividers: readonly number[]): number[] {
-    const edges = [minLayer, ...dividers, totalLayers];
-    const out: number[] = [];
-    for (let r = edges.length - 2; r >= 0; r--) {
-      out.push(
-        Math.max(1, Math.min(totalLayers, Math.round((edges[r] + edges[r + 1]) / 2))),
-      );
-    }
-    return out;
+    return [totalLayers, ...[...dividers].reverse()];
   }
 
   const toneDividers = useMemo(
     () => toneDividersOf(toneLevels),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [toneLevels, toneOverride, totalLayers, minLayer, minT, maxT, layerHeight],
+    [toneLevels, toneOverride, totalLayers, minT, maxT, layerHeight],
   );
 
   const tonePlateaus = useMemo(
     () => tonePlateausOf(toneDividers),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [toneDividers, totalLayers, minLayer],
+    [toneDividers, totalLayers],
   );
 
   /**
@@ -1123,11 +1113,11 @@ export default function App() {
     );
   }
 
-  /** Moves one tone boundary, keeping the list increasing. */
+  /** Moves one tone's tread, keeping the staircase climbing. */
   function setToneAt(index: number, value: number) {
     if (Number.isNaN(value)) return;
     const next = [...toneDividers];
-    const floor = index > 0 ? next[index - 1] + 1 : minLayer;
+    const floor = index > 0 ? next[index - 1] + 1 : 1;
     const ceiling =
       index + 1 < next.length ? next[index + 1] - 1 : totalLayers - 1;
     if (ceiling < floor) return;
@@ -1771,7 +1761,7 @@ export default function App() {
             {splitLayers.length === 0
               ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
               : graphic
-                ? `Drag a divider to move it · amber marks divide the tones · exports as 3MF`
+                ? `Drag a divider to move it · amber marks are the printed tone heights · exports as 3MF`
                 : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 

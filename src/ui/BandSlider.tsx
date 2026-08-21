@@ -10,8 +10,9 @@ type Props = {
   /** Slicer layer height, for the millimetre readouts. */
   layerHeight: number;
   /**
-   * Where one tone gives way to the next, in layers, ascending. N tones make
-   * N - 1 of these, dividing the thickness into N regions.
+   * The printed height of each tone but the darkest, in layers, ascending.
+   * The darkest is the full thickness, which the axis already names, so N
+   * tones come with N - 1 of these.
    */
   toneLayers: number[];
   /** Whether the surface is cut into tones at all. */
@@ -185,14 +186,14 @@ export default function BandSlider({
               }}
               role="slider"
               tabIndex={0}
-              aria-label={`Boundary between tone ${toneLayers.length - k + 1} and tone ${toneLayers.length - k}`}
+              aria-label={`Tone ${toneLayers.length - k + 1} height`}
               aria-valuemin={1}
               aria-valuemax={totalLayers}
               aria-valuenow={layer}
               aria-valuetext={`layer ${layer}, ${mm(layer)} mm`}
-              title={`Tone ${toneLayers.length - k + 1} gives way to tone ${
-                toneLayers.length - k
-              } at ${mm(layer)} mm · drag to change`}
+              title={`Tone ${
+                toneLayers.length - k + 1
+              } prints ${mm(layer)} mm thick, topping out on layer ${layer} · drag to change`}
             >
               <span className="toneMarkPill">{mm(layer)} mm</span>
               <span className="toneMarkRule" />
