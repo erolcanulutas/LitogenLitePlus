@@ -13,6 +13,7 @@ import { SHAPES } from "./shapes";
 import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
+import { suggestToneLevels } from "./core/tones";
 
 /* -------------------------------------------------------------
  * BRAND FONT & STYLES
@@ -513,6 +514,28 @@ body {
   color: #fbbf24;
 }
 
+.autoBtn {
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid #334155;
+  background: rgba(255, 255, 255, 0.02);
+  color: #94a3b8;
+  font-family: inherit;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.autoBtn:hover:not(:disabled) {
+  color: #a5f3fc;
+  border-color: #a5f3fc;
+  background: rgba(165, 243, 252, 0.1);
+}
+
+.autoBtn:disabled { opacity: 0.4; cursor: default; }
+
 .bandEnd {
   font-size: 0.66rem;
   color: #475569;
@@ -725,6 +748,8 @@ export default function App() {
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
   const [snapRotation, setSnapRotation] = useState(false);
+  /** What the last Auto reading found, or null if it has not been asked. */
+  const [autoNote, setAutoNote] = useState<string | null>(null);
 
   const editorRef = useRef<ImageEditorHandle>(null);
 
@@ -956,6 +981,7 @@ export default function App() {
     setPreviewMesh(null);
     setPreviewKey(null);
     setView("editor");
+    setAutoNote(null);
   }
 
   function resetThicknessDefaults() {
@@ -1073,6 +1099,28 @@ export default function App() {
       }
       return out;
     });
+  }
+
+  /**
+   * Reads the tone count off the picture.
+   *
+   * The right number is a property of the artwork, not a taste: a two-colour
+   * logo has two, a flat-shaded drawing has however many shades it was drawn
+   * with. Finding it by hand means trying numbers until the preview stops
+   * changing, which is what this does in one pass over the histogram.
+   */
+  function autoToneLevels() {
+    if (!imgData) return;
+
+    const found = suggestToneLevels(imgData);
+    setToneLevels(found.levels);
+    applyToneBands(found.levels);
+    setToneOverride(null);
+    setAutoNote(
+      found.smooth
+        ? `No flat tones in this picture — ${found.levels} is a starting point, not a reading.`
+        : `${found.levels} flat tones, holding ${Math.round(found.covered * 100)}% of the picture.`,
+    );
   }
 
   /** Moves one tone boundary, keeping the list increasing. */
@@ -1618,7 +1666,21 @@ export default function App() {
             <>
               <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Tone levels</label>
-                <InfoIcon text="How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments." />
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    className="autoBtn"
+                    onClick={autoToneLevels}
+                    disabled={!imgData}
+                    title={
+                      imgData
+                        ? "Count the flat tones in the picture and use that"
+                        : "Load a picture first"
+                    }
+                  >
+                    Auto
+                  </button>
+                  <InfoIcon text="How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments." />
+                </div>
               </div>
 
               <div className="spinRow">
@@ -1635,6 +1697,7 @@ export default function App() {
                     const next = Math.max(2, Math.min(16, v));
                     setToneLevels(next);
                     applyToneBands(next);
+                    setAutoNote(null);
                   }}
                 />
                 <div className="spinBtns">
@@ -1644,6 +1707,7 @@ export default function App() {
                       const next = Math.min(16, toneLevels + 1);
                       setToneLevels(next);
                       applyToneBands(next);
+                      setAutoNote(null);
                     }}
                   >
                     ▲
@@ -1654,6 +1718,7 @@ export default function App() {
                       const next = Math.max(2, toneLevels - 1);
                       setToneLevels(next);
                       applyToneBands(next);
+                      setAutoNote(null);
                     }}
                   >
                     ▼
@@ -1661,6 +1726,12 @@ export default function App() {
                 </div>
               </div>
             </>
+          )}
+
+          {autoNote && (
+            <div className="bandHint" style={{ marginBottom: 12 }}>
+              {autoNote}
+            </div>
           )}
 
           <div className="label-row">
