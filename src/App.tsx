@@ -742,11 +742,12 @@ export default function App() {
   const [colors, setColors] = useState<string[]>(["#f2f2f2"]);
 
   /**
-   * Where each tone's surface sits, in layers, darkest and so thickest first.
+   * Where one tone gives way to the next, in layers, ascending.
    *
-   * Derived from the tone count until someone drags one, which is what the
-   * override holds. A change of tone count drops the override, since heights
-   * for a different number of tones mean nothing.
+   * N tones are N - 1 boundaries, the same way N colour bands are N - 1 of
+   * them: the marks divide the thickness into regions rather than sitting on
+   * anything. Held only once someone drags one; a change of tone count drops
+   * it, since boundaries for a different number of tones mean nothing.
    */
   const [toneOverride, setToneOverride] = useState<number[] | null>(null);
 
@@ -770,26 +771,62 @@ export default function App() {
    * the colour bands for a count has to happen in the same breath as setting
    * it, before the state has moved.
    */
-  function toneLayersOf(count: number): number[] {
-    const hold = (v: number) => Math.max(1, Math.min(totalLayers, Math.round(v)));
+  /** Thinnest the picture ever gets, in layers: the floor of the tone range. */
+  const minLayer = Math.max(1, Math.round(minT / layerHeight));
 
-    if (toneOverride && toneOverride.length === count) {
+  /**
+   * The N - 1 boundaries for a count of N tones, in layers, ascending.
+   *
+   * Taken for a count rather than read off the current one, because the
+   * colour bands are placed in the same breath as the count is set, before
+   * the state has moved.
+   */
+  function toneDividersOf(count: number): number[] {
+    const hold = (v: number) =>
+      Math.max(minLayer, Math.min(totalLayers - 1, Math.round(v)));
+
+    if (toneOverride && toneOverride.length === count - 1) {
       return toneOverride.map(hold);
     }
 
-    // Evenly across the thickness, the way the generator spaces them when it
-    // is not told otherwise: band k sits at the middle of its brightness slice.
+    // Evenly across the thickness, which is where the generator puts them
+    // when it is not told otherwise.
     const even: number[] = [];
-    for (let k = 0; k < count; k++) {
-      even.push(hold((maxT - ((k + 0.5) / count) * (maxT - minT)) / layerHeight));
+    for (let k = count - 1; k >= 1; k--) {
+      even.push(hold((maxT - (k / count) * (maxT - minT)) / layerHeight));
     }
     return even;
   }
 
-  const toneLayers = useMemo(
-    () => toneLayersOf(toneLevels),
+  /**
+   * Surface height of each tone, thickest first: the middle of its region.
+   *
+   * The marks say where a tone ends, not where its surface sits, so the
+   * surface is taken as the middle of what is left between two of them —
+   * which for evenly spread marks is exactly where the generator would have
+   * put it anyway.
+   */
+  function tonePlateausOf(dividers: readonly number[]): number[] {
+    const edges = [minLayer, ...dividers, totalLayers];
+    const out: number[] = [];
+    for (let r = edges.length - 2; r >= 0; r--) {
+      out.push(
+        Math.max(1, Math.min(totalLayers, Math.round((edges[r] + edges[r + 1]) / 2))),
+      );
+    }
+    return out;
+  }
+
+  const toneDividers = useMemo(
+    () => toneDividersOf(toneLevels),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [toneLevels, toneOverride, totalLayers, minT, maxT, layerHeight],
+    [toneLevels, toneOverride, totalLayers, minLayer, minT, maxT, layerHeight],
+  );
+
+  const tonePlateaus = useMemo(
+    () => tonePlateausOf(toneDividers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [toneDividers, totalLayers, minLayer],
   );
 
   /**
@@ -803,7 +840,7 @@ export default function App() {
   const buriedBands = useMemo(() => {
     if (!graphic) return [] as number[];
 
-    const ends = new Set<number>(toneLayers);
+    const ends = new Set<number>(tonePlateaus);
     if (frameMm > 0.05) ends.add(totalLayers);
 
     const out: number[] = [];
@@ -820,7 +857,7 @@ export default function App() {
       if (!reached) out.push(b);
     }
     return out;
-  }, [graphic, toneLayers, splitLayers, totalLayers, frameMm]);
+  }, [graphic, tonePlateaus, splitLayers, totalLayers, frameMm]);
 
   // Vertical prints the lithophane standing up; flat lays it down so the
   // relief runs along the print axis.
@@ -849,7 +886,7 @@ export default function App() {
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
-    quality, smoothing, levels, toneLayers, layerHeight, splitLayers, colors,
+    quality, smoothing, levels, tonePlateaus, layerHeight, splitLayers, colors,
     orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
@@ -975,10 +1012,10 @@ export default function App() {
    * picked are kept; a new band takes the next one from the palette.
    */
   function applyToneBands(count: number) {
-    const rising = toneLayersOf(count).sort((a, b) => a - b);
+    const rising = toneDividersOf(count);
 
     const next: number[] = [];
-    for (const layer of rising.slice(0, count - 1)) {
+    for (const layer of rising) {
       const at = Math.min(layer, totalLayers - 1);
       if (at >= 1 && (next.length === 0 || at > next[next.length - 1])) {
         next.push(at);
@@ -995,12 +1032,14 @@ export default function App() {
     });
   }
 
-  /** Sets a tone's height, keeping the list from rising with the index. */
+  /** Moves one tone boundary, keeping the list increasing. */
   function setToneAt(index: number, value: number) {
     if (Number.isNaN(value)) return;
-    const next = [...toneLayers];
-    const ceiling = index > 0 ? next[index - 1] : totalLayers;
-    const floor = index + 1 < next.length ? next[index + 1] : 1;
+    const next = [...toneDividers];
+    const floor = index > 0 ? next[index - 1] + 1 : minLayer;
+    const ceiling =
+      index + 1 < next.length ? next[index + 1] - 1 : totalLayers - 1;
+    if (ceiling < floor) return;
     next[index] = Math.max(floor, Math.min(ceiling, Math.round(value)));
     setToneOverride(next);
   }
@@ -1033,7 +1072,7 @@ export default function App() {
     const last = splitLayers.length > 0 ? splitLayers[splitLayers.length - 1] : 0;
 
     if (graphic) {
-      const rising = [...toneLayers].sort((a, b) => a - b);
+      const rising = toneDividersOf(toneLevels);
       const at = rising[splitLayers.length];
       if (at !== undefined && at > last && at <= totalLayers - 1) return at;
     }
@@ -1147,7 +1186,7 @@ export default function App() {
           orientation,
           splitHeightsMm: splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
           toneHeightsMm: graphic
-            ? toneLayers.map((n) => +(n * layerHeight).toFixed(4))
+            ? tonePlateaus.map((n) => +(n * layerHeight).toFixed(4))
             : [],
           colors,
           layerHeight,
@@ -1262,54 +1301,6 @@ export default function App() {
               : "Cut along the picture's own contours, so hard edges come out straight."}
           </div>
 
-          {levels > 0 && (
-            <>
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Tone levels</label>
-                <InfoIcon text="How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments." />
-              </div>
-
-              <div className="spinRow">
-                <input
-                  className="spinInput"
-                  type="number"
-                  min={2}
-                  max={16}
-                  step={1}
-                  value={levels}
-                  onChange={(e) => {
-                    const v = Math.round(Number(e.target.value));
-                    if (Number.isNaN(v)) return;
-                    const next = Math.max(2, Math.min(16, v));
-                    setToneLevels(next);
-                    applyToneBands(next);
-                  }}
-                />
-                <div className="spinBtns">
-                  <button
-                    className="spinBtn"
-                    onClick={() => {
-                      const next = Math.min(16, toneLevels + 1);
-                      setToneLevels(next);
-                      applyToneBands(next);
-                    }}
-                  >
-                    ▲
-                  </button>
-                  <button
-                    className="spinBtn"
-                    onClick={() => {
-                      const next = Math.max(2, toneLevels - 1);
-                      setToneLevels(next);
-                      applyToneBands(next);
-                    }}
-                  >
-                    ▼
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
         </div>
 
         <div className="section">
@@ -1570,7 +1561,63 @@ export default function App() {
             />
           </div>
 
-          <div className="label-row" style={{ marginTop: 12 }}>
+        </div>
+
+        <div className="section">
+          <div className="sectionTitle" style={{ marginBottom: 12 }}>
+            {graphic ? "Tones & Color" : "Color"}
+          </div>
+
+          {levels > 0 && (
+            <>
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Tone levels</label>
+                <InfoIcon text="How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments." />
+              </div>
+
+              <div className="spinRow">
+                <input
+                  className="spinInput"
+                  type="number"
+                  min={2}
+                  max={16}
+                  step={1}
+                  value={levels}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (Number.isNaN(v)) return;
+                    const next = Math.max(2, Math.min(16, v));
+                    setToneLevels(next);
+                    applyToneBands(next);
+                  }}
+                />
+                <div className="spinBtns">
+                  <button
+                    className="spinBtn"
+                    onClick={() => {
+                      const next = Math.min(16, toneLevels + 1);
+                      setToneLevels(next);
+                      applyToneBands(next);
+                    }}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    className="spinBtn"
+                    onClick={() => {
+                      const next = Math.max(2, toneLevels - 1);
+                      setToneLevels(next);
+                      applyToneBands(next);
+                    }}
+                  >
+                    ▼
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="label-row">
             <label className="miniLabel">
               Color Bands · {totalLayers} layers
             </label>
@@ -1582,7 +1629,7 @@ export default function App() {
             splitLayers={splitLayers}
             colors={colors}
             layerHeight={layerHeight}
-            toneLayers={toneLayers}
+            toneLayers={toneDividers}
             showTones={graphic}
             frameLayer={frameMm > 0.05 ? totalLayers : null}
             buried={buriedBands}
@@ -1607,7 +1654,7 @@ export default function App() {
             {splitLayers.length === 0
               ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
               : graphic
-                ? `Drag a divider to move it · amber marks are the heights the surface stops at · exports as 3MF`
+                ? `Drag a divider to move it · amber marks divide the tones · exports as 3MF`
                 : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 
