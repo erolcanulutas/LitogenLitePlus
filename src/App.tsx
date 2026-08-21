@@ -751,6 +751,17 @@ export default function App() {
    */
   const [toneOverride, setToneOverride] = useState<number[] | null>(null);
 
+  /**
+   * The bands the graphic surface had, held while the photo surface shows.
+   *
+   * A photograph wants one plain filament, so switching to it drops back to
+   * that rather than carrying a graphic's palette across. Switching back
+   * would then have thrown the palette away, hence the stash.
+   */
+  const graphicBandsRef = useRef<{ splits: number[]; colors: string[] } | null>(
+    null,
+  );
+
   /** What the crop box's proportions come to in millimetres. */
   const heightMm = widthMm / cropRatio;
 
@@ -1001,6 +1012,38 @@ export default function App() {
 
     setSplitLayers(next);
     setColors(colors.slice(0, next.length + 1));
+  }
+
+  /**
+   * Puts back the bands the graphic surface had, or builds them from the tone
+   * count the first time round.
+   *
+   * Anything the thickness has done meanwhile is taken into account: a
+   * boundary past the top of a thinner model is dropped, and the colours are
+   * trimmed or topped up to match whatever survives.
+   */
+  function restoreGraphicBands() {
+    const kept = graphicBandsRef.current;
+    if (!kept) {
+      applyToneBands(toneLevels);
+      return;
+    }
+
+    const splits: number[] = [];
+    for (const v of kept.splits) {
+      const at = Math.min(Math.round(v), totalLayers - 1);
+      if (at >= 1 && (splits.length === 0 || at > splits[splits.length - 1])) {
+        splits.push(at);
+      }
+    }
+
+    const cols = kept.colors.slice(0, splits.length + 1);
+    while (cols.length < splits.length + 1) {
+      cols.push(BAND_PALETTE[cols.length % BAND_PALETTE.length]);
+    }
+
+    setSplitLayers(splits);
+    setColors(cols);
   }
 
   /**
@@ -1273,8 +1316,11 @@ export default function App() {
               className={`segment ${levels === 0 ? "active" : ""}`}
               onClick={() => {
                 if (!graphic) return;
+                graphicBandsRef.current = { splits: splitLayers, colors };
                 setGraphic(false);
                 setOrientation("vertical");
+                setSplitLayers([]);
+                setColors([BAND_PALETTE[0]]);
               }}
             >
               Photo
@@ -1288,7 +1334,7 @@ export default function App() {
                 if (graphic) return;
                 setGraphic(true);
                 setOrientation("flat");
-                applyToneBands(toneLevels);
+                restoreGraphicBands();
               }}
             >
               Graphic
@@ -1510,7 +1556,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="label-row">
+          <div className="label-row" style={{ marginTop: 4 }}>
             <label className="miniLabel">Print Orientation</label>
             <InfoIcon text="Vertical stands the lithophane up — best for single colour, and built a little under size so it still fits its frame. Flat lays it down so the relief runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer, and no trim needed." />
           </div>
