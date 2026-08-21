@@ -24,8 +24,6 @@ type JobRequest = {
   splitHeightsMm: number[];
   /** One CSS colour per band, so one more than splitHeightsMm. */
   colors: string[];
-  /** Surface height per brightness band, darkest first. Empty means evenly. */
-  toneHeightsMm: number[];
   smoothing: number;
   levels: number;
   /** "vertical" stands the model up; "flat" leaves it lying down. */
@@ -153,7 +151,6 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       quality: msg.quality,
       smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
       levels: msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0,
-      toneZs: msg.toneHeightsMm ?? [],
       splitZs: cuts,
     };
 

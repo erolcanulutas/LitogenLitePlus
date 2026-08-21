@@ -14,7 +14,7 @@ export const CircleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs } = params;
+    const { widthMm, quality, smoothing, levels, splitZs } = params;
 
     const range = maxT - minT;
 
@@ -45,7 +45,6 @@ export const CircleShape: ShapePlugin = {
       },
 
       levels,
-      toneZs,
 
       lumAt: (x, y, footprintMm) => {
         const u = (x + outerRadius) / (2 * outerRadius);

@@ -20,7 +20,7 @@ export const HexagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs } = params;
+    const { widthMm, quality, smoothing, levels, splitZs } = params;
 
     const range = maxT - minT;
 
@@ -60,7 +60,6 @@ export const HexagonShape: ShapePlugin = {
       boundaryAt: polygonBoundary(corners),
 
       levels,
-      toneZs,
 
       lumAt: (x, y, footprintMm) => {
         const u = clamp01((x + circumradius) / totalW);

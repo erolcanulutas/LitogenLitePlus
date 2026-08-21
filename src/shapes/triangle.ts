@@ -26,7 +26,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs } = params;
+    const { widthMm, quality, smoothing, levels, splitZs } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -50,11 +50,7 @@ export const TriangleShape: ShapePlugin = {
     const terraced = levels >= 2;
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
-    // Whatever the panel set for this tone, or evenly spaced if it has not
-    // been touched. Either way it must not increase with the band index, or
-    // the terrace walls come out facing the wrong way.
-    const bandHeight = (band: number) =>
-      toneZs[band] ?? heightOf((band + 0.5) / levels);
+    const bandHeight = (band: number) => heightOf((band + 0.5) / levels);
     const heightForLum = (l: number) =>
       terraced
         ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))
