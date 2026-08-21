@@ -460,26 +460,28 @@ body {
   z-index: 3;
   display: flex;
   align-items: center;
+  padding-left: 6px;
   cursor: ns-resize;
   touch-action: none;
 }
 
-.toneMark::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  margin-top: -1px;
+/*
+ * The label first and only a short dash after it, so a tone reads as a mark
+ * at a height. Drawn as a rule across the track it read as a divider, and
+ * four of them looked like they cut the track into five.
+ */
+.toneMarkRule {
+  flex: 1;
+  margin-left: 6px;
   border-top: 2px dashed #fbbf24;
 }
 
 .toneMark:focus-visible { outline: none; }
-.toneMark:focus-visible::before { border-top-color: #a5f3fc; }
+.toneMark:focus-visible .toneMarkRule { border-top-color: #a5f3fc; }
+.toneMark:focus-visible .toneMarkPill { border-color: #a5f3fc; }
 
 .toneMarkPill {
   position: relative;
-  margin-left: 6px;
   padding: 1px 6px;
   border-radius: 999px;
   border: 1px solid rgba(251, 191, 36, 0.55);
@@ -518,6 +520,9 @@ body {
 }
 
 .bandEndTop { margin: 0 2px 4px; }
+
+/* Named, and tinted with the tones, because it is one of the same heights. */
+.bandEndFrame { color: #b08a3c; }
 
 .bandHint {
   margin-top: 6px;
@@ -1525,6 +1530,7 @@ export default function App() {
             layerHeight={layerHeight}
             toneLayers={toneLayers}
             showTones={graphic}
+            frameLayer={frameMm > 0.05 ? totalLayers : null}
             buried={buriedBands}
             onMoveSplit={setSplitAt}
             onMoveTone={setToneAt}
@@ -1546,7 +1552,9 @@ export default function App() {
           <div className="bandHint">
             {splitLayers.length === 0
               ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
-              : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
+              : graphic
+                ? `Drag a divider to move it · amber marks are the heights the surface stops at · exports as 3MF`
+                : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 
           <button

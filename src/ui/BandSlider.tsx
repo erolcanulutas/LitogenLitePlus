@@ -13,6 +13,15 @@ type Props = {
   toneLayers: number[];
   /** Whether the surface is cut into tones at all. */
   showTones: boolean;
+  /**
+   * Layer the flat frame band tops out at, or null when there is no frame.
+   *
+   * It is a height the surface stops at just as a tone is, and it takes the
+   * colour of whichever band it lands in — but it is set by the frame, not by
+   * the picture, so it is shown and not dragged. Leaving it out made the tone
+   * count look wrong: four tones, five heights in the exported model.
+   */
+  frameLayer: number | null;
   /** Bands no tone reaches, so their colour cannot show. */
   buried: readonly number[];
   /** Move boundary `index` to `layer`. The caller does the clamping. */
@@ -42,6 +51,7 @@ export default function BandSlider({
   layerHeight,
   toneLayers,
   showTones,
+  frameLayer,
   buried,
   onMoveSplit,
   onMoveTone,
@@ -102,8 +112,18 @@ export default function BandSlider({
 
   return (
     <div className="bandSlider">
-      <div className="bandEnd bandEndTop">
-        Top · layer {totalLayers} · {mm(totalLayers)} mm
+      {/*
+        The frame is a height the surface stops at, the same as a tone is, and
+        leaving it unnamed made the count look wrong: four tones, five plateaus
+        in the exported model. It sits at the very top, one layer from the
+        topmost tone, so it is named on the axis rather than marked inside the
+        track where the two labels would sit on each other.
+      */}
+      <div
+        className={`bandEnd bandEndTop${frameLayer !== null ? " bandEndFrame" : ""}`}
+      >
+        {frameLayer !== null ? "Frame" : "Top"} · layer {totalLayers} ·{" "}
+        {mm(totalLayers)} mm
       </div>
 
       <div className="bandTrack" ref={trackRef}>
@@ -174,6 +194,7 @@ export default function BandSlider({
               <span className="toneMarkPill">
                 T{k + 1} · {mm(layer)} mm
               </span>
+              <span className="toneMarkRule" />
             </div>
           ))}
 
