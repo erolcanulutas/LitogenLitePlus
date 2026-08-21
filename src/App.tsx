@@ -1006,14 +1006,29 @@ export default function App() {
             <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into bands and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art." />
           </div>
 
-          <select
-            className="spinInput"
-            value={levels === 0 ? "photo" : "graphic"}
-            onChange={(e) => setLevels(e.target.value === "photo" ? 0 : 2)}
-          >
-            <option value="photo">Photo (smooth)</option>
-            <option value="graphic">Graphic (hard edges)</option>
-          </select>
+          <div className="segmented">
+            <button
+              className={`segment ${levels === 0 ? "active" : ""}`}
+              onClick={() => setLevels(0)}
+            >
+              Photo
+            </button>
+            {/* Pressing Graphic while it is already on leaves the band
+                count alone. Going by way of Photo still starts over at two,
+                the way the dropdown did. */}
+            <button
+              className={`segment ${levels > 0 ? "active" : ""}`}
+              onClick={() => setLevels((v) => (v === 0 ? 2 : v))}
+            >
+              Graphic
+            </button>
+          </div>
+
+          <div className="bandHint">
+            {levels === 0
+              ? "sampled as a continuous surface — what a photograph wants"
+              : "cut along the picture's own contours, so hard edges come out straight"}
+          </div>
 
           {levels > 0 && (
             <>
