@@ -77,6 +77,17 @@ export type ShapeBuildParams = {
   levels: number;
 
   /**
+   * Surface height in mm for each brightness band, index 0 being the darkest
+   * and so the thickest. Empty means the even spacing across minT..maxT that
+   * the band count implies.
+   *
+   * Exposed because the thickness of a tone is what decides which colour band
+   * it ends inside, so lining the two up by hand is the only way to get a
+   * given tone to come out a given colour.
+   */
+  toneZs: readonly number[];
+
+  /**
    * Heights the model will later be cut at for a colour split, ascending.
    *
    * The generator puts a vertex ring on the rim wall at each one so the cuts

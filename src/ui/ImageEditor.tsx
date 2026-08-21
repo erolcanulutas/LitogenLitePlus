@@ -100,6 +100,15 @@ const ROT_HANDLE_PFX = 20;
  */
 const ROT_HANDLE_INSIDE = 44;
 const MIN_WIDTH_RX = 0.05;
+/**
+ * Largest crop, as a multiple of the drawn image's width.
+ *
+ * It used to be 2, which is not much room for a rectangle: the plate could
+ * never be more than twice the picture across, so anything wanting a small
+ * graphic on a wide panel ran into a wall. The number is only here to keep a
+ * runaway drag from producing nonsense.
+ */
+const MAX_WIDTH_RX = 24;
 
 function deg2rad(deg: number) {
   return (deg * Math.PI) / 180;
@@ -342,8 +351,13 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       debounceTimerRef.current = window.setTimeout(() => {
         if (!image) return;
 
-        const OUT_W = 900;
-        const OUT_H = Math.round(OUT_W / cropRatio);
+        // Held to a pixel budget rather than a fixed width: at the ratios a
+        // free-form rectangle reaches, a fixed 900 wide would have asked for a
+        // 900 x 9000 buffer. At the ratios the fixed shapes use this comes out
+        // at the 900 it always was.
+        const OUT_AREA = 900 * 780;
+        const OUT_W = Math.max(64, Math.round(Math.sqrt(OUT_AREA * cropRatio)));
+        const OUT_H = Math.max(64, Math.round(OUT_W / cropRatio));
 
         const outCanvas = new OffscreenCanvas(OUT_W, OUT_H);
         const octx = outCanvas.getContext("2d");
@@ -703,7 +717,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         const curDist = Math.hypot(local.x, local.y);
         const scale = curDist / startDist;
         let newW = startCrop.w * scale;
-        newW = Math.max(MIN_WIDTH_RX, Math.min(newW, 2.0));
+        newW = Math.max(MIN_WIDTH_RX, Math.min(newW, MAX_WIDTH_RX));
         setCrop({ ...startCrop, w: newW });
       } else if (mode === "box" && startRatio !== undefined) {
         const ccx = W / 2 + startCrop.cx * dw;
@@ -714,7 +728,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         // resize already works, so the box grows about its middle. The side
         // the grip does not drive is held at the size it started at — hence
         // startRatio, which the live ratio has already moved away from.
-        const side = (v: number) => Math.max(MIN_WIDTH_RX, Math.min(2.0, v));
+        const side = (v: number) =>
+          Math.max(MIN_WIDTH_RX, Math.min(MAX_WIDTH_RX, v));
         const nextW = side(axisX ? (2 * Math.abs(local.x)) / dw : startCrop.w);
         const nextH = side(
           axisY ? (2 * Math.abs(local.y)) / dw : startCrop.w / startRatio,
