@@ -1026,15 +1026,15 @@ export default function App() {
 
           <div className="bandHint">
             {levels === 0
-              ? "sampled as a continuous surface — what a photograph wants"
-              : "cut along the picture's own contours, so hard edges come out straight"}
+              ? "Sampled as a continuous surface — what a photograph wants."
+              : "Cut along the picture's own contours, so hard edges come out straight."}
           </div>
 
           {levels > 0 && (
             <>
               <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Bands</label>
-                <InfoIcon text="How many brightness levels the picture is reduced to. 2 gives a pure silhouette — right for a black and white logo. More bands keep some shading, at the cost of extra walls." />
+                <label className="miniLabel">Tone levels</label>
+                <InfoIcon text="How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments." />
               </div>
 
               <div className="spinRow">
@@ -1124,7 +1124,7 @@ export default function App() {
 
           {shape.freeRatio && (
             <div className="bandHint">
-              height {heightMm.toFixed(1)} mm · drag the crop box's side or
+              Height {heightMm.toFixed(1)} mm · drag the crop box's side or
               corner grips to change it
             </div>
           )}
@@ -1298,7 +1298,7 @@ export default function App() {
 
           {orientation === "vertical" && (
             <div className="bandHint">
-              built at {buildWidthMm.toFixed(2)} mm, {VERTICAL_TRIM_MM.toFixed(2)}{" "}
+              Built at {buildWidthMm.toFixed(2)} mm, {VERTICAL_TRIM_MM.toFixed(2)}{" "}
               mm under the {widthMm.toFixed(2)} mm set above — upright prints
               come out a touch wide and stop fitting their frame. Flat needs no
               trim.
@@ -1346,8 +1346,8 @@ export default function App() {
 
           <div className="bandHint">
             {splitLayers.length === 0
-              ? `single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
-              : `drag a divider to move it · click a band to recolour · exports as 3MF`}
+              ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
+              : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 
           <button

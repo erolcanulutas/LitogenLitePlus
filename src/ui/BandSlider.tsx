@@ -85,7 +85,7 @@ export default function BandSlider({
   return (
     <div className="bandSlider">
       <div className="bandEnd bandEndTop">
-        top · layer {totalLayers} · {mm(totalLayers)} mm
+        Top · layer {totalLayers} · {mm(totalLayers)} mm
       </div>
 
       <div className="bandTrack" ref={trackRef}>
@@ -158,7 +158,7 @@ export default function BandSlider({
         ))}
       </div>
 
-      <div className="bandEnd">base · layer 1</div>
+      <div className="bandEnd">Base · layer 1</div>
     </div>
   );
 }
