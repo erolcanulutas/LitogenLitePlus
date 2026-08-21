@@ -580,6 +580,18 @@ const FLAT_HINT_KEY = "litogen.hideFlatHint";
 /** Step the editor's rotation lands on while snapping is switched on. */
 const ROTATION_SNAP_DEG = 10;
 
+/**
+ * How much narrower an upright model is built than the width that was asked
+ * for.
+ *
+ * Standing up, the width runs across the bed, where an extrusion is laid to
+ * the outside of the path and the first layers spread under their own weight.
+ * The part comes out a few tenths over and stops dropping into its frame.
+ * Lying flat the same dimension runs up the build axis, where layers land on
+ * their nominal height, so nothing is taken off there.
+ */
+const VERTICAL_TRIM_MM = 0.5;
+
 /** Default palette for new bands: light at the bottom, darker going up. */
 const BAND_PALETTE = [
   "#f2f2f2", "#1f2937", "#b91c1c", "#1d4ed8",
@@ -652,6 +664,13 @@ export default function App() {
   const [orientation, setOrientation] = useState<"vertical" | "flat">(
     "vertical",
   );
+  // What actually gets built. The trim is a uniform scale, so the shape keeps
+  // its proportions and simply comes out a touch under all round.
+  const buildWidthMm =
+    orientation === "vertical"
+      ? Math.max(1, widthMm - VERTICAL_TRIM_MM)
+      : widthMm;
+  const buildHeightMm = buildWidthMm / cropRatio;
   const [flatHintOpen, setFlatHintOpen] = useState(false);
 
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
@@ -897,8 +916,8 @@ export default function App() {
           id: currentJobId,
           shapeId,
           image: imgData,
-          widthMm,
-          heightMm: +heightMm.toFixed(4),
+          widthMm: +buildWidthMm.toFixed(4),
+          heightMm: +buildHeightMm.toFixed(4),
           minT,
           maxT,
           frameMm,
@@ -979,6 +998,60 @@ export default function App() {
             )}
           </label>
 
+        </div>
+
+        <div className="section">
+          <div className="label-row">
+            <div className="sectionTitle">Surface</div>
+            <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into bands and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art." />
+          </div>
+
+          <select
+            className="spinInput"
+            value={levels === 0 ? "photo" : "graphic"}
+            onChange={(e) => setLevels(e.target.value === "photo" ? 0 : 2)}
+          >
+            <option value="photo">Photo (smooth)</option>
+            <option value="graphic">Graphic (hard edges)</option>
+          </select>
+
+          {levels > 0 && (
+            <>
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Bands</label>
+                <InfoIcon text="How many brightness levels the picture is reduced to. 2 gives a pure silhouette — right for a black and white logo. More bands keep some shading, at the cost of extra walls." />
+              </div>
+
+              <div className="spinRow">
+                <input
+                  className="spinInput"
+                  type="number"
+                  min={2}
+                  max={16}
+                  step={1}
+                  value={levels}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (!Number.isNaN(v)) setLevels(Math.max(2, Math.min(16, v)));
+                  }}
+                />
+                <div className="spinBtns">
+                  <button
+                    className="spinBtn"
+                    onClick={() => setLevels((v) => Math.min(16, v + 1))}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    className="spinBtn"
+                    onClick={() => setLevels((v) => Math.max(2, v - 1))}
+                  >
+                    ▼
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="section">
@@ -1190,7 +1263,7 @@ export default function App() {
 
           <div className="label-row">
             <label className="miniLabel">Print Orientation</label>
-            <InfoIcon text="Vertical stands the lithophane up — best for single colour. Flat lays it down so the relief runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer." />
+            <InfoIcon text="Vertical stands the lithophane up — best for single colour, and built a little under size so it still fits its frame. Flat lays it down so the relief runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer, and no trim needed." />
           </div>
 
           <div className="segmented">
@@ -1207,6 +1280,15 @@ export default function App() {
               Flat
             </button>
           </div>
+
+          {orientation === "vertical" && (
+            <div className="bandHint">
+              built at {buildWidthMm.toFixed(2)} mm, {VERTICAL_TRIM_MM.toFixed(2)}{" "}
+              mm under the {widthMm.toFixed(2)} mm set above — upright prints
+              come out a touch wide and stop fitting their frame. Flat needs no
+              trim.
+            </div>
+          )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
             <label className="miniLabel">Layer Height (mm)</label>
@@ -1291,58 +1373,6 @@ export default function App() {
             <option value="normal">Normal</option>
             <option value="high">High</option>
           </select>
-
-          <div className="label-row" style={{ marginTop: 12 }}>
-            <label className="miniLabel">Surface</label>
-            <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into bands and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art." />
-          </div>
-
-          <select
-            className="spinInput"
-            value={levels === 0 ? "photo" : "graphic"}
-            onChange={(e) => setLevels(e.target.value === "photo" ? 0 : 2)}
-          >
-            <option value="photo">Photo (smooth)</option>
-            <option value="graphic">Graphic (hard edges)</option>
-          </select>
-
-          {levels > 0 && (
-            <>
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Bands</label>
-                <InfoIcon text="How many brightness levels the picture is reduced to. 2 gives a pure silhouette — right for a black and white logo. More bands keep some shading, at the cost of extra walls." />
-              </div>
-
-              <div className="spinRow">
-                <input
-                  className="spinInput"
-                  type="number"
-                  min={2}
-                  max={16}
-                  step={1}
-                  value={levels}
-                  onChange={(e) => {
-                    const v = Math.round(Number(e.target.value));
-                    if (!Number.isNaN(v)) setLevels(Math.max(2, Math.min(16, v)));
-                  }}
-                />
-                <div className="spinBtns">
-                  <button
-                    className="spinBtn"
-                    onClick={() => setLevels((v) => Math.min(16, v + 1))}
-                  >
-                    ▲
-                  </button>
-                  <button
-                    className="spinBtn"
-                    onClick={() => setLevels((v) => Math.max(2, v - 1))}
-                  >
-                    ▼
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
             <label className="miniLabel">Edge Smoothing</label>
