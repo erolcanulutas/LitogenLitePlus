@@ -175,48 +175,100 @@ export function buildBandSquash(
     }
   }
 
-  // Thickest point of each run, then one verdict for the whole run.
-  const limit = (REGION_HALF_WIDTH_MM / mmPerPx) * 3; // chamfer units
+  // Where is the band too thin to be a region, and is it separating two
+  // others where it is?
+  //
+  // Both have to be asked pixel by pixel. Asking once per connected run was
+  // tried and is too coarse: the samurai runs its rings into the red it draws
+  // with, and one place where that run reaches a millimetre across saved the
+  // whole of it, rings included. Rolex got away with it only because each
+  // letter carries its own separate ring.
+  //
+  // "Too thin" is a morphological opening: a pixel is part of a region if a
+  // disc the size of a region fits inside the band and covers it. The disc
+  // fits wherever the distance to another band is at least its radius, so the
+  // opening is that test spread over the disc. A wide region keeps all of
+  // itself, including its edge; a strip narrower than the disc keeps none.
+  //
+  // "Separating two others" is the local range of the band index. A ramp has
+  // something darker on one side and something lighter on the other. A thin
+  // thing that is really there has the same band both sides — the samurai iris
+  // is red with the black of the eye either side, and closing it took the eye
+  // out of the picture.
+  const limitCh = (REGION_HALF_WIDTH_MM / mmPerPx) * 3;
+  const R = Math.max(1, Math.round(REGION_HALF_WIDTH_MM / mmPerPx));
   const amount = new Uint8Array(n * levels);
-  const seen = new Uint8Array(n);
-  const stack = new Int32Array(n);
-  const run = new Int32Array(n);
   let marked = 0;
 
-  for (let start = 0; start < n; start++) {
-    if (seen[start]) continue;
-    const b = band[start];
-    seen[start] = 1;
-    if (b === 0 || b === levels - 1) continue;
+  const lmin = new Uint8Array(n);
+  const lmax = new Uint8Array(n);
+  {
+    const tMin = new Uint8Array(n);
+    const tMax = new Uint8Array(n);
+    for (let y = 0; y < hPx; y++) {
+      for (let x = 0; x < w; x++) {
+        let mn = 255;
+        let mx = 0;
+        const x0 = Math.max(0, x - R);
+        const x1 = Math.min(w - 1, x + R);
+        for (let k = x0; k <= x1; k++) {
+          const v = band[y * w + k];
+          if (v < mn) mn = v;
+          if (v > mx) mx = v;
+        }
+        tMin[y * w + x] = mn;
+        tMax[y * w + x] = mx;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < hPx; y++) {
+        let mn = 255;
+        let mx = 0;
+        const y0 = Math.max(0, y - R);
+        const y1 = Math.min(hPx - 1, y + R);
+        for (let k = y0; k <= y1; k++) {
+          const a2 = tMin[k * w + x];
+          const b2 = tMax[k * w + x];
+          if (a2 < mn) mn = a2;
+          if (b2 > mx) mx = b2;
+        }
+        lmin[y * w + x] = mn;
+        lmax[y * w + x] = mx;
+      }
+    }
+  }
 
-    let top = 0;
-    let size = 0;
-    let thickest = 0;
-    let touchesDarker = false;
-    let touchesLighter = false;
-    stack[top++] = start;
+  const fits = new Uint8Array(n);
+  const opened = new Uint8Array(n);
+  const tmpOpen = new Uint8Array(n);
 
-    const note = (j: number) => {
-      const o = band[j];
-      if (o < b) touchesDarker = true;
-      else if (o > b) touchesLighter = true;
-    };
+  for (let b = 1; b < levels - 1; b++) {
+    for (let i = 0; i < n; i++) fits[i] = band[i] === b && dist[i] >= limitCh ? 1 : 0;
 
-    while (top > 0) {
-      const i = stack[--top];
-      run[size++] = i;
-      if (dist[i] > thickest) thickest = dist[i];
-      const x = i % w;
-      const y = (i / w) | 0;
-      if (x > 0) { if (band[i - 1] === b) { if (!seen[i - 1]) { seen[i - 1] = 1; stack[top++] = i - 1; } } else note(i - 1); }
-      if (x < w - 1) { if (band[i + 1] === b) { if (!seen[i + 1]) { seen[i + 1] = 1; stack[top++] = i + 1; } } else note(i + 1); }
-      if (y > 0) { if (band[i - w] === b) { if (!seen[i - w]) { seen[i - w] = 1; stack[top++] = i - w; } } else note(i - w); }
-      if (y < hPx - 1) { if (band[i + w] === b) { if (!seen[i + w]) { seen[i + w] = 1; stack[top++] = i + w; } } else note(i + w); }
+    for (let y = 0; y < hPx; y++) {
+      for (let x = 0; x < w; x++) {
+        let m = 0;
+        const x0 = Math.max(0, x - R);
+        const x1 = Math.min(w - 1, x + R);
+        for (let k = x0; k <= x1 && m === 0; k++) m = fits[y * w + k];
+        tmpOpen[y * w + x] = m;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < hPx; y++) {
+        let m = 0;
+        const y0 = Math.max(0, y - R);
+        const y1 = Math.min(hPx - 1, y + R);
+        for (let k = y0; k <= y1 && m === 0; k++) m = tmpOpen[k * w + x];
+        opened[y * w + x] = m;
+      }
     }
 
-    if (thickest < limit && touchesDarker && touchesLighter) {
-      for (let k = 0; k < size; k++) amount[run[k] * levels + b] = 255;
-      marked += size;
+    for (let i = 0; i < n; i++) {
+      if (band[i] !== b || opened[i]) continue;
+      if (lmin[i] >= b || lmax[i] <= b) continue;
+      amount[i * levels + b] = 255;
+      marked++;
     }
   }
 
