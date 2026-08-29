@@ -1,3 +1,4 @@
+import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
@@ -34,7 +35,7 @@ export const RectangleShape: ShapePlugin = {
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
     const {
-      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts,
+      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash,
     } = params;
 
     const W = Math.max(1, widthMm);
@@ -78,8 +79,17 @@ export const RectangleShape: ShapePlugin = {
     // Brightness everywhere, with no frame mask on it, so the terracing can
     // solve for where a contour actually runs. See core/terrace.ts.
     const field = terraced
-      ? (x: number, y: number) =>
-          sampleHeightFiltered(sampler, (x - x0) / W, 1 - (y - y0) / H, footprintPx)
+      ? (x: number, y: number) => {
+          const u = (x - x0) / W;
+          const v = 1 - (y - y0) / H;
+          return squashLum(
+            squash,
+            u,
+            v,
+            sampleHeightFiltered(sampler, u, v, footprintPx),
+            cuts,
+          );
+        }
       : undefined;
 
     const inset = Math.max(0, frameMm);
@@ -95,11 +105,14 @@ export const RectangleShape: ShapePlugin = {
       ) {
         return -1;
       }
-      return sampleHeightFiltered(
-        sampler,
-        (x - x0) / W,
-        1 - (y - y0) / H,
-        footprintPx,
+      const u = (x - x0) / W;
+      const v = 1 - (y - y0) / H;
+      return squashLum(
+        squash,
+        u,
+        v,
+        sampleHeightFiltered(sampler, u, v, footprintPx),
+        cuts,
       );
     };
 

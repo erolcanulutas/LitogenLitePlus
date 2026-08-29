@@ -1,3 +1,5 @@
+import { squashLum } from "../core/squash";
+import { bandCuts } from "../core/terrace";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh, polygonBoundary } from "../core/radial";
@@ -28,7 +30,7 @@ export const PentagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
 
     const range = maxT - minT;
 
@@ -55,6 +57,7 @@ export const PentagonShape: ShapePlugin = {
     const offY = (Math.min(...ys) + Math.max(...ys)) / 2;
     const corners = raw.map((p) => ({ x: p.x - offX, y: p.y - offY }));
 
+    const cuts = bandCuts(levels, toneCuts);
     const sampler = buildAreaSampler(heightmap);
     const pxPerMm = heightmap.w / bboxW;
 
@@ -77,7 +80,15 @@ export const PentagonShape: ShapePlugin = {
       lumAt: (x, y, footprintMm) => {
         const u = clamp01((x + bboxW / 2) / bboxW);
         const v = clamp01(1 - (y + bboxH / 2) / bboxH);
-        return sampleHeightFiltered(sampler, u, v, smoothing * footprintMm * pxPerMm);
+        // Squeezed first, so everything downstream — the vertex heights, the
+        // bands, the contour solve — reads one field and reads it the same.
+        return squashLum(
+          squash,
+          u,
+          v,
+          sampleHeightFiltered(sampler, u, v, smoothing * footprintMm * pxPerMm),
+          cuts,
+        );
       },
 
       heightOf: (lum) =>

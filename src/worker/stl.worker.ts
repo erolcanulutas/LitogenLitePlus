@@ -1,4 +1,7 @@
 /// <reference lib="webworker" />
+import { buildBandSquash } from "../core/squash";
+import { bandCuts } from "../core/terrace";
+import { radialCellMm } from "../core/quality";
 
 import { imageToHeightmap } from "../core/heightmap";
 import { writeBinarySTL } from "../core/stl_writer";
@@ -143,6 +146,23 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       cuts.push(h);
     }
 
+    const smoothing = clamp(msg.smoothing ?? 1, 0.4, 3);
+    const levels = msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0;
+    const toneCuts = msg.toneCuts ?? [];
+
+    // Which runs of which bands are only the ramp between their neighbours.
+    // Worked out once, off the heightmap, because it is a question about
+    // regions and cannot be answered a point at a time.
+    const squash =
+      levels >= 2
+        ? buildBandSquash(
+            hmRaw,
+            bandCuts(levels, toneCuts),
+            msg.widthMm / hmRaw.w,
+            smoothing * radialCellMm(msg.quality) * (hmRaw.w / msg.widthMm),
+          )
+        : null;
+
     const buildParams = {
       widthMm: msg.widthMm,
       heightMm: msg.heightMm,
@@ -152,10 +172,11 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       frameMm: msg.frameMm,
       emboss: msg.emboss,
       quality: msg.quality,
-      smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
-      levels: msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0,
+      smoothing,
+      levels,
       toneZs: msg.toneHeightsMm ?? [],
-      toneCuts: msg.toneCuts ?? [],
+      toneCuts,
+      squash,
       splitZs: cuts,
     };
 

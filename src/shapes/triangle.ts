@@ -1,3 +1,4 @@
+import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
@@ -26,7 +27,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -64,13 +65,17 @@ export const TriangleShape: ShapePlugin = {
     // Brightness everywhere, with no frame mask on it, so the terracing can
     // solve for where a contour actually runs. See core/terrace.ts.
     const field = terraced
-      ? (x: number, y: number) =>
-          sampleHeightFiltered(
-            sampler,
-            (x + side / 2) / side,
-            ((2 * hTri) / 3 - y) / hTri,
-            footprintPx,
-          )
+      ? (x: number, y: number) => {
+          const uu = (x + side / 2) / side;
+          const vv = ((2 * hTri) / 3 - y) / hTri;
+          return squashLum(
+            squash,
+            uu,
+            vv,
+            sampleHeightFiltered(sampler, uu, vv, footprintPx),
+            cuts,
+          );
+        }
       : undefined;
 
     /** Brightness at a grid point, or -1 inside the flat frame band. */
@@ -79,7 +84,13 @@ export const TriangleShape: ShapePlugin = {
 
       const uu = (x + side / 2) / side;
       const vv = ((2 * hTri) / 3 - y) / hTri;
-      return sampleHeightFiltered(sampler, uu, vv, footprintPx);
+      return squashLum(
+        squash,
+        uu,
+        vv,
+        sampleHeightFiltered(sampler, uu, vv, footprintPx),
+        cuts,
+      );
     };
 
     // top (N^2) + base fan (3N) + rim (6N), with headroom for terrace cuts.

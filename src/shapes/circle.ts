@@ -1,3 +1,5 @@
+import { squashLum } from "../core/squash";
+import { bandCuts } from "../core/terrace";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import type { Mesh } from "../core/mesh";
 import { buildRadialMesh } from "../core/radial";
@@ -14,7 +16,7 @@ export const CircleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
 
     const range = maxT - minT;
 
@@ -22,6 +24,7 @@ export const CircleShape: ShapePlugin = {
     const innerRadius = (widthMm - 2 * frameMm) / 2;
     const hasFrame = frameMm > 0.05 && innerRadius > 0;
 
+    const cuts = bandCuts(levels, toneCuts);
     const sampler = buildAreaSampler(heightmap);
     const pxPerMm = heightmap.w / (2 * outerRadius);
 
@@ -51,7 +54,15 @@ export const CircleShape: ShapePlugin = {
       lumAt: (x, y, footprintMm) => {
         const u = (x + outerRadius) / (2 * outerRadius);
         const v = (outerRadius - y) / (2 * outerRadius);
-        return sampleHeightFiltered(sampler, u, v, smoothing * footprintMm * pxPerMm);
+        // Squeezed first, so everything downstream — the vertex heights, the
+        // bands, the contour solve — reads one field and reads it the same.
+        return squashLum(
+          squash,
+          u,
+          v,
+          sampleHeightFiltered(sampler, u, v, smoothing * footprintMm * pxPerMm),
+          cuts,
+        );
       },
 
       heightOf: (lum) =>

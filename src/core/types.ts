@@ -1,3 +1,4 @@
+import type { BandSquash } from "./squash";
 import type { Quality } from "./quality";
 import type { Mesh } from "./mesh";
 
@@ -92,6 +93,12 @@ export type ShapeBuildParams = {
    * are tones. Empty falls back to dividing the range evenly.
    */
   toneCuts: readonly number[];
+
+  /**
+   * Where a band is only the ramp between its neighbours and should be
+   * squeezed shut. See core/squash.ts.
+   */
+  squash: BandSquash | null;
 
   /**
    * Heights the model will later be cut at for a colour split, ascending.
