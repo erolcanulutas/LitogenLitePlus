@@ -1836,13 +1836,13 @@ export default function App() {
 
           {/* Widening the sampling window only trades sharpness for
               smoothness on a continuous surface. Graphic cuts along the
-              contour instead and is built without any window at all, so
-              there is nothing here for it to answer to. (It used to be
-              handed one anyway. Measuring how much of a logo the window
-              moved from dark to light said 0.2% and looked harmless, but
-              area was the wrong thing to measure: the cost is at the
-              boundaries, where the window widened the ramp enough to grow a
-              whole spurious band along every edge.) */}
+              contour instead, and measured across the range the control
+              offers it moves a logo's dark area by 0.2% — nothing.
+
+              Graphic still gets the window, and needs it. Taking it away was
+              tried and reverted: a terraced surface reads one point per mesh
+              vertex, so without the averaging the picture's own noise lands
+              either side of a cut and speckles what ought to be flat. */}
           {levels === 0 && (
             <>
             <div className="label-row" style={{ marginTop: 12 }}>

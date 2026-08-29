@@ -143,8 +143,6 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       cuts.push(h);
     }
 
-    const levels = msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0;
-
     const buildParams = {
       widthMm: msg.widthMm,
       heightMm: msg.heightMm,
@@ -154,22 +152,8 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       frameMm: msg.frameMm,
       emboss: msg.emboss,
       quality: msg.quality,
-      /**
-       * Terracing is not pre-blurred.
-       *
-       * Averaging over the area a mesh cell covers is what stops a smooth
-       * surface aliasing, and it is right for a photograph. A terraced one
-       * cuts along the picture's contours instead, so it gains nothing — and
-       * pays: the average ramps across a hard edge over the width of the
-       * window, and any tone whose brightness lies between the two sides then
-       * gets a band of its own along that edge. Rolex's gold sits between its
-       * green and its white, so every letter came out with a gold lip 0.73mm
-       * wide at 80mm across. Sampling the picture directly puts that at
-       * 0.27mm, which is the artwork's own anti-aliasing and as far down as it
-       * goes.
-       */
-      smoothing: levels >= 2 ? 0 : clamp(msg.smoothing ?? 1, 0.4, 3),
-      levels,
+      smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
+      levels: msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0,
       toneZs: msg.toneHeightsMm ?? [],
       toneCuts: msg.toneCuts ?? [],
       splitZs: cuts,
