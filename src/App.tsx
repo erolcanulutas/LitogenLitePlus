@@ -349,28 +349,6 @@ body {
   right: 0;
 }
 
-/* The picker covers the whole band, so it has no shape of its own to see.
-   This is the cue that the band is clickable: a small chip in the corner,
-   inert itself so the click still lands on the input underneath. */
-.bandSegSwatch {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
-  border: 1.5px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.45);
-  background: transparent;
-  pointer-events: none;
-  opacity: 0.55;
-  transition: opacity 0.12s ease;
-}
-
-.bandSeg:hover .bandSegSwatch {
-  opacity: 1;
-}
-
 .bandSegPick {
   display: block;
   width: 100%;
@@ -1858,8 +1836,13 @@ export default function App() {
 
           {/* Widening the sampling window only trades sharpness for
               smoothness on a continuous surface. Graphic cuts along the
-              contour instead, and measured across the range the control
-              offers it moves a logo's dark area by 0.2% — nothing. */}
+              contour instead and is built without any window at all, so
+              there is nothing here for it to answer to. (It used to be
+              handed one anyway. Measuring how much of a logo the window
+              moved from dark to light said 0.2% and looked harmless, but
+              area was the wrong thing to measure: the cost is at the
+              boundaries, where the window widened the ramp enough to grow a
+              whole spurious band along every edge.) */}
           {levels === 0 && (
             <>
             <div className="label-row" style={{ marginTop: 12 }}>
