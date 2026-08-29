@@ -162,6 +162,7 @@ export default function BandSlider({
                     : "")
                 }
               />
+              <span className="bandSegSwatch" aria-hidden="true" />
             </div>
           );
         })}

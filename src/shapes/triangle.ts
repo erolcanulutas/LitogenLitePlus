@@ -1,7 +1,7 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
-import { emitTerracedTriangle } from "../core/terrace";
+import { bandCuts, bandOfLum, emitTerracedTriangle } from "../core/terrace";
 import { emitWallColumn } from "../core/wall";
 import { triangleCellMm } from "../core/quality";
 
@@ -26,7 +26,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -48,6 +48,7 @@ export const TriangleShape: ShapePlugin = {
     const footprintPx = smoothing * (side / N) * (heightmap.w / side);
 
     const terraced = levels >= 2;
+    const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
     // Whatever the panel set for this tone, or evenly spaced if it has not
@@ -57,7 +58,7 @@ export const TriangleShape: ShapePlugin = {
       toneZs[band] ?? heightOf((band + 0.5) / levels);
     const heightForLum = (l: number) =>
       terraced
-        ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))
+        ? bandHeight(bandOfLum(l, cuts))
         : heightOf(l);
 
     /** Brightness at a grid point, or -1 inside the flat frame band. */
@@ -79,7 +80,7 @@ export const TriangleShape: ShapePlugin = {
       x2: number, y2: number, z2: number, l2: number,
     ) => {
       if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-        emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, levels, bandHeight);
+        emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight);
       } else {
         mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
       }

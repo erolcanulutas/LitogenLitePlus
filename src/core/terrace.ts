@@ -29,6 +29,38 @@ type Poly = {
 
 const EPS = 1e-9;
 
+/**
+ * The luminance boundaries between bands, ascending.
+ *
+ * Even spacing is only right when the artwork's tones happen to be evenly
+ * spaced. They rarely are: a logo drawn in black, one red and white puts its
+ * red at 0.29, which even thirds cannot separate from black at all and even
+ * quarters separate by 0.036 — close enough to the boundary that averaging a
+ * thin feature over a mesh cell tips it into the wrong band and the feature
+ * disappears. Supplying the boundaries measured from the picture instead puts
+ * each cut halfway between the tones it divides, which is as much room as the
+ * artwork allows.
+ *
+ * Falls back to even spacing when nothing was measured, so a photograph and
+ * any older setting behave exactly as before.
+ */
+export function bandCuts(
+  levels: number,
+  cuts?: readonly number[],
+): readonly number[] {
+  if (cuts && cuts.length === levels - 1) return cuts;
+  const out: number[] = [];
+  for (let k = 1; k < levels; k++) out.push(k / levels);
+  return out;
+}
+
+/** Which band a brightness falls in, given those boundaries. */
+export function bandOfLum(l: number, cuts: readonly number[]): number {
+  let k = 0;
+  while (k < cuts.length && l >= cuts[k]) k++;
+  return k;
+}
+
 /** Keeps the part of `p` on one side of brightness `t`. */
 function clipByLum(p: Poly, t: number, keepAbove: boolean): Poly {
   const out: Poly = { x: [], y: [], l: [] };
@@ -83,7 +115,8 @@ function fanFlat(mb: MeshBuilder, p: Poly, z: number) {
  * Cuts one surface triangle into level bands and emits them, together with the
  * vertical walls that join them.
  *
- * @param levels     Number of brightness bands.
+ * @param cuts       Brightness boundaries between bands, ascending. One
+ *                   fewer than there are bands; see bandCuts.
  * @param heightOf   Band index -> surface height in mm. Must be monotonic.
  */
 export function emitTerracedTriangle(
@@ -91,15 +124,14 @@ export function emitTerracedTriangle(
   ax: number, ay: number, al: number,
   bx: number, by: number, bl: number,
   cx: number, cy: number, cl: number,
-  levels: number,
+  cuts: readonly number[],
   heightOf: (band: number) => number,
 ): void {
-  const bandOf = (l: number) =>
-    Math.max(0, Math.min(levels - 1, Math.floor(l * levels)));
+  const levels = cuts.length + 1;
 
-  const ba = bandOf(al);
-  const bb = bandOf(bl);
-  const bc = bandOf(cl);
+  const ba = bandOfLum(al, cuts);
+  const bb = bandOfLum(bl, cuts);
+  const bc = bandOfLum(cl, cuts);
 
   const lo = Math.min(ba, bb, bc);
   const hi = Math.max(ba, bb, bc);
@@ -114,14 +146,14 @@ export function emitTerracedTriangle(
   // One flat plateau per band the triangle touches.
   for (let k = lo; k <= hi; k++) {
     let band = tri;
-    if (k > 0) band = clipByLum(band, k / levels, true);
-    if (k < levels - 1) band = clipByLum(band, (k + 1) / levels, false);
+    if (k > 0) band = clipByLum(band, cuts[k - 1], true);
+    if (k < levels - 1) band = clipByLum(band, cuts[k], false);
     fanFlat(mb, band, heightOf(k));
   }
 
   // A vertical wall at every band boundary the triangle actually crosses.
   for (let k = lo + 1; k <= hi; k++) {
-    const t = k / levels;
+    const t = cuts[k - 1];
 
     // Brightness is linear here, so the level set is a single segment: find
     // where it meets the triangle's edges.

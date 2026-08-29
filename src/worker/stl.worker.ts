@@ -28,6 +28,7 @@ type JobRequest = {
   toneHeightsMm: number[];
   smoothing: number;
   levels: number;
+  toneCuts?: number[];
   /** "vertical" stands the model up; "flat" leaves it lying down. */
   orientation: "vertical" | "flat";
 };
@@ -154,6 +155,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       smoothing: clamp(msg.smoothing ?? 1, 0.4, 3),
       levels: msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0,
       toneZs: msg.toneHeightsMm ?? [],
+      toneCuts: msg.toneCuts ?? [],
       splitZs: cuts,
     };
 

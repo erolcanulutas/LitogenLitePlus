@@ -349,6 +349,28 @@ body {
   right: 0;
 }
 
+/* The picker covers the whole band, so it has no shape of its own to see.
+   This is the cue that the band is clickable: a small chip in the corner,
+   inert itself so the click still lands on the input underneath. */
+.bandSegSwatch {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.45);
+  background: transparent;
+  pointer-events: none;
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+
+.bandSeg:hover .bandSegSwatch {
+  opacity: 1;
+}
+
 .bandSegPick {
   display: block;
   width: 100%;
@@ -778,6 +800,18 @@ export default function App() {
   const [toneOverride, setToneOverride] = useState<number[] | null>(null);
 
   /**
+   * Brightness boundaries between the tones, as Auto measured them.
+   *
+   * Empty divides the range evenly, which is what a picture with no flat
+   * tones wants. A flat-toned one wants the cuts halfway between the tones it
+   * is actually drawn with: even division puts a boundary wherever it likes,
+   * and a tone sitting close to one loses its thin features when a mesh cell
+   * averages across the boundary. Dropped whenever the count changes by hand,
+   * since boundaries measured for one count mean nothing at another.
+   */
+  const [toneCuts, setToneCuts] = useState<number[]>([]);
+
+  /**
    * The bands the graphic surface had, held while the photo surface shows.
    *
    * A photograph wants one plain filament, so switching to it drops back to
@@ -912,7 +946,7 @@ export default function App() {
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
-    quality, smoothing, levels, tonePlateaus, layerHeight, splitLayers, colors,
+    quality, smoothing, levels, tonePlateaus, toneCuts, layerHeight, splitLayers, colors,
     orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
@@ -1067,10 +1101,16 @@ export default function App() {
    * come out as three boundaries and four pieces.
    *
    * A boundary sits on the tone itself, which leaves that tone in the band
-   * below it and hands the bands above everything thicker. Colours already
-   * picked are kept; a new band takes the next one from the palette.
+   * below it and hands the bands above everything thicker.
+   *
+   * `palette` is each tone's own colour read off the picture, darkest first.
+   * Given one, the bands start out looking like the artwork — a black, red
+   * and white logo comes up black, red and white — which is a far better
+   * starting point than the stock palette, and still only a starting point:
+   * every band stays clickable to recolour. Without one, colours already
+   * picked are kept and a new band takes the next from the palette.
    */
-  function applyToneBands(count: number) {
+  function applyToneBands(count: number, palette?: readonly string[]) {
     const rising = toneDividersOf(count);
 
     const next: number[] = [];
@@ -1083,9 +1123,16 @@ export default function App() {
 
     setSplitLayers(next);
     setColors((prev) => {
-      const out = prev.slice(0, next.length + 1);
-      while (out.length < next.length + 1) {
-        out.push(BAND_PALETTE[out.length % BAND_PALETTE.length]);
+      // Bands run bottom-up and the bottom band is the thinnest, so it is the
+      // *lightest* tone that belongs to colours[0] — the picture's tones
+      // arrive darkest first and have to be turned around.
+      const fromImage = palette ? [...palette].reverse() : null;
+
+      const out: string[] = [];
+      for (let i = 0; i < next.length + 1; i++) {
+        if (fromImage && i < fromImage.length) out.push(fromImage[i]);
+        else if (i < prev.length) out.push(prev[i]);
+        else out.push(BAND_PALETTE[i % BAND_PALETTE.length]);
       }
       return out;
     });
@@ -1104,7 +1151,8 @@ export default function App() {
 
     const found = suggestToneLevels(imgData);
     setToneLevels(found.levels);
-    applyToneBands(found.levels);
+    setToneCuts(found.smooth ? [] : found.cuts);
+    applyToneBands(found.levels, found.colors);
     setToneOverride(null);
     setAutoNote(
       found.smooth
@@ -1269,6 +1317,7 @@ export default function App() {
           toneHeightsMm: graphic
             ? tonePlateaus.map((n) => +(n * layerHeight).toFixed(4))
             : [],
+          toneCuts: graphic ? toneCuts : [],
           colors,
           layerHeight,
           emboss: "back",
@@ -1686,6 +1735,7 @@ export default function App() {
                     if (Number.isNaN(v)) return;
                     const next = Math.max(2, Math.min(16, v));
                     setToneLevels(next);
+                    setToneCuts([]);
                     applyToneBands(next);
                     setAutoNote(null);
                   }}
@@ -1696,6 +1746,7 @@ export default function App() {
                     onClick={() => {
                       const next = Math.min(16, toneLevels + 1);
                       setToneLevels(next);
+                      setToneCuts([]);
                       applyToneBands(next);
                       setAutoNote(null);
                     }}
@@ -1707,6 +1758,7 @@ export default function App() {
                     onClick={() => {
                       const next = Math.max(2, toneLevels - 1);
                       setToneLevels(next);
+                      setToneCuts([]);
                       applyToneBands(next);
                       setAutoNote(null);
                     }}
@@ -1761,7 +1813,7 @@ export default function App() {
             {splitLayers.length === 0
               ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
               : graphic
-                ? `Drag a divider to move it · amber marks are the printed tone heights · exports as 3MF`
+                ? `Drag a divider to move it · click one to recolour · amber marks are the printed tone heights · exports as 3MF`
                 : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
           </div>
 

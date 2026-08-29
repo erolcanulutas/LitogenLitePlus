@@ -1,7 +1,7 @@
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
-import { emitTerracedTriangle } from "../core/terrace";
+import { bandCuts, bandOfLum, emitTerracedTriangle } from "../core/terrace";
 import { emitWallColumn } from "../core/wall";
 import { gridCellMm } from "../core/quality";
 
@@ -34,7 +34,7 @@ export const RectangleShape: ShapePlugin = {
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
     const {
-      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs,
+      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts,
     } = params;
 
     const W = Math.max(1, widthMm);
@@ -62,6 +62,7 @@ export const RectangleShape: ShapePlugin = {
     const footprintPx = smoothing * Math.max(dx, dy) * pxPerMm;
 
     const terraced = levels >= 2;
+    const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
     // Whatever the panel set for this tone, or evenly spaced if it has not
@@ -71,7 +72,7 @@ export const RectangleShape: ShapePlugin = {
       toneZs[band] ?? heightOf((band + 0.5) / levels);
     const heightForLum = (l: number) =>
       terraced
-        ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))
+        ? bandHeight(bandOfLum(l, cuts))
         : heightOf(l);
 
     const inset = Math.max(0, frameMm);
@@ -106,7 +107,7 @@ export const RectangleShape: ShapePlugin = {
       cx: number, cy: number, cz: number, cl: number,
     ) => {
       if (terraced && al >= 0 && bl >= 0 && cl >= 0) {
-        emitTerracedTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, levels, bandHeight);
+        emitTerracedTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, cuts, bandHeight);
       } else {
         mb.addTriangle(ax, ay, az, bx, by, bz, cx, cy, cz);
       }

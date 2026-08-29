@@ -1,5 +1,5 @@
 import { MeshBuilder, type Mesh } from "./mesh";
-import { emitTerracedTriangle } from "./terrace";
+import { bandCuts, bandOfLum, emitTerracedTriangle } from "./terrace";
 import { emitWallColumn } from "./wall";
 
 /**
@@ -68,6 +68,13 @@ export type RadialSpec = {
   toneZs: readonly number[];
 
   /**
+   * Brightness boundaries between the tones, ascending. Empty divides the
+   * range evenly, which is only right when the artwork's tones are evenly
+   * spaced; see core/terrace.ts.
+   */
+  toneCuts: readonly number[];
+
+  /**
    * Brightness bands for terraced output, or 0 for a smooth surface.
    *
    * Smooth is right for photographs. Terraced is right for line art: it cuts
@@ -111,6 +118,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     heightOf,
     levels,
     toneZs,
+    toneCuts,
     frameHeight,
     splitZs,
   } = spec;
@@ -128,6 +136,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   const totalRings = imageRings + frameRings;
 
   const terraced = levels >= 2;
+  const cuts = bandCuts(levels, toneCuts);
   /**
    * Height of a whole band: whatever the panel set for this tone, or the
    * middle of the band if it has not been touched.
@@ -136,7 +145,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     toneZs[band] ?? heightOf((band + 0.5) / levels);
   const heightForLum = (l: number) =>
     terraced
-      ? bandHeight(Math.max(0, Math.min(levels - 1, Math.floor(l * levels))))
+      ? bandHeight(bandOfLum(l, cuts))
       : heightOf(l);
 
   // Radius fraction of ring r. Ring 0 is the centre, ring totalRings the rim.
@@ -228,7 +237,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     x2: number, y2: number, z2: number, l2: number,
   ) => {
     if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-      emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, levels, bandHeight);
+      emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight);
     } else {
       mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
     }

@@ -88,6 +88,12 @@ export type ShapeBuildParams = {
   toneZs: readonly number[];
 
   /**
+   * Brightness boundaries between the tones, ascending; one fewer than there
+   * are tones. Empty falls back to dividing the range evenly.
+   */
+  toneCuts: readonly number[];
+
+  /**
    * Heights the model will later be cut at for a colour split, ascending.
    *
    * The generator puts a vertex ring on the rim wall at each one so the cuts
