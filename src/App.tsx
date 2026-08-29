@@ -1834,17 +1834,24 @@ export default function App() {
             <option value="high">High</option>
           </select>
 
-          {/* Widening the sampling window only trades sharpness for
-              smoothness on a continuous surface. Graphic cuts along the
-              contour instead, and measured across the range the control
-              offers it moves a logo's dark area by 0.2% — nothing.
+          {/* Graphic answers to this too, and needs to.
 
-              Graphic still gets the window, and needs it. Taking it away was
-              tried and reverted: a terraced surface reads one point per mesh
-              vertex, so without the averaging the picture's own noise lands
-              either side of a cut and speckles what ought to be flat. */}
-          {levels === 0 && (
-            <>
+              It used to be hidden here, on a measurement that said widening
+              the window moved a logo's dark area by 0.2%. True, and the
+              wrong thing to measure: the window's effect is at the
+              boundaries. Where two tones meet and a third tone's brightness
+              lies between them, that third gets a band along the edge. The
+              window sets how wide. Narrow, and the band comes out thinner
+              than a mesh cell, which the surface cannot carry — it breaks
+              into slivers and the edge reads as a comb. Wide, and the band
+              resolves cleanly but is visibly there.
+
+              Measured on the Rolex mark, hexagon at 80mm: at 1.0 the gold
+              band along a letter is 0.245mm against a 0.156mm cell and
+              combs; at 3.0 it is 0.64mm and comes out clean. Neither is
+              free, so it is a choice, and it belongs to whoever is looking
+              at the print. */}
+          <>
             <div className="label-row" style={{ marginTop: 12 }}>
               <label className="miniLabel">Edge Smoothing</label>
               <InfoIcon text="Widens sampling beyond one mesh cell. Low keeps edges crisp but hard edges come out stair-stepped; high trades a little sharpness for clean edges. Photos ~1, logos and line art 1.5-3. Costs no extra triangles." />
@@ -1891,8 +1898,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-            </>
-          )}
+          </>
 
         </div>
 
