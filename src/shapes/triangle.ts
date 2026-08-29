@@ -61,6 +61,18 @@ export const TriangleShape: ShapePlugin = {
         ? bandHeight(bandOfLum(l, cuts))
         : heightOf(l);
 
+    // Brightness everywhere, with no frame mask on it, so the terracing can
+    // solve for where a contour actually runs. See core/terrace.ts.
+    const field = terraced
+      ? (x: number, y: number) =>
+          sampleHeightFiltered(
+            sampler,
+            (x + side / 2) / side,
+            ((2 * hTri) / 3 - y) / hTri,
+            footprintPx,
+          )
+      : undefined;
+
     /** Brightness at a grid point, or -1 inside the flat frame band. */
     const lumAt = (u: number, v: number, w: number, x: number, y: number) => {
       if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return -1;
@@ -80,7 +92,7 @@ export const TriangleShape: ShapePlugin = {
       x2: number, y2: number, z2: number, l2: number,
     ) => {
       if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-        emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight);
+        emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight, field);
       } else {
         mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
       }

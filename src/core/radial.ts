@@ -137,6 +137,21 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
 
   const terraced = levels >= 2;
   const cuts = bandCuts(levels, toneCuts);
+
+  /**
+   * The brightness field the terracing solves against.
+   *
+   * Terracing needs one definition of brightness that holds everywhere, not
+   * just at the vertices, so a contour crossing can be put on the contour
+   * rather than interpolated towards it. That means a fixed filter width: the
+   * per-ring width below is right for a smooth surface, where it stops the
+   * coarse direction aliasing, but it makes brightness mean something
+   * slightly different on each ring, and then there is no single contour to
+   * solve for. Smooth keeps the per-ring width; terraced gets the cell.
+   */
+  const field = terraced
+    ? (x: number, y: number) => lumAt(x, y, targetCellMm)
+    : undefined;
   /**
    * Height of a whole band: whatever the panel set for this tone, or the
    * middle of the band if it has not been touched.
@@ -215,7 +230,9 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
         // Cell is `radius * dt` deep and `segLen * t` wide; filter by the
         // larger side so the coarse direction never aliases.
         const radialStep = Math.hypot(p.x, p.y) * dt;
-        const lum = lumAt(x, y, Math.max(radialStep, angularStep));
+        const lum = terraced
+          ? lumAt(x, y, targetCellMm)
+          : lumAt(x, y, Math.max(radialStep, angularStep));
         L[i] = lum;
         Z[i] = heightForLum(lum);
       }
@@ -237,7 +254,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     x2: number, y2: number, z2: number, l2: number,
   ) => {
     if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-      emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight);
+      emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight, field);
     } else {
       mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
     }

@@ -112,12 +112,153 @@ function fanFlat(mb: MeshBuilder, p: Poly, z: number) {
 }
 
 /**
+ * The picture's brightness anywhere on the surface, as the vertices read it.
+ *
+ * Given one, a contour crossing is placed *on* the contour instead of being
+ * guessed by interpolating between two corners. See `crossingOn`.
+ */
+export type LumField = (x: number, y: number) => number;
+
+/** Steps spent putting a crossing on the contour. Converges long before this. */
+const REFINE_STEPS = 10;
+
+/**
+ * Where an edge crosses brightness `t`.
+ *
+ * Interpolating linearly between the two corner values lands within a few
+ * microns of the contour, which sounds close enough and is not: the chords
+ * between crossings are only about 0.08mm long, so a 3µm sideways error turns
+ * into a few degrees of direction change, and it changes sign from one chord
+ * to the next because consecutive crossings sit on different families of mesh
+ * edge. The surface then turns a little one way and a little the other all
+ * along a step, and reads as a comb.
+ *
+ * The frame does not have this problem, because its edge is not guessed —
+ * `boundaryAt` puts vertices on the boundary curve itself, so consecutive
+ * faces along a straight side are exactly coplanar. Solving for the crossing
+ * against the brightness field does the same thing here.
+ *
+ * Two triangles share this edge and have to place the point identically or
+ * the surface opens, so the solve is run in a canonical direction: whichever
+ * triangle asks, the inputs are the same and so is the answer.
+ */
+function crossingOn(
+  x0: number, y0: number, l0: number,
+  x1: number, y1: number, l1: number,
+  t: number,
+  field: LumField | undefined,
+): { x: number; y: number } {
+  if (x1 < x0 || (x1 === x0 && y1 < y0)) {
+    return crossingOn(x1, y1, l1, x0, y0, l0, t, field);
+  }
+
+  const d = l1 - l0;
+  let s = Math.abs(d) < EPS ? 0.5 : (t - l0) / d;
+  s = Math.max(0, Math.min(1, s));
+
+  if (field) {
+    let a = 0;
+    let b = 1;
+    let ga = field(x0, y0) - t;
+    let gb = field(x1, y1) - t;
+
+    if (ga === 0) return { x: x0, y: y0 };
+    if (gb === 0) return { x: x1, y: y1 };
+
+    // Only solve when the ends really do straddle it. They normally do — the
+    // corner values came from this same field — but a guard costs nothing and
+    // keeps a surprise from throwing the point off the edge entirely.
+    if ((ga < 0) !== (gb < 0)) {
+      for (let i = 0; i < REFINE_STEPS; i++) {
+        const x = x0 + (x1 - x0) * s;
+        const y = y0 + (y1 - y0) * s;
+        const g = field(x, y) - t;
+        if (g === 0) break;
+
+        if ((g < 0) === (ga < 0)) {
+          a = s;
+          ga = g;
+        } else {
+          b = s;
+          gb = g;
+        }
+
+        const den = gb - ga;
+        let next = Math.abs(den) < EPS ? (a + b) / 2 : a + (-ga * (b - a)) / den;
+        if (!(next > a && next < b)) next = (a + b) / 2;
+
+        const moved = Math.abs(next - s);
+        s = next;
+        if (moved < 1e-12) break;
+      }
+    }
+  }
+
+  return { x: x0 + (x1 - x0) * s, y: y0 + (y1 - y0) * s };
+}
+
+/**
+ * The triangle's outline with every contour crossing carried as a real vertex.
+ *
+ * Splitting the edges up front is what keeps the plateaus and the step faces
+ * agreeing: both are built from these same points, so a plateau's edge and the
+ * face that rises from it are the same line, and neither has to re-derive it.
+ * A crossing vertex holds the cut's brightness exactly, so clipping finds it
+ * by value rather than interpolating towards it a second time.
+ */
+function outlineWithCrossings(
+  ax: number, ay: number, al: number,
+  bx: number, by: number, bl: number,
+  cx: number, cy: number, cl: number,
+  cuts: readonly number[],
+  lo: number,
+  hi: number,
+  field: LumField | undefined,
+): Poly {
+  const out: Poly = { x: [], y: [], l: [] };
+
+  const side = (
+    x0: number, y0: number, l0: number,
+    x1: number, y1: number, l1: number,
+  ) => {
+    out.x.push(x0);
+    out.y.push(y0);
+    out.l.push(l0);
+
+    const hits: { s: number; t: number }[] = [];
+    for (let k = lo + 1; k <= hi; k++) {
+      const t = cuts[k - 1];
+      if ((l0 < t && l1 >= t) || (l1 < t && l0 >= t)) {
+        const d = l1 - l0;
+        hits.push({ s: Math.abs(d) < EPS ? 0.5 : (t - l0) / d, t });
+      }
+    }
+    hits.sort((p, q) => p.s - q.s);
+
+    for (const h of hits) {
+      const p = crossingOn(x0, y0, l0, x1, y1, l1, h.t, field);
+      out.x.push(p.x);
+      out.y.push(p.y);
+      out.l.push(h.t);
+    }
+  };
+
+  side(ax, ay, al, bx, by, bl);
+  side(bx, by, bl, cx, cy, cl);
+  side(cx, cy, cl, ax, ay, al);
+
+  return out;
+}
+
+/**
  * Cuts one surface triangle into level bands and emits them, together with the
  * vertical walls that join them.
  *
  * @param cuts       Brightness boundaries between bands, ascending. One
  *                   fewer than there are bands; see bandCuts.
  * @param heightOf   Band index -> surface height in mm. Must be monotonic.
+ * @param field      Optional brightness field. Given one, crossings are placed
+ *                   on the contour rather than interpolated to it.
  */
 export function emitTerracedTriangle(
   mb: MeshBuilder,
@@ -126,6 +267,7 @@ export function emitTerracedTriangle(
   cx: number, cy: number, cl: number,
   cuts: readonly number[],
   heightOf: (band: number) => number,
+  field?: LumField,
 ): void {
   const levels = cuts.length + 1;
 
@@ -136,12 +278,14 @@ export function emitTerracedTriangle(
   const lo = Math.min(ba, bb, bc);
   const hi = Math.max(ba, bb, bc);
 
-  const tri: Poly = { x: [ax, bx, cx], y: [ay, by, cy], l: [al, bl, cl] };
-
   if (lo === hi) {
-    fanFlat(mb, tri, heightOf(lo));
+    fanFlat(mb, { x: [ax, bx, cx], y: [ay, by, cy], l: [al, bl, cl] }, heightOf(lo));
     return;
   }
+
+  const tri = outlineWithCrossings(
+    ax, ay, al, bx, by, bl, cx, cy, cl, cuts, lo, hi, field,
+  );
 
   // One flat plateau per band the triangle touches.
   for (let k = lo; k <= hi; k++) {
@@ -155,22 +299,17 @@ export function emitTerracedTriangle(
   for (let k = lo + 1; k <= hi; k++) {
     const t = cuts[k - 1];
 
-    // Brightness is linear here, so the level set is a single segment: find
-    // where it meets the triangle's edges.
+    // The crossings are already vertices of the outline, holding the cut's
+    // brightness exactly, so the wall stands on the same points the plateaus
+    // were cut to rather than on a second guess at where they were.
     const px: number[] = [];
     const py: number[] = [];
-
-    const edge = (x0: number, y0: number, l0: number, x1: number, y1: number, l1: number) => {
-      if ((l0 < t && l1 >= t) || (l1 < t && l0 >= t)) {
-        const s = (t - l0) / (l1 - l0);
-        px.push(x0 + (x1 - x0) * s);
-        py.push(y0 + (y1 - y0) * s);
+    for (let i = 0; i < tri.x.length; i++) {
+      if (tri.l[i] === t) {
+        px.push(tri.x[i]);
+        py.push(tri.y[i]);
       }
-    };
-
-    edge(ax, ay, al, bx, by, bl);
-    edge(bx, by, bl, cx, cy, cl);
-    edge(cx, cy, cl, ax, ay, al);
+    }
 
     if (px.length !== 2) continue;
 
