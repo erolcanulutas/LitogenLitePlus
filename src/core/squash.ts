@@ -90,15 +90,6 @@ const REGION_HALF_WIDTH_MM = 0.6;
 const MIN_KEEP = 0;
 
 /**
- * How far the verdict is feathered, in multiples of the sampling window.
- *
- * A hard edge to it would put a step in the field and the surface would answer
- * with a contour that belongs to nothing in the picture. Feathered, the band
- * closes over several cells and there is nothing to see.
- */
-const FEATHER = 2.5;
-
-/**
  * Which runs of which bands are ramps rather than regions.
  *
  * Only the middle bands can be ramps — the darkest and lightest have nothing
@@ -296,66 +287,18 @@ export function buildBandSquash(
 
   if (marked === 0) return null;
 
-  // Widen the verdict, then feather it, separably and one band at a time.
+  // Nothing is blurred and nothing is grown.
   //
-  // Widening first is what makes it bite. A strip only a few pixels across,
-  // blurred straight away, comes out at a third of its value and closes the
-  // band by a third — the ring stays, just fainter. Grown to the width of the
-  // blur first, its middle survives the blur intact and the falloff lands
-  // outside the strip, where there was nothing to keep anyway.
+  // Both were tried. Blurring a thread a few pixels across leaves its own
+  // pixels averaging 185 out of 255, so the band keeps a quarter of its width
+  // and the thread survives as a red hair. Growing the mark first fixes that,
+  // and spreads the compression onto red the artist did draw, which then loses
+  // its own tone. The mark is right as it stands: it covers the thread and
+  // stops where the thread stops, which is where the band was ending anyway.
   //
-  // Widening is safe here in a way it was not when this decided heights: it
-  // moves no geometry and opens no seam, it only says the band is worth less
-  // of the range slightly further out than the strip itself.
-  const fr = Math.max(1, Math.round(FEATHER * Math.max(1, r)));
-  const tmp = new Uint8Array(n * levels);
-
-  for (let b = 1; b < levels - 1; b++) {
-    for (let y = 0; y < hPx; y++) {
-      for (let x = 0; x < w; x++) {
-        let m = 0;
-        const x0 = Math.max(0, x - fr);
-        const x1 = Math.min(w - 1, x + fr);
-        for (let k = x0; k <= x1 && m === 0; k++) m = amount[(y * w + k) * levels + b];
-        tmp[(y * w + x) * levels + b] = m;
-      }
-    }
-    for (let x = 0; x < w; x++) {
-      for (let y = 0; y < hPx; y++) {
-        let m = 0;
-        const y0 = Math.max(0, y - fr);
-        const y1 = Math.min(hPx - 1, y + fr);
-        for (let k = y0; k <= y1 && m === 0; k++) m = tmp[(k * w + x) * levels + b];
-        amount[(y * w + x) * levels + b] = m;
-      }
-    }
-  }
-  for (let b = 1; b < levels - 1; b++) {
-    for (let y = 0; y < hPx; y++) {
-      let sum = 0;
-      for (let x = -fr; x <= fr; x++) {
-        sum += amount[(y * w + Math.min(w - 1, Math.max(0, x))) * levels + b];
-      }
-      for (let x = 0; x < w; x++) {
-        tmp[(y * w + x) * levels + b] = Math.round(sum / (2 * fr + 1));
-        const add = Math.min(w - 1, x + fr + 1);
-        const drop = Math.max(0, x - fr);
-        sum += amount[(y * w + add) * levels + b] - amount[(y * w + drop) * levels + b];
-      }
-    }
-    for (let x = 0; x < w; x++) {
-      let sum = 0;
-      for (let y = -fr; y <= fr; y++) {
-        sum += tmp[(Math.min(hPx - 1, Math.max(0, y)) * w + x) * levels + b];
-      }
-      for (let y = 0; y < hPx; y++) {
-        amount[(y * w + x) * levels + b] = Math.round(sum / (2 * fr + 1));
-        const add = Math.min(hPx - 1, y + fr + 1);
-        const drop = Math.max(0, y - fr);
-        sum += tmp[(add * w + x) * levels + b] - tmp[(drop * w + x) * levels + b];
-      }
-    }
-  }
+  // What the blur was really for — keeping the field from stepping where the
+  // mark ends — is done by reading the mark blended between the four values
+  // around a point. That is a pixel of softening, and a pixel is all it needs.
 
   return { w, hPx, levels, amount };
 }
