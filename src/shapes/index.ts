@@ -5,12 +5,13 @@ import { HexagonShape } from "./hexagon";
 import { PentagonShape } from "./pentagon";
 import { RectangleShape } from "./rectangle";
 
+/** Order is the order the picker offers them in, and nothing indexes it. */
 export const SHAPES: ShapePlugin[] = [
+  RectangleShape,
   TriangleShape,
   CircleShape,
   HexagonShape,
   PentagonShape,
-  RectangleShape,
 ];
 
 export function getShape(id: string) {
