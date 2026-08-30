@@ -1,5 +1,5 @@
-import { labelAt } from "../core/labels";
-import { squashLum } from "../core/squash";
+import { isRamp, squashLum } from "../core/squash";
+import { bandOfLum } from "../core/terrace";
 import { bandCuts } from "../core/terrace";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import type { Mesh } from "../core/mesh";
@@ -23,7 +23,7 @@ export const HexagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, vector } = params;
 
     const range = maxT - minT;
 
@@ -48,6 +48,32 @@ export const HexagonShape: ShapePlugin = {
 
     const cuts = bandCuts(levels, toneCuts);
     const sampler = buildAreaSampler(heightmap);
+
+    /**
+     * Which tone a point is, as a number.
+     *
+     * Read off the same field the surface is built from, so the tone and the
+     * boundary between tones agree. Taking it from a map of pixels instead
+     * puts the two at odds — the map steps along the grid while the boundary
+     * is solved against the field — and the edge comes out ragged where they
+     * disagree.
+     */
+    const toneAt = (x: number, y: number): number => {
+      const uu = clamp01((x + circumradius) / totalW);
+      const vv = clamp01(1 - (y + apothem) / totalH);
+      const l = squashLum(
+        squash,
+        uu,
+        vv,
+        sampleHeightFiltered(sampler, uu, vv, smoothing * radialCellMm(quality) * pxPerMm),
+        cuts,
+      );
+      const k = bandOfLum(l, cuts);
+      if (k > 0 && k < levels - 1 && isRamp(squash, uu, vv, k)) {
+        return l - cuts[k - 1] < cuts[k] - l ? k - 1 : k + 1;
+      }
+      return k;
+    };
     const pxPerMm = heightmap.w / totalW;
 
     return buildRadialMesh({
@@ -67,7 +93,7 @@ export const HexagonShape: ShapePlugin = {
       toneZs,
       toneCuts,
       inlay: inlay ?? undefined,
-      toneAt: labels ? (x, y) => labelAt(labels, clamp01((x + circumradius) / totalW), clamp01(1 - (y + apothem) / totalH)) : undefined,
+      toneAt: vector ? toneAt : undefined,
 
       lumAt: (x, y, footprintMm) => {
         const u = clamp01((x + circumradius) / totalW);

@@ -1,4 +1,3 @@
-import type { ToneLabels } from "./labels";
 import type { InlaySpan } from "./inlay";
 import type { BandSquash } from "./squash";
 import type { Quality } from "./quality";
@@ -110,11 +109,12 @@ export type ShapeBuildParams = {
   inlay: InlaySpan | null;
 
   /**
-   * The picture as tone numbers, for the inlay. Reading tones off brightness
-   * cannot help putting a tone between two others along their shared edge;
-   * see core/labels.ts.
+   * Read the tones as regions: one number per point, with a run that is only
+   * the ramp between two others given to whichever it is nearer. Off, the
+   * tones come from thresholds on brightness, which cannot help putting a
+   * tone that lies between two others wherever those two meet.
    */
-  labels: ToneLabels | null;
+  vector: boolean;
 
   /**
    * Heights the model will later be cut at for a colour split, ascending.

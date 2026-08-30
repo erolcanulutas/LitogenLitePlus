@@ -1,4 +1,3 @@
-import { labelAt } from "../core/labels";
 import {
   BASE_BODY,
   emitInlayRim,
@@ -6,7 +5,7 @@ import {
   emitInlayTriangle,
   emitInlayTriangleByTone,
 } from "../core/inlay";
-import { squashLum } from "../core/squash";
+import { isRamp, squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
@@ -35,7 +34,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, vector } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -52,13 +51,39 @@ export const TriangleShape: ShapePlugin = {
     const cx = 0, cy = (2 * hTri) / 3;
 
     const sampler = buildAreaSampler(heightmap);
+
+    /**
+     * Which tone a point is, as a number.
+     *
+     * Read off the same field the surface is built from, so the tone and the
+     * boundary between tones agree. Taking it from a map of pixels instead
+     * puts the two at odds — the map steps along the grid while the boundary
+     * is solved against the field — and the edge comes out ragged where they
+     * disagree.
+     */
+    const toneAt = (x: number, y: number): number => {
+      const uu = (x + side / 2) / side;
+      const vv = ((2 * hTri) / 3 - y) / hTri;
+      const l = squashLum(
+        squash,
+        uu,
+        vv,
+        sampleHeightFiltered(sampler, uu, vv, footprintPx),
+        cuts,
+      );
+      const k = bandOfLum(l, cuts);
+      if (k > 0 && k < levels - 1 && isRamp(squash, uu, vv, k)) {
+        return l - cuts[k - 1] < cuts[k] - l ? k - 1 : k + 1;
+      }
+      return k;
+    };
     // The barycentric grid steps by side/N in both directions, so every vertex
     // stands in for a cell that wide. Filter over it instead of point sampling.
     const footprintPx = smoothing * (side / N) * (heightmap.w / side);
 
     const terraced = levels >= 2;
     const inlaid = inlay != null && terraced;
-    const toneAt = (x: number, y: number) => labelAt(labels!, (x + side / 2) / side, ((2 * hTri) / 3 - y) / hTri);
+    const useTone = vector && terraced;
     const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
@@ -115,7 +140,7 @@ export const TriangleShape: ShapePlugin = {
       x2: number, y2: number, z2: number, l2: number,
     ) => {
       if (inlaid && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-        if (labels) {
+        if (useTone) {
           emitInlayTriangleByTone(
             mb,
             x0, y0, l0, toneAt(x0, y0),
@@ -241,7 +266,7 @@ export const TriangleShape: ShapePlugin = {
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
       if (inlaid) {
-        if (labels) {
+        if (useTone) {
           emitInlayRimByTone(
             mb,
             edgeX[i], edgeY[i], edgeL[i], toneAt(edgeX[i], edgeY[i]),

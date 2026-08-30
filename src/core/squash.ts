@@ -410,3 +410,21 @@ export function squashLum(
   }
   return l;
 }
+
+/**
+ * Whether `band` is only a ramp at (u, v). u, v in 0..1, v from the top.
+ *
+ * A regional answer, feathered, so it is the same over the whole of a rim and
+ * its own edges are nowhere near where a tone boundary lands.
+ */
+export function isRamp(
+  s: BandSquash | null,
+  u: number,
+  v: number,
+  band: number,
+): boolean {
+  if (!s) return false;
+  const x = Math.max(0, Math.min(s.w - 1, Math.round(u * (s.w - 1))));
+  const y = Math.max(0, Math.min(s.hPx - 1, Math.round(v * (s.hPx - 1))));
+  return s.amount[(y * s.w + x) * s.levels + band] > 127;
+}

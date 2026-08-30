@@ -1,4 +1,3 @@
-import { labelAt } from "../core/labels";
 import {
   BASE_BODY,
   emitInlayRim,
@@ -6,7 +5,7 @@ import {
   emitInlayTriangle,
   emitInlayTriangleByTone,
 } from "../core/inlay";
-import { squashLum } from "../core/squash";
+import { isRamp, squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
@@ -43,7 +42,7 @@ export const RectangleShape: ShapePlugin = {
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
     const {
-      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels,
+      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, vector,
     } = params;
 
     const W = Math.max(1, widthMm);
@@ -65,6 +64,32 @@ export const RectangleShape: ShapePlugin = {
     const dy = H / ny;
 
     const sampler = buildAreaSampler(heightmap);
+
+    /**
+     * Which tone a point is, as a number.
+     *
+     * Read off the same field the surface is built from, so the tone and the
+     * boundary between tones agree. Taking it from a map of pixels instead
+     * puts the two at odds — the map steps along the grid while the boundary
+     * is solved against the field — and the edge comes out ragged where they
+     * disagree.
+     */
+    const toneAt = (x: number, y: number): number => {
+      const uu = (x - x0) / W;
+      const vv = 1 - (y - y0) / H;
+      const l = squashLum(
+        squash,
+        uu,
+        vv,
+        sampleHeightFiltered(sampler, uu, vv, footprintPx),
+        cuts,
+      );
+      const k = bandOfLum(l, cuts);
+      if (k > 0 && k < levels - 1 && isRamp(squash, uu, vv, k)) {
+        return l - cuts[k - 1] < cuts[k] - l ? k - 1 : k + 1;
+      }
+      return k;
+    };
     const pxPerMm = heightmap.w / W;
     // Each vertex stands in for a cell this wide; filter over it rather than
     // point sampling, so detail finer than the mesh averages in.
@@ -72,7 +97,7 @@ export const RectangleShape: ShapePlugin = {
 
     const terraced = levels >= 2;
     const inlaid = inlay != null && terraced;
-    const toneAt = (x: number, y: number) => labelAt(labels!, (x - x0) / W, 1 - (y - y0) / H);
+    const useTone = vector && terraced;
     const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
@@ -139,7 +164,7 @@ export const RectangleShape: ShapePlugin = {
       cx: number, cy: number, cz: number, cl: number,
     ) => {
       if (inlaid && al >= 0 && bl >= 0 && cl >= 0) {
-        if (labels) {
+        if (useTone) {
           emitInlayTriangleByTone(
             mb,
             ax, ay, al, toneAt(ax, ay),
@@ -239,7 +264,7 @@ export const RectangleShape: ShapePlugin = {
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
       if (inlaid) {
-        if (labels) {
+        if (useTone) {
           emitInlayRimByTone(
             mb,
             edgeX[i], edgeY[i], edgeL[i], toneAt(edgeX[i], edgeY[i]),
