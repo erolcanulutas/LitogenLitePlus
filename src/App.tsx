@@ -959,7 +959,7 @@ export default function App() {
    * one of its steps. Everything else resamples what it is given down to the
    * printed layers and cannot tell the difference, so it keeps the small one.
    */
-  const traceDetail = vector && (inlayMode || graphic) ? 3000 * 2600 : 900 * 780;
+  const traceDetail = vector && (inlayMode || graphic) ? 1600 * 1390 : 900 * 780;
   const [baseLayers, setBaseLayers] = useState(6);
   const [pictureLayers, setPictureLayers] = useState(4);
 

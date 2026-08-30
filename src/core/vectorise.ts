@@ -1,3 +1,5 @@
+import { buildNet, type Net } from "./arcs";
+
 /**
  * The picture as shapes, not as brightness.
  *
@@ -10,10 +12,10 @@
  * the sampling. It is what a continuous field between two values does.
  *
  * This does not sample. It quantises the picture to its tones once, cleans up
- * what the quantising leaves behind, traces the outline of each tone's region
- * as a closed ring of points, and hands those rings on. A ring between white
- * and black is one line. There is no third tone along it because there is
- * nowhere for one to be.
+ * what the quantising leaves behind, cuts the boundaries between tones into
+ * arcs and smooths each arc once (see core/arcs.ts), then assembles each tone's
+ * outline out of those arcs. A boundary between white and black is one curve,
+ * shared by both, with nothing in between for a third tone to occupy.
  */
 
 /** Label for a pixel the shape does not cover, so it belongs to no tone. */
@@ -140,65 +142,78 @@ function quantise(
 }
 
 /**
- * The outline of one tone's region, as closed rings.
+ * The outline of one tone's region, as closed rings built out of shared arcs.
  *
- * Built from the cracks between pixels rather than by walking their centres.
- * Every pixel of the tone contributes the crack on each side where the tone
- * stops, pointed so the tone is always on the same hand, and the cracks are
- * then linked end to end into loops. Nothing about that can drift or fail to
- * close: a crack is a unit step between two grid corners, every corner has as
- * many cracks arriving as leaving, and a loop ends when it returns to where it
- * started because there is nowhere else for it to go.
+ * The walk itself is over the cracks between pixels: every pixel of the tone
+ * contributes the crack on each side where the tone stops, pointed so the tone
+ * is always on the same hand, and the cracks are linked end to end into loops.
+ * Nothing about that can drift or fail to close — a crack is a unit step
+ * between two grid corners, every corner has as many cracks arriving as
+ * leaving, and a loop ends when it returns to where it started.
+ *
+ * What is laid down is not the cracks, though. Each run of them belongs to one
+ * arc of the net, and the arc's smoothed curve is what goes into the ring. The
+ * tone on the other side of that arc lays down the very same points backwards,
+ * so the two solids meet exactly however much the arc was smoothed.
  */
 function traceRings(
   at: Uint8Array,
   w: number,
   h: number,
   tone: number,
+  net: Net,
 ): Ring[] {
   const inside = (x: number, y: number) =>
     x >= 0 && y >= 0 && x < w && y < h && at[y * w + x] === tone;
 
-  // Corners are (w + 1) by (h + 1); a segment is named by the corner it leaves.
   const cw = w + 1;
+  const hn = (h + 1) * w;
+
   const from: number[] = [];
   const to: number[] = [];
+  const crack: number[] = [];
   const head = new Int32Array(cw * (h + 1)).fill(-1);
-  const next = new Int32Array(4 * w * h).fill(-1);
+  const next: number[] = [];
 
-  const add = (x0: number, y0: number, x1: number, y1: number) => {
+  const add = (a: number, b: number, id: number) => {
     const s = from.length;
-    const a0 = y0 * cw + x0;
-    from.push(a0);
-    to.push(y1 * cw + x1);
-    next[s] = head[a0];
-    head[a0] = s;
+    from.push(a);
+    to.push(b);
+    crack.push(id);
+    next.push(head[a]);
+    head[a] = s;
   };
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       if (at[y * w + x] !== tone) continue;
-      if (!inside(x, y - 1)) add(x, y, x + 1, y);
-      if (!inside(x + 1, y)) add(x + 1, y, x + 1, y + 1);
-      if (!inside(x, y + 1)) add(x + 1, y + 1, x, y + 1);
-      if (!inside(x - 1, y)) add(x, y + 1, x, y);
+      const c = y * cw + x;
+      if (!inside(x, y - 1)) add(c, c + 1, y * w + x);
+      if (!inside(x + 1, y)) add(c + 1, c + 1 + cw, hn + y * cw + x + 1);
+      if (!inside(x, y + 1)) add(c + 1 + cw, c + cw, (y + 1) * w + x);
+      if (!inside(x - 1, y)) add(c + cw, c, hn + y * cw + x);
     }
   }
 
   const used = new Uint8Array(from.length);
   const rings: Ring[] = [];
 
+  const px: number[] = [];
+  const py: number[] = [];
+  const seqFrom: number[] = [];
+  const seqCrack: number[] = [];
+
   for (let s0 = 0; s0 < from.length; s0++) {
     if (used[s0]) continue;
 
-    const px: number[] = [];
-    const py: number[] = [];
+    seqFrom.length = 0;
+    seqCrack.length = 0;
     let s = s0;
 
     for (;;) {
       used[s] = 1;
-      px.push(from[s] % cw);
-      py.push((from[s] / cw) | 0);
+      seqFrom.push(from[s]);
+      seqCrack.push(crack[s]);
 
       const at2 = to[s];
       if (at2 === from[s0]) break;
@@ -214,11 +229,89 @@ function traceRings(
       s = nxt;
     }
 
+    if (seqFrom.length < 4) continue;
+
+    px.length = 0;
+    py.length = 0;
+    layArcs(seqFrom, seqCrack, net, cw, px, py);
     if (px.length < 4) continue;
+
     rings.push(makeRing(px, py, w, h));
   }
 
   return rings;
+}
+
+/**
+ * Turns a ring's run of cracks into its run of arcs.
+ *
+ * The walk has to start where an arc does, or the first arc would be entered
+ * halfway along with no way to lay it down whole, so the sequence is rotated to
+ * the first such place. If there is none, the boundary is a single closed arc
+ * with no junction on it and can be started anywhere. If the runs do not line
+ * up at all — which takes a boundary that stopped short — the corners
+ * themselves are laid down and that one ring goes unsmoothed rather than wrong.
+ */
+function layArcs(
+  seqFrom: readonly number[],
+  seqCrack: readonly number[],
+  net: Net,
+  cw: number,
+  px: number[],
+  py: number[],
+): void {
+  const m = seqCrack.length;
+  const { arcs, arcOf, posOf, spanOf } = net;
+
+  const raw = () => {
+    px.length = 0;
+    py.length = 0;
+    for (let i = 0; i < m; i++) {
+      px.push(seqFrom[i] % cw);
+      py.push((seqFrom[i] / cw) | 0);
+    }
+  };
+
+  let start = -1;
+  for (let i = 0; i < m; i++) {
+    const a = arcOf[seqCrack[i]];
+    if (a < 0) return raw();
+    const p = posOf[seqCrack[i]];
+    const forward = arcs[a].corners[p] === seqFrom[i];
+    if (forward ? p === 0 : p === spanOf[a] - 1) {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) start = 0;
+
+  let i = 0;
+  while (i < m) {
+    const k = (start + i) % m;
+    const id = seqCrack[k];
+    const a = arcOf[id];
+    if (a < 0) return raw();
+
+    const arc = arcs[a];
+    const span = spanOf[a];
+    if (i + span > m) return raw();
+
+    const forward = arc.corners[posOf[id]] === seqFrom[k];
+    const L = arc.x.length;
+    if (forward) {
+      for (let j = 0; j < L - 1; j++) {
+        px.push(arc.x[j]);
+        py.push(arc.y[j]);
+      }
+    } else {
+      for (let j = L - 1; j > 0; j--) {
+        px.push(arc.x[j]);
+        py.push(arc.y[j]);
+      }
+    }
+
+    i += span;
+  }
 }
 
 /** Signed area, and the ring packed into typed arrays in 0..1 coordinates. */
@@ -237,117 +330,44 @@ function makeRing(px: number[], py: number[], w: number, h: number): Ring {
 }
 
 /**
- * Takes the staircase out of a ring without rounding its corners off.
- *
- * A ring walked along the cracks between pixels is all right angles. Chaikin's
- * corner cutting turns that into a curve in a couple of passes, and would keep
- * going until everything was a circle — two passes is enough to lose the steps
- * and not enough to lose a corner the artist drew.
- */
-function smoothRing(r: Ring, passes: number): Ring {
-  let x = r.x;
-  let y = r.y;
-
-  for (let p = 0; p < passes; p++) {
-    const n = x.length;
-    const nx = new Float64Array(n * 2);
-    const ny = new Float64Array(n * 2);
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      nx[i * 2] = 0.75 * x[i] + 0.25 * x[j];
-      ny[i * 2] = 0.75 * y[i] + 0.25 * y[j];
-      nx[i * 2 + 1] = 0.25 * x[i] + 0.75 * x[j];
-      ny[i * 2 + 1] = 0.25 * y[i] + 0.75 * y[j];
-    }
-    x = nx;
-    y = ny;
-  }
-
-  let twice = 0;
-  for (let i = 0; i < x.length; i++) {
-    const j = (i + 1) % x.length;
-    twice += x[i] * y[j] - x[j] * y[i];
-  }
-  return { x, y, area: twice / 2 };
-}
-
-/** Drops points a straight line would have passed through anyway. */
-function simplifyRing(r: Ring, tol: number): Ring {
-  const n = r.x.length;
-  if (n < 8) return r;
-
-  const keep = new Uint8Array(n);
-  keep[0] = 1;
-
-  let anchor = 0;
-  for (let i = 1; i < n; i++) {
-    const j = (i + 1) % n;
-    const ax = r.x[anchor], ay = r.y[anchor];
-    const bx = r.x[j], by = r.y[j];
-    const dx = bx - ax, dy = by - ay;
-    const len = Math.hypot(dx, dy);
-    const d =
-      len < 1e-12
-        ? Math.hypot(r.x[i] - ax, r.y[i] - ay)
-        : Math.abs((r.x[i] - ax) * dy - (r.y[i] - ay) * dx) / len;
-    if (d > tol) {
-      keep[i] = 1;
-      anchor = i;
-    }
-  }
-
-  let m = 0;
-  for (let i = 0; i < n; i++) if (keep[i]) m++;
-  if (m < 4) return r;
-
-  const x = new Float64Array(m);
-  const y = new Float64Array(m);
-  let k = 0;
-  for (let i = 0; i < n; i++) {
-    if (!keep[i]) continue;
-    x[k] = r.x[i];
-    y[k] = r.y[i];
-    k++;
-  }
-
-  let twice = 0;
-  for (let i = 0; i < m; i++) {
-    const j = (i + 1) % m;
-    twice += x[i] * y[j] - x[j] * y[i];
-  }
-  return { x, y, area: twice / 2 };
-}
-
-/**
  * The picture turned into one closed outline per tone.
  *
  * @param tones      Brightness of each tone, darkest first.
- * @param smoothPx   How far a corner may be dropped from where the smoothing
- *                   put it, in pixels. This has to stay well under half a
- *                   pixel: a step is half a pixel deep, so a looser tolerance
- *                   than that throws the smoothed curve away and puts the
- *                   staircase back exactly as it was.
+ * @param smoothPx   How far a boundary may be moved to lose the pixel steps,
+ *                   in pixels. A step is half a pixel deep, so anything from
+ *                   about that upwards flattens the staircase; what the number
+ *                   really sets is how much rounding a corner the artist drew
+ *                   is allowed, since a corner spends the whole budget and
+ *                   then stops.
  * @param mask       Zero where the shape does not reach, so no tone is traced
  *                   there and the outermost ring follows the shape's own edge.
+ * @param minAreaPx  Smallest region worth keeping, in square pixels. The
+ *                   quantising leaves specks a few pixels across along the
+ *                   busier edges, and a speck narrower than a printed line is
+ *                   a colour the printer cannot lay down anyway.
  */
 export function vectorise(
   lum: Float64Array,
   w: number,
   h: number,
   tones: readonly number[],
-  smoothPx = 0.1,
+  smoothPx = 1,
   mask?: Uint8Array,
+  minAreaPx = 3,
 ): Vectorised {
   const at = quantise(lum, w, h, tones, mask);
 
+  // Enough passes that the averaging reaches a couple of pixels either side,
+  // which is what it takes to flatten a staircase rather than round it off.
+  const net = buildNet(at, w, h, OUTSIDE, smoothPx, 24);
+
   const regions: ToneRegion[] = [];
   for (let k = 0; k < tones.length; k++) {
-    const raw = traceRings(at, w, h, k);
     const rings: Ring[] = [];
-    for (const r of raw) {
-      // Rings of a pixel or two are quantising noise, not shapes.
-      if (Math.abs(r.area) * w * h < 3) continue;
-      rings.push(simplifyRing(smoothRing(r, 2), smoothPx / Math.max(w, h)));
+    for (const r of traceRings(at, w, h, k, net)) {
+      // Too small to be a shape, or to print if it were.
+      if (Math.abs(r.area) * w * h < minAreaPx) continue;
+      rings.push(r);
     }
     regions.push({ tone: k, rings });
   }

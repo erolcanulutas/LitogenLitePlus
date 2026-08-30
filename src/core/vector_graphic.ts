@@ -4,6 +4,19 @@ import { vectorise } from "./vectorise";
 import { boxOf, coverOf, erode, placeIn } from "./stencil";
 
 /**
+ * How far a boundary may be moved to lose the pixel staircase, in pixels.
+ *
+ * A step is half a pixel deep, so this is comfortably enough to flatten one.
+ * What it really sets is the most rounding a corner the artist drew can take,
+ * because a corner spends the whole budget and then stops: at the resolutions
+ * traced here that is a few hundredths of a millimetre on the print.
+ */
+const SMOOTH_PX = 1.2;
+
+/** Smallest feature kept, in millimetres. See core/vector_inlay.ts. */
+const MIN_FEATURE_MM = 0.25;
+
+/**
  * A terraced relief built from the picture's shapes rather than its brightness.
  *
  * Same idea as the inlay, standing up instead of lying flat. Each tone is
@@ -41,7 +54,8 @@ export function buildVectorGraphic(
   const framed = frameMm > 0.001;
   const inner = framed ? erode(cover, w, h, frameMm * pxPerMm) : cover;
 
-  const vec = vectorise(lum, w, h, tones, 0.1, inner);
+  const floorPx = (MIN_FEATURE_MM / (1 / pxPerMm)) ** 2;
+  const vec = vectorise(lum, w, h, tones, SMOOTH_PX, inner, floorPx);
   const place = placeIn(box);
   const mb = new MeshBuilder(1 << 16);
 
@@ -57,7 +71,7 @@ export function buildVectorGraphic(
     const band = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) band[i] = cover[i] && !inner[i] ? 1 : 0;
 
-    const ring = vectorise(new Float64Array(w * h), w, h, [0], 0.1, band);
+    const ring = vectorise(new Float64Array(w * h), w, h, [0], SMOOTH_PX, band);
     for (const region of ring.regions) {
       extrudeRegion(mb, region.rings, place, 0, frameZ);
     }

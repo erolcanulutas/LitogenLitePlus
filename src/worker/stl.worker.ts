@@ -107,7 +107,7 @@ function orientForPrinting(
 }
 
 /** Longest side the picture is traced at, in pixels. */
-const TRACE_MAX = 3000;
+const TRACE_MAX = 1600;
 
 /**
  * Redraws the inlay's tones as traced regions.
