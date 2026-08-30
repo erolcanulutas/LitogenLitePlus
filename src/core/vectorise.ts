@@ -19,7 +19,10 @@ import { buildNet, type Net } from "./arcs";
  */
 
 /** Label for a pixel the shape does not cover, so it belongs to no tone. */
-const OUTSIDE = 255;
+export const OUTSIDE = 255;
+
+/** A label to lay over the tones, for a region the picture does not decide. */
+export type Stamp = { where: Uint8Array; label: number };
 
 /** A closed ring of points in image coordinates, 0..1 in both axes. */
 export type Ring = {
@@ -38,6 +41,8 @@ export type ToneRegion = {
 export type Vectorised = {
   levels: number;
   regions: ToneRegion[];
+  /** Which label each pixel ended up as, for asking what is next to what. */
+  labels: Uint8Array;
 };
 
 /**
@@ -202,6 +207,101 @@ function clean(at: Uint8Array, w: number, h: number, levels: number, passes: num
   }
 
   return src;
+}
+
+/**
+ * Gives a patch too small to print to whichever tone it is most surrounded by.
+ *
+ * Quantising a busy edge leaves specks a few pixels across. A speck is a colour
+ * change narrower than a single printed line, so the printer cannot lay it down
+ * whatever it is told. Dropping its outline afterwards is not the same thing as
+ * removing it — the tones tile the picture, so a dropped one leaves a hole
+ * through the model where the speck was. Handing it to its neighbour leaves
+ * solid.
+ */
+function absorbSpecks(
+  at: Uint8Array,
+  w: number,
+  h: number,
+  count: number,
+  minPx: number,
+): Uint8Array {
+  if (!(minPx > 1)) return at;
+
+  const n = w * h;
+  const root = new Int32Array(n);
+  for (let i = 0; i < n; i++) root[i] = i;
+
+  const find = (x: number): number => {
+    while (root[x] !== x) {
+      root[x] = root[root[x]];
+      x = root[x];
+    }
+    return x;
+  };
+  const join = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) root[ra] = rb;
+  };
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (at[i] === OUTSIDE) continue;
+      if (x + 1 < w && at[i + 1] === at[i]) join(i, i + 1);
+      if (y + 1 < h && at[i + w] === at[i]) join(i, i + w);
+    }
+  }
+
+  const size = new Int32Array(n);
+  for (let i = 0; i < n; i++) if (at[i] !== OUTSIDE) size[find(i)]++;
+
+  // What each small patch touches, so it can be handed to whichever tone has
+  // the most of the border with it.
+  const touch = new Map<number, Float64Array>();
+  const note = (i: number, j: number) => {
+    if (at[i] === OUTSIDE || at[j] === at[i]) return;
+    const r = find(i);
+    if (size[r] >= minPx) return;
+    let v = touch.get(r);
+    if (!v) {
+      v = new Float64Array(count + 1);
+      touch.set(r, v);
+    }
+    v[at[j] === OUTSIDE ? count : at[j]]++;
+  };
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (x + 1 < w) {
+        note(i, i + 1);
+        note(i + 1, i);
+      }
+      if (y + 1 < h) {
+        note(i, i + w);
+        note(i + w, i);
+      }
+    }
+  }
+
+  const give = new Map<number, number>();
+  for (const [r, v] of touch) {
+    let best = -1;
+    // The outside is not a tone and cannot take one over, so it does not count.
+    for (let k = 0; k < count; k++) if (best < 0 || v[k] > v[best]) best = k;
+    if (best >= 0 && v[best] > 0) give.set(r, best);
+  }
+  if (give.size === 0) return at;
+
+  const out = new Uint8Array(at);
+  for (let i = 0; i < n; i++) {
+    if (at[i] === OUTSIDE) continue;
+    const to = give.get(find(i));
+    if (to !== undefined) out[i] = to;
+  }
+  return out;
 }
 
 /**
@@ -404,6 +504,8 @@ function makeRing(px: number[], py: number[], w: number, h: number): Ring {
  *                   then stops.
  * @param mask       Zero where the shape does not reach, so no tone is traced
  *                   there and the outermost ring follows the shape's own edge.
+ * @param stamp      A label to lay over the tones wherever it says, traced
+ *                   alongside them so the boundary they share is one curve.
  * @param minAreaPx  Smallest region worth keeping, in square pixels. The
  *                   quantising leaves specks a few pixels across along the
  *                   busier edges, and a speck narrower than a printed line is
@@ -417,16 +519,29 @@ export function vectorise(
   smoothPx = 1,
   mask?: Uint8Array,
   minAreaPx = 3,
+  stamp?: Stamp,
   cleanPasses = 2,
 ): Vectorised {
-  const at = clean(quantise(lum, w, h, tones, mask), w, h, tones.length, cleanPasses);
+  const raw = quantise(lum, w, h, tones, mask);
+
+  // A stamped label is not a tone read off the picture — a frame band, say —
+  // but it has to be traced with the tones rather than beside them. Two traces
+  // give two curves along the line they share, and two curves that are nearly
+  // the same are worse than one: everything between them is a sliver of solid
+  // that belongs to neither.
+  const count = stamp ? Math.max(tones.length, stamp.label + 1) : tones.length;
+  if (stamp) {
+    for (let i = 0; i < w * h; i++) if (stamp.where[i]) raw[i] = stamp.label;
+  }
+
+  const at = absorbSpecks(clean(raw, w, h, count, cleanPasses), w, h, count, minAreaPx);
 
   // Enough passes that the averaging reaches a couple of pixels either side,
   // which is what it takes to flatten a staircase rather than round it off.
   const net = buildNet(at, w, h, OUTSIDE, smoothPx, 24);
 
   const regions: ToneRegion[] = [];
-  for (let k = 0; k < tones.length; k++) {
+  for (let k = 0; k < count; k++) {
     const rings: Ring[] = [];
     for (const r of traceRings(at, w, h, k, net)) {
       // Too small to be a shape, or to print if it were.
@@ -436,5 +551,5 @@ export function vectorise(
     regions.push({ tone: k, rings });
   }
 
-  return { levels: tones.length, regions };
+  return { levels: tones.length, regions, labels: at };
 }

@@ -23,12 +23,31 @@ import { triangulateRegion } from "./triangulate";
 /** Image coordinates to model millimetres. */
 export type Place = (u: number, v: number) => { x: number; y: number };
 
+/**
+ * Where a piece of wall should start, given the boundary segment it stands on
+ * in image coordinates. Returning null leaves that stretch without a wall.
+ *
+ * A terrace is one solid, not a pile of separate ones, so along a step only the
+ * taller side raises a wall and it raises it from the shorter side's height,
+ * not from the floor. Left to build a full-height wall each, both sides would
+ * put one on the same line facing opposite ways: buried, so it makes no
+ * difference to the volume, and hidden, so it looks right — but every layer a
+ * slicer takes through it finds a closed loop of nothing there and dutifully
+ * traces a perimeter round it.
+ */
+export type WallBase = (
+  ua: number, va: number,
+  ub: number, vb: number,
+) => number | null;
+
 export function extrudeRegion(
   mb: MeshBuilder,
   rings: readonly Ring[],
   map: Place,
   baseZ: number,
   topZ: number,
+  wallBase?: WallBase,
+  wallLevels?: readonly number[],
 ): void {
   for (const piece of triangulateRegion(rings)) {
     const n = piece.coords.length / 2;
@@ -75,11 +94,40 @@ export function extrudeRegion(
 
     const wall = (a: number, b: number) => {
       if (seen.has(b * n + a)) return;
+
+      let foot = baseZ;
+      if (wallBase) {
+        const z = wallBase(
+          piece.coords[a * 2], piece.coords[a * 2 + 1],
+          piece.coords[b * 2], piece.coords[b * 2 + 1],
+        );
+        if (z === null) return;
+        foot = z;
+      }
+      if (foot >= topZ - 1e-9) return;
+
+      // Cut at every height a wall passes, whether or not this stretch needs
+      // it. Where three tones meet, the tall one's wall spans two steps and
+      // its neighbours' walls span one each; left whole, the long upright edge
+      // at that corner has two short ones against it and matches neither.
+      let from = foot;
+      if (wallLevels) {
+        for (const level of wallLevels) {
+          if (level <= from + 1e-9) continue;
+          if (level >= topZ - 1e-9) break;
+          panel(a, b, from, level);
+          from = level;
+        }
+      }
+      panel(a, b, from, topZ);
+    };
+
+    const panel = (a: number, b: number, lo: number, hi: number) => {
       mb.addQuad(
-        px[b], py[b], topZ,
-        px[a], py[a], topZ,
-        px[a], py[a], baseZ,
-        px[b], py[b], baseZ,
+        px[b], py[b], hi,
+        px[a], py[a], hi,
+        px[a], py[a], lo,
+        px[b], py[b], lo,
       );
     };
 
