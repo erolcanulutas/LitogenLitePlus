@@ -136,7 +136,6 @@ type Props = {
   opacity?: number;
   /** 0..1 of the brush's own width, as how far its edge is feathered. */
   softness?: number;
-  text?: string;
   fontFamily?: string;
   /** Cap height on screen, like the brush width, so the zoom does not move it. */
   fontSize?: number;
@@ -147,6 +146,11 @@ type Props = {
 /* ---------------------------------------------
  * Math Helpers
  * --------------------------------------------- */
+
+/** How far past the picture the paint reaches, as a multiple of its size. */
+const PAINT_SPAN = 2;
+/** Longest side of the paint layer, whatever the picture's own resolution. */
+const PAINT_MAX = 4096;
 
 const HANDLE_SIZE = 8;
 const ROT_HANDLE_PFX = 20;
@@ -196,7 +200,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       bgColor, detail, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
       tool = "crop", paintColor, paintSize, fillTolerance, onPickColor,
       shapeFill = true, opacity = 1, softness = 0,
-      text = "", fontFamily = "Arial", fontSize = 48,
+      fontFamily = "Arial", fontSize = 48,
       onImageData,
     },
     ref
@@ -476,7 +480,11 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         octx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
         octx.drawImage(image, -dwBg / 2, -dhBg / 2, dwBg, dhBg);
         if (paintRef.current) {
-          octx.drawImage(paintRef.current, -dwBg / 2, -dhBg / 2, dwBg, dhBg);
+          octx.drawImage(
+            paintRef.current,
+            (-dwBg * PAINT_SPAN) / 2, (-dhBg * PAINT_SPAN) / 2,
+            dwBg * PAINT_SPAN, dhBg * PAINT_SPAN,
+          );
         }
         octx.restore();
 
@@ -496,6 +504,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     const paintRef = useRef<HTMLCanvasElement | null>(null);
     const undoRef = useRef<ImageData[]>([]);
     const redoRef = useRef<ImageData[]>([]);
+    /** Paint-layer pixels per picture pixel. */
+    const paintScaleRef = useRef(1);
     const strokeRef = useRef<{ x: number; y: number } | null>(null);
     const hoverRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -509,9 +519,48 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      */
     const ringOnlyRef = useRef(false);
 
-    /** A line, box or oval being dragged out, before the button comes up. */
+    /**
+     * The shape being worked on, in the picture's own pixels.
+     *
+     * It stays after the button comes up rather than being stamped down, with
+     * a box and grips round it, so it can be nudged and resized like anything
+     * else drawn on a canvas. It goes onto the paint layer when it is finished
+     * with: a press of Enter, a change of tool, or a click somewhere else.
+     */
     const pendingRef = useRef<
-      { from: { x: number; y: number }; to: { x: number; y: number } } | null
+      {
+        kind: "line" | "rect" | "ellipse";
+        from: { x: number; y: number };
+        to: { x: number; y: number };
+      } | null
+    >(null);
+
+    /** Which grip is being dragged, and what the shape looked like before. */
+    /** Lets an effect put the working shape down when the tool changes. */
+    const settleRef = useRef<(() => boolean) | null>(null);
+
+    /**
+     * Where the text box is, and what is in it.
+     *
+     * A real textarea parked over the canvas rather than a caret drawn on it:
+     * that is selection, the clipboard, a native cursor and every keyboard
+     * anyone has, for free, and it can be dragged to size by its own corner.
+     * What it is showing is what will be laid down — same face, same size.
+     */
+    const [textAt, setTextAt] = useState<{ x: number; y: number } | null>(null);
+    const [draft, setDraft] = useState("");
+    const boxRef = useRef<HTMLTextAreaElement>(null);
+    const settleTextRef = useRef<(() => void) | null>(null);
+
+    const grabRef = useRef<
+      | {
+          mode: "new" | "move" | "grip";
+          gx: -1 | 0 | 1;
+          gy: -1 | 0 | 1;
+          orig: { from: { x: number; y: number }; to: { x: number; y: number } };
+          at: { x: number; y: number };
+        }
+      | null
     >(null);
 
     useEffect(() => {
@@ -521,11 +570,30 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         paintRef.current = null;
         return;
       }
+      // Twice the picture across and twice down, centred on it, because the
+      // backdrop is part of what gets printed and a brush that stopped at the
+      // picture's edge could not touch it. Capped, because at a photograph's
+      // own resolution four times its area is a great deal of canvas for
+      // something that is only ever downsampled into the crop.
+      const spanW = image.naturalWidth * PAINT_SPAN;
+      const spanH = image.naturalHeight * PAINT_SPAN;
+      const k = Math.min(1, PAINT_MAX / Math.max(spanW, spanH));
+
       const c = document.createElement("canvas");
-      c.width = image.naturalWidth;
-      c.height = image.naturalHeight;
+      c.width = Math.max(1, Math.round(spanW * k));
+      c.height = Math.max(1, Math.round(spanH * k));
       paintRef.current = c;
+      paintScaleRef.current = k;
     }, [image]);
+
+    /** Picture pixels to paint-layer pixels. */
+    const toLayer = (p: { x: number; y: number }) => {
+      const k = paintScaleRef.current;
+      const iw = image?.naturalWidth ?? 0;
+      const ih = image?.naturalHeight ?? 0;
+      const edge = (PAINT_SPAN - 1) / 2;
+      return { x: (p.x + iw * edge) * k, y: (p.y + ih * edge) * k };
+    };
 
     /** Where a point in the drawn scene lands in the picture, in its pixels. */
     const toPicture = (x: number, y: number) => {
@@ -548,12 +616,12 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       };
     };
 
-    /** Brush width in the picture's pixels, from its width on screen. */
+    /** Brush width in paint-layer pixels, from its width on screen. */
     const brushInPicture = () => {
       const { dw } = fitRef.current;
       if (!image || !(dw > 0)) return 1;
       const perPixel = (dw / image.naturalWidth) * viewScale;
-      return Math.max(1, (paintSize ?? 24) / Math.max(1e-6, perPixel));
+      return Math.max(1, ((paintSize ?? 24) / Math.max(1e-6, perPixel)) * paintScaleRef.current);
     };
 
     /** Every tool but the crop frame draws, and they all draw the same way. */
@@ -577,12 +645,12 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       if (feather > 0.4) ctx.filter = `blur(${feather.toFixed(2)}px)`;
     };
 
-    /** The text as it will be stamped, in the picture's own pixels. */
+    /** The text as it will be stamped, in paint-layer pixels. */
     const textInPicture = () => {
       const { dw } = fitRef.current;
       if (!image || !(dw > 0)) return 1;
       const perPixel = (dw / image.naturalWidth) * viewScale;
-      return Math.max(1, fontSize / Math.max(1e-6, perPixel));
+      return Math.max(1, (fontSize / Math.max(1e-6, perPixel)) * paintScaleRef.current);
     };
 
     const layOutText = (ctx: CanvasRenderingContext2D) => {
@@ -596,11 +664,14 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const ctx = layer?.getContext("2d");
       if (!ctx) return;
 
+      const a = toLayer(from);
+      const b = toLayer(to);
+
       ctx.save();
       dressUp(ctx);
       ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
       ctx.stroke();
       ctx.restore();
     };
@@ -608,14 +679,15 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     /** A line, box or oval between two corners, in the picture's own pixels. */
     const shapePath = (
       ctx: CanvasRenderingContext2D,
+      kind: "line" | "rect" | "ellipse",
       a: { x: number; y: number },
       b: { x: number; y: number },
     ) => {
       ctx.beginPath();
-      if (tool === "line") {
+      if (kind === "line") {
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
-      } else if (tool === "rect") {
+      } else if (kind === "rect") {
         ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
       } else {
         ctx.ellipse(
@@ -626,25 +698,211 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       }
     };
 
-    const commitShape = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const commitShape = (
+      kind: "line" | "rect" | "ellipse",
+      from: { x: number; y: number },
+      to: { x: number; y: number },
+    ) => {
       const ctx = paintRef.current?.getContext("2d");
       if (!ctx) return;
       ctx.save();
       dressUp(ctx);
-      shapePath(ctx, a, b);
-      if (tool === "line" || !shapeFill) ctx.stroke();
+      shapePath(ctx, kind, toLayer(from), toLayer(to));
+      if (kind === "line" || !shapeFill) ctx.stroke();
       else ctx.fill();
       ctx.restore();
     };
 
-    /** Stamps the typed text with its top-left corner where it was clicked. */
-    const commitText = (at: { x: number; y: number }) => {
+    /** The eight grips round a box, or the two ends of a line. */
+    const gripsOf = (p: {
+      kind: "line" | "rect" | "ellipse";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+    }) => {
+      if (p.kind === "line") {
+        return [
+          { gx: -1 as const, gy: -1 as const, x: p.from.x, y: p.from.y },
+          { gx: 1 as const, gy: 1 as const, x: p.to.x, y: p.to.y },
+        ];
+      }
+
+      const x0 = Math.min(p.from.x, p.to.x);
+      const x1 = Math.max(p.from.x, p.to.x);
+      const y0 = Math.min(p.from.y, p.to.y);
+      const y1 = Math.max(p.from.y, p.to.y);
+      const mx = (x0 + x1) / 2;
+      const my = (y0 + y1) / 2;
+
+      const out: { gx: -1 | 0 | 1; gy: -1 | 0 | 1; x: number; y: number }[] = [];
+      for (const gy of [-1, 0, 1] as const) {
+        for (const gx of [-1, 0, 1] as const) {
+          if (gx === 0 && gy === 0) continue;
+          out.push({
+            gx, gy,
+            x: gx < 0 ? x0 : gx > 0 ? x1 : mx,
+            y: gy < 0 ? y0 : gy > 0 ? y1 : my,
+          });
+        }
+      }
+      return out;
+    };
+
+    /** The other way round: a point in the picture, on the screen. */
+    const toScreen = (p: { x: number; y: number }) => {
+      const { w: W, h: H } = viewRef.current;
+      const { dw, dh } = fitRef.current;
+      if (!image || !(dw > 0)) return { x: 0, y: 0 };
+
+      const lx = (p.x / image.naturalWidth) * dw - dw / 2;
+      const ly = (p.y / image.naturalHeight) * dh - dh / 2;
+
+      const rad = deg2rad(rotate);
+      const fx = flipH ? -lx : lx;
+      const fy = flipV ? -ly : ly;
+
+      const rx = fx * Math.cos(rad) - fy * Math.sin(rad);
+      const ry = fx * Math.sin(rad) + fy * Math.cos(rad);
+
+      return { x: rx * viewScale + W / 2, y: ry * viewScale + H / 2 };
+    };
+
+    /** A screen distance in the picture's own pixels, for hit testing. */
+    const slackInPicture = (screenPx: number) => {
+      const { dw } = fitRef.current;
+      if (!image || !(dw > 0)) return screenPx;
+      return screenPx / ((dw / image.naturalWidth) * viewScale);
+    };
+
+    /** Where a drag leaves the shape, given which grip it started on. */
+    const afterGrab = (
+      grab: NonNullable<typeof grabRef.current>,
+      p: { x: number; y: number },
+    ) => {
+      const dx = p.x - grab.at.x;
+      const dy = p.y - grab.at.y;
+      const { from, to } = grab.orig;
+
+      if (grab.mode === "move") {
+        return {
+          from: { x: from.x + dx, y: from.y + dy },
+          to: { x: to.x + dx, y: to.y + dy },
+        };
+      }
+
+      // A grip moves the corner it sits on and leaves the opposite one alone;
+      // an edge grip moves one axis only.
+      const next = { from: { ...from }, to: { ...to } };
+      const lowX = from.x <= to.x;
+      const lowY = from.y <= to.y;
+
+      if (grab.gx < 0) {
+        if (lowX) next.from.x = from.x + dx;
+        else next.to.x = to.x + dx;
+      } else if (grab.gx > 0) {
+        if (lowX) next.to.x = to.x + dx;
+        else next.from.x = from.x + dx;
+      }
+
+      if (grab.gy < 0) {
+        if (lowY) next.from.y = from.y + dy;
+        else next.to.y = to.y + dy;
+      } else if (grab.gy > 0) {
+        if (lowY) next.to.y = to.y + dy;
+        else next.from.y = from.y + dy;
+      }
+
+      return next;
+    };
+
+    /** One snapshot per thing done, so undo steps back the way it was drawn. */
+    const remember = () => {
+      const layer = paintRef.current;
+      const lctx = layer?.getContext("2d", { willReadFrequently: true });
+      if (!layer || !lctx) return;
+      undoRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
+      if (undoRef.current.length > 12) undoRef.current.shift();
+      // Doing something new is where a branch that was undone stops being
+      // reachable, so that is where the way forward is dropped.
+      redoRef.current = [];
+    };
+
+    /** Puts the shape being worked on down onto the paint layer. */
+    const settle = () => {
+      const p = pendingRef.current;
+      if (!p) return false;
+      pendingRef.current = null;
+      if (Math.abs(p.to.x - p.from.x) < 0.5 && Math.abs(p.to.y - p.from.y) < 0.5) {
+        return false;
+      }
+      remember();
+      commitShape(p.kind, p.from, p.to);
+      return true;
+    };
+
+    settleRef.current = settle;
+
+    /** Puts whatever is in the text box down, and takes the box away. */
+    const settleText = () => {
+      if (!textAt) return;
+      const body = draft;
+      const wide = boxRef.current?.offsetWidth ?? 240;
+
+      setTextAt(null);
+      setDraft("");
+
+      if (body.trim()) {
+        remember();
+        commitText(textAt, body, wide);
+        drawRef.current?.();
+      }
+    };
+
+    settleTextRef.current = settleText;
+
+    /**
+     * Lays the typed text down, wrapped to the width of the box it was typed
+     * in, with its top-left corner where the box was.
+     *
+     * Mirrored first if the picture is, because the paint goes down with the
+     * picture and would otherwise come out back to front — which is the one
+     * thing text cannot get away with.
+     */
+    const commitText = (
+      at: { x: number; y: number },
+      body: string,
+      boxWidthOnScreen: number,
+    ) => {
       const ctx = paintRef.current?.getContext("2d");
-      if (!ctx || !text) return;
+      if (!ctx || !body.trim()) return;
+
+      const p = toLayer(at);
+      const size = textInPicture();
+      const wide = slackInPicture(boxWidthOnScreen) * paintScaleRef.current;
+
       ctx.save();
       dressUp(ctx);
       layOutText(ctx);
-      ctx.fillText(text, at.x, at.y);
+      ctx.textBaseline = "top";
+      ctx.translate(p.x, p.y);
+      ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+
+      let line = 0;
+      for (const para of body.split("\n")) {
+        let run = "";
+        for (const word of para.split(" ")) {
+          const test = run ? `${run} ${word}` : word;
+          if (run && ctx.measureText(test).width > wide) {
+            ctx.fillText(run, 0, line * size * 1.2);
+            line++;
+            run = word;
+          } else {
+            run = test;
+          }
+        }
+        ctx.fillText(run, 0, line * size * 1.2);
+        line++;
+      }
+
       ctx.restore();
     };
 
@@ -665,8 +923,9 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const h = layer.height;
       if (w * h > 40e6) return;
 
-      const sx = Math.floor(seed.x);
-      const sy = Math.floor(seed.y);
+      const at = toLayer(seed);
+      const sx = Math.floor(at.x);
+      const sy = Math.floor(at.y);
       if (sx < 0 || sy < 0 || sx >= w || sy >= h) return;
 
       const flat = document.createElement("canvas");
@@ -674,15 +933,24 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       flat.height = h;
       const fctx = flat.getContext("2d", { willReadFrequently: true });
       if (!fctx) return;
-      fctx.drawImage(image, 0, 0, w, h);
+
+      // What the eye sees, in the order it is stacked: backdrop, then the
+      // picture over its own part of it, then the paint over both. Without the
+      // backdrop the margin round the picture would read as transparent black
+      // and a fill started out there would stop at the picture's edge.
+      fctx.fillStyle = bgColor;
+      fctx.fillRect(0, 0, w, h);
+
+      const spot = imageInLayer();
+      fctx.drawImage(image, spot.x, spot.y, spot.w, spot.h);
       fctx.drawImage(layer, 0, 0);
 
       const src = fctx.getImageData(0, 0, w, h).data;
       const out = lctx.getImageData(0, 0, w, h);
       const dst = out.data;
 
-      const at = (sy * w + sx) * 4;
-      const r0 = src[at], g0 = src[at + 1], b0 = src[at + 2];
+      const seedAt = (sy * w + sx) * 4;
+      const r0 = src[seedAt], g0 = src[seedAt + 1], b0 = src[seedAt + 2];
 
       const tol = Math.max(0, fillTolerance ?? 40);
       const limit = tol * tol * 3;
@@ -753,7 +1021,16 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       lctx.putImageData(out, 0, 0);
     };
 
-    /** The colour under a point, picture and paint together. */
+    /** Where the picture sits inside the paint layer. */
+    const imageInLayer = () => {
+      const k = paintScaleRef.current;
+      const iw = image?.naturalWidth ?? 0;
+      const ih = image?.naturalHeight ?? 0;
+      const edge = (PAINT_SPAN - 1) / 2;
+      return { x: iw * edge * k, y: ih * edge * k, w: iw * k, h: ih * k };
+    };
+
+    /** The colour under a point: backdrop, picture and paint, as seen. */
     const pickAt = (p: { x: number; y: number }): string | null => {
       const layer = paintRef.current;
       if (!image || !layer) return null;
@@ -764,8 +1041,13 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const ctx = c.getContext("2d", { willReadFrequently: true });
       if (!ctx) return null;
 
-      ctx.drawImage(image, -p.x, -p.y, layer.width, layer.height);
-      ctx.drawImage(layer, -p.x, -p.y);
+      const at = toLayer(p);
+      const spot = imageInLayer();
+
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, 1, 1);
+      ctx.drawImage(image, spot.x - at.x, spot.y - at.y, spot.w, spot.h);
+      ctx.drawImage(layer, -at.x, -at.y);
 
       const d = ctx.getImageData(0, 0, 1, 1).data;
       const two = (v: number) => v.toString(16).padStart(2, "0");
@@ -828,35 +1110,32 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
       ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
       if (paintRef.current) {
-        ctx.drawImage(paintRef.current, -dw / 2, -dh / 2, dw, dh);
+        ctx.drawImage(
+          paintRef.current,
+          (-dw * PAINT_SPAN) / 2, (-dh * PAINT_SPAN) / 2,
+          dw * PAINT_SPAN, dh * PAINT_SPAN,
+        );
       }
       // Drawn exactly where it will land, so there is nothing to be surprised
       // by once the button comes up.
-      const inPicture = (run: (c: CanvasRenderingContext2D) => void) => {
+      const layer = paintRef.current;
+      const inLayer = (run: (c: CanvasRenderingContext2D) => void) => {
+        if (!layer) return;
         ctx.save();
-        ctx.translate(-dw / 2, -dh / 2);
-        ctx.scale(dw / image.naturalWidth, dh / image.naturalHeight);
+        ctx.translate((-dw * PAINT_SPAN) / 2, (-dh * PAINT_SPAN) / 2);
+        ctx.scale((dw * PAINT_SPAN) / layer.width, (dh * PAINT_SPAN) / layer.height);
         dressUp(ctx);
         run(ctx);
         ctx.restore();
       };
 
       if (pendingRef.current) {
-        const { from, to } = pendingRef.current;
-        inPicture((c) => {
-          shapePath(c, from, to);
-          if (tool === "line" || !shapeFill) c.stroke();
+        const { kind, from, to } = pendingRef.current;
+        inLayer((c) => {
+          shapePath(c, kind, toLayer(from), toLayer(to));
+          if (kind === "line" || !shapeFill) c.stroke();
           else c.fill();
         });
-      } else if (tool === "text" && text && hoverRef.current) {
-        const at = toPicture(hoverRef.current.x, hoverRef.current.y);
-        if (at) {
-          inPicture((c) => {
-            c.globalAlpha *= 0.65;
-            layOutText(c);
-            c.fillText(text, at.x, at.y);
-          });
-        }
       }
       ctx.restore();
 
@@ -977,7 +1256,52 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.restore();
       ctx.restore(); // zoom restore
 
-      // 5. The brush, so its width is something you can see rather than guess.
+      // 5. The working shape's box and grips, in screen units so they stay the
+      // size a pointer can hit however far the view is zoomed.
+      const shaped = pendingRef.current;
+      if (shaped) {
+        const toScreenPt = (p: { x: number; y: number }) => {
+          const lx = (p.x / image.naturalWidth) * dw - dw / 2;
+          const ly = (p.y / image.naturalHeight) * dh - dh / 2;
+
+          const rad2 = deg2rad(rotate);
+          const fx = flipH ? -lx : lx;
+          const fy = flipV ? -ly : ly;
+          const rx = fx * Math.cos(rad2) - fy * Math.sin(rad2);
+          const ry = fx * Math.sin(rad2) + fy * Math.cos(rad2);
+
+          return {
+            x: (rx + W / 2 - W / 2) * viewScale + W / 2,
+            y: (ry + H / 2 - H / 2) * viewScale + H / 2,
+          };
+        };
+
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+
+        const a1 = toScreenPt(shaped.from);
+        const b1 = toScreenPt(shaped.to);
+        ctx.strokeRect(
+          Math.min(a1.x, b1.x), Math.min(a1.y, b1.y),
+          Math.abs(b1.x - a1.x), Math.abs(b1.y - a1.y),
+        );
+        ctx.setLineDash([]);
+
+        for (const g of gripsOf(shaped)) {
+          const p = toScreenPt({ x: g.x, y: g.y });
+          ctx.fillStyle = "#ffffff";
+          ctx.strokeStyle = "rgba(0,0,0,0.85)";
+          ctx.beginPath();
+          ctx.rect(p.x - 4, p.y - 4, 8, 8);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 6. The brush, so its width is something you can see rather than guess.
       // Drawn after the zoom has been put back, so the pointer's scene position
       // has to come forward to the screen with it.
       if (showsRing && hoverRef.current) {
@@ -997,16 +1321,45 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         ctx.restore();
       }
 
-      // 6. Output generation
+      // 7. Output generation
       if (ringOnlyRef.current) ringOnlyRef.current = false;
       else triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
         frameMm, widthMm, bgColor, detail, freeRatio, tool, paintColor, paintSize,
-        shapeFill, opacity, softness, text, fontFamily, fontSize]);
+        shapeFill, opacity, softness, fontFamily, fontSize]);
 
     useEffect(() => {
       drawRef.current = draw;
     }, [draw]);
+
+    // Changing tool is one of the ways of saying you are done with a shape.
+    useEffect(() => {
+      settleTextRef.current?.();
+      if (settleRef.current?.()) drawRef.current?.();
+    }, [tool]);
+
+    // Enter puts it down, Escape throws it away. Read through refs so the
+    // listener does not have to be torn down and put back on every render.
+    useEffect(() => {
+      const onKey = (e: KeyboardEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+        if (!pendingRef.current) return;
+
+        if (e.key === "Enter") {
+          e.preventDefault();
+          settleRef.current?.();
+          drawRef.current?.();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          pendingRef.current = null;
+          drawRef.current?.();
+        }
+      };
+
+      document.addEventListener("keydown", onKey);
+      return () => document.removeEventListener("keydown", onKey);
+    }, []);
 
     /* ---------------------------------------------
      * Interaction Logic
@@ -1051,38 +1404,65 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
           return;
         }
 
-        // One snapshot per thing done, not per move, so undo steps back the
-        // way it was drawn. A dozen is plenty and keeps a big picture's worth
-        // of them from sitting in memory.
-        const layer = paintRef.current;
-        const lctx = layer?.getContext("2d", { willReadFrequently: true });
-        if (layer && lctx) {
-          undoRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
-          if (undoRef.current.length > 12) undoRef.current.shift();
-          // Doing something new is where a branch that was undone stops being
-          // reachable, so that is where the way forward is dropped.
-          redoRef.current = [];
+        // A shape already on the go takes the click first: on a grip it is
+        // resized, inside it is moved, and anywhere else means it is finished
+        // with and the click starts the next one.
+        const working = pendingRef.current;
+        if (working && dragsAShape) {
+          const slack = slackInPicture(HANDLE_SIZE + 6);
+          const grip = gripsOf(working).find(
+            (g) => Math.hypot(g.x - at.x, g.y - at.y) <= slack,
+          );
+
+          if (grip) {
+            grabRef.current = {
+              mode: "grip", gx: grip.gx, gy: grip.gy,
+              orig: { from: working.from, to: working.to }, at,
+            };
+            return;
+          }
+
+          const x0 = Math.min(working.from.x, working.to.x) - slack;
+          const x1 = Math.max(working.from.x, working.to.x) + slack;
+          const y0 = Math.min(working.from.y, working.to.y) - slack;
+          const y1 = Math.max(working.from.y, working.to.y) + slack;
+
+          if (at.x >= x0 && at.x <= x1 && at.y >= y0 && at.y <= y1) {
+            grabRef.current = {
+              mode: "move", gx: 0, gy: 0,
+              orig: { from: working.from, to: working.to }, at,
+            };
+            return;
+          }
+
+          settle();
         }
 
         if (tool === "text") {
-          commitText(at);
-          draw();
+          settleText();
+          setTextAt(at);
+          setDraft("");
           return;
         }
 
         if (tool === "fill") {
+          remember();
           floodFrom(at);
           draw();
           return;
         }
 
         if (dragsAShape) {
-          pendingRef.current = { from: at, to: at };
+          pendingRef.current = { kind: tool, from: at, to: at };
+          grabRef.current = {
+            mode: "new", gx: 1, gy: 1, orig: { from: at, to: at }, at,
+          };
           ringOnlyRef.current = true;
           draw();
           return;
         }
 
+        remember();
         strokeRef.current = at;
         strokeTo(at, at);
         draw();
@@ -1179,11 +1559,16 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         hoverRef.current = { x, y };
         const at = toPicture(x, y);
 
-        const pending = pendingRef.current;
-        if (pending && at) {
-          // The shape is not on the layer yet, so nothing has changed and the
-          // crop does not need handing over again.
-          pendingRef.current = { from: pending.from, to: at };
+        const grab = grabRef.current;
+        const working = pendingRef.current;
+        if (grab && working && at) {
+          // Nothing is on the layer yet, so the crop does not need handing
+          // over again for any of this.
+          const next =
+            grab.mode === "new"
+              ? { from: grab.orig.from, to: at }
+              : afterGrab(grab, at);
+          pendingRef.current = { kind: working.kind, from: next.from, to: next.to };
           ringOnlyRef.current = true;
           draw();
           return;
@@ -1265,14 +1650,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
     const handlePointerUp = () => {
       dragRef.current = null;
-
-      const pending = pendingRef.current;
-      if (pending) {
-        pendingRef.current = null;
-        commitShape(pending.from, pending.to);
-        draw();
-        return;
-      }
+      grabRef.current = null;
 
       if (strokeRef.current) {
         strokeRef.current = null;
@@ -1329,6 +1707,59 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
             display: "block",
           }}
         />
+
+        {textAt && tool === "text" && (() => {
+          const at = toScreen(textAt);
+          return (
+            <div
+              className="textBoxWrap"
+              style={{
+                left: at.x,
+                top: at.y,
+                transform: `rotate(${rotate}deg)`,
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <textarea
+                ref={boxRef}
+                className="textBox"
+                autoFocus
+                value={draft}
+                spellCheck={false}
+                placeholder="Type here"
+                style={{
+                  font: `${fontSize * viewScale}px ${fontFamily}`,
+                  color: paintColor,
+                }}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Escape") {
+                    setTextAt(null);
+                    setDraft("");
+                  } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    settleText();
+                  }
+                }}
+              />
+              <div className="textBoxBar">
+                <button className="autoBtn" onClick={settleText} title="Place it (Ctrl+Enter)">
+                  Place
+                </button>
+                <button
+                  className="autoBtn"
+                  onClick={() => {
+                    setTextAt(null);
+                    setDraft("");
+                  }}
+                  title="Throw it away (Esc)"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }

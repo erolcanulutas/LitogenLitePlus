@@ -456,6 +456,58 @@ body {
   font-size: 11px;
 }
 
+.textBoxWrap {
+  position: absolute;
+  transform-origin: 0 0;
+  z-index: 20;
+}
+
+.textBox {
+  min-width: 90px;
+  min-height: 34px;
+  width: 260px;
+  height: 74px;
+  padding: 2px 4px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px dashed rgba(255, 255, 255, 0.85);
+  border-radius: 3px;
+  outline: none;
+  resize: both;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.textBox::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.textBoxBar {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.colorDrop {
+  margin-left: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: #fff;
+  background: #ffffff12;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.colorRow {
+  display: flex;
+  align-items: center;
+}
+
+.paintFontSet {
+  margin-left: 12px;
+}
+
 .paintText {
   width: 190px;
   padding: 5px 8px;
@@ -471,6 +523,11 @@ body {
   display: flex;
   gap: 6px;
   margin-left: auto;
+}
+
+/* The font controls sit past the buttons, hard against the right-hand end. */
+.paintBar > .paintSet:last-child {
+  margin-right: 0;
 }
 
 .colorField {
@@ -929,7 +986,7 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "ellipse", label: "Oval", hint: "Drag out a filled ellipse." },
   { id: "fill", label: "Fill", hint: "Flood everything of a near enough colour, from wherever you click." },
   { id: "pick", label: "Pick", hint: "Take the brush colour off the picture." },
-  { id: "text", label: "Text", hint: "Type in the box, then click to place it." },
+  { id: "text", label: "Text", hint: "Click where it should go, then type. Ctrl+Enter places it." },
 ];
 
 /**
@@ -1109,9 +1166,10 @@ export default function App() {
   const [shapeFill, setShapeFill] = useState(true);
   const [opacity, setOpacity] = useState(1);
   const [softness, setSoftness] = useState(0);
-  const [text, setText] = useState("");
   const [fontFamily, setFontFamily] = useState("Outfit");
   const [fontSize, setFontSize] = useState(64);
+  /** Which colour the Pick tool is currently feeding. */
+  const [pickInto, setPickInto] = useState<"brush" | "backdrop">("brush");
   /** What the last Auto reading found, or null if it has not been asked. */
   const [autoNote, setAutoNote] = useState<string | null>(null);
 
@@ -2620,11 +2678,14 @@ export default function App() {
                   title="Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model."
                 >
                   Backdrop
-                  <input
-                    className="bandSwatch"
-                    type="color"
+                  <ColorField
                     value={bgColor}
-                    onChange={(e) => setBgColor(e.target.value)}
+                    onChange={setBgColor}
+                    presets={colors}
+                    onPickFallback={() => {
+                      setTool("pick");
+                      setPickInto("backdrop");
+                    }}
                   />
                 </label>
               </div>
@@ -2671,7 +2732,10 @@ export default function App() {
                   <button
                     key={t.id}
                     className={`segment toolBtn ${tool === t.id ? "active" : ""}`}
-                    onClick={() => setTool(t.id)}
+                    onClick={() => {
+                      setTool(t.id);
+                      if (t.id === "pick") setPickInto("brush");
+                    }}
                     title={t.hint}
                   >
                     {t.label}
@@ -2757,22 +2821,20 @@ export default function App() {
                 <span>Solid</span>
               </label>
 
-              <select
-                className="paintFont"
-                value={fontFamily}
-                disabled={tool !== "text"}
-                onChange={(e) => setFontFamily(e.target.value)}
-                title="Typeface"
-              >
-                {FONTS.map((name) => (
-                  <option key={name} value={name} style={{ fontFamily: name }}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+              <div className="paintEnd">
+                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title="Step back">
+                  Undo
+                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title="Step forward again">
+                  Redo
+                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title="Take all the paint off">
+                  Clear
+                </button>
+              </div>
 
-              <label className="paintSet" title={`Text size: ${fontSize} px`}>
-                <span className="paintTag">Text</span>
+              <label className="paintSet paintFontSet" title={`Text size: ${fontSize} px`}>
+                <span className="paintTag">Size</span>
                 <input
                   className="range paintRange"
                   type="range"
@@ -2785,25 +2847,21 @@ export default function App() {
                 />
               </label>
 
-              <input
-                className="paintText"
-                value={text}
-                placeholder="Type, then click to place"
-                disabled={tool !== "text"}
-                onChange={(e) => setText(e.target.value)}
-              />
-
-              <div className="paintEnd">
-                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title="Step back">
-                  Undo
-                </button>
-                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title="Step forward again">
-                  Redo
-                </button>
-                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title="Take all the paint off">
-                  Clear
-                </button>
-              </div>
+              <label className="paintSet" title="Typeface for the text tool">
+                <span className="paintTag">Font</span>
+                <select
+                  className="paintFont"
+                  value={fontFamily}
+                  disabled={tool !== "text"}
+                  onChange={(e) => setFontFamily(e.target.value)}
+                >
+                  {FONTS.map((name) => (
+                    <option key={name} value={name} style={{ fontFamily: name }}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           )}
 
@@ -2836,10 +2894,12 @@ export default function App() {
                 shapeFill={shapeFill}
                 opacity={opacity}
                 softness={softness}
-                text={text}
                 fontFamily={fontFamily}
                 fontSize={fontSize}
-                onPickColor={setPaintColor}
+                onPickColor={(hex) => {
+                  if (pickInto === "backdrop") setBgColor(hex);
+                  else setPaintColor(hex);
+                }}
                 frameMm={frameMm}
                 widthMm={widthMm}
                 snapDeg={snapRotation ? ROTATION_SNAP_DEG : 0}

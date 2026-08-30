@@ -17,6 +17,14 @@ type Props = {
   title?: string;
   /** Extra colours to offer, on top of the fixed row — the picture's tones. */
   presets?: string[];
+  /**
+   * What to do when the browser has no eyedropper of its own.
+   *
+   * Chrome and Edge can sample any pixel on the screen and are the right thing
+   * to use where they exist. Everywhere else this falls back to whatever the
+   * caller offers, which here means switching to the Pick tool.
+   */
+  onPickFallback?: () => void;
 };
 
 const FIXED = [
@@ -81,6 +89,7 @@ export default function ColorField({
   disabled,
   title,
   presets,
+  onPickFallback,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [hue, setHue] = useState(() => hexToHsv(value)?.h ?? 0);
@@ -191,6 +200,31 @@ export default function ColorField({
                 }
               }}
             />
+            <button
+              type="button"
+              className="colorDrop"
+              title="Take a colour off the screen"
+              onClick={async () => {
+                type Dropper = { open: () => Promise<{ sRGBHex: string }> };
+                const Ctor = (window as unknown as {
+                  EyeDropper?: new () => Dropper;
+                }).EyeDropper;
+
+                if (!Ctor) {
+                  setOpen(false);
+                  onPickFallback?.();
+                  return;
+                }
+                try {
+                  const got = await new Ctor().open();
+                  if (got?.sRGBHex) onChange(got.sRGBHex);
+                } catch {
+                  // Cancelled with Escape, which is not a failure.
+                }
+              }}
+            >
+              ⌖
+            </button>
           </div>
 
           <div className="colorPresets">
