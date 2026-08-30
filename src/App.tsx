@@ -402,10 +402,11 @@ body {
 }
 
 .paintBar {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   padding: 8px 10px;
   margin-bottom: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -426,7 +427,7 @@ body {
  */
 .toolBtn {
   flex: 0 0 auto;
-  padding: 4px 10px;
+  padding: 4px 8px;
   font-size: 11px;
   min-width: 0;
   color: #94a3b8;
@@ -464,17 +465,17 @@ body {
 }
 
 .paintTag {
-  width: 44px;
+  width: 38px;
   text-align: right;
   user-select: none;
 }
 
 .paintRange {
-  width: 84px;
+  width: 70px;
 }
 
 .paintFont {
-  width: 150px;
+  width: 128px;
   padding: 4px 6px;
   font-size: 11px;
 }
@@ -530,12 +531,34 @@ body {
   align-items: center;
 }
 
+/*
+ * Hung over the bar rather than set into it: a notice that comes and goes
+ * cannot take up room in a row that is already full, or everything after it
+ * jumps down a line the moment it appears.
+ */
 .paintArmed {
-  padding: 3px 9px;
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 12px;
+  z-index: 30;
+  padding: 4px 10px;
   font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
   color: #0b1220;
   background: #7dd3fc;
-  border-radius: 6px;
+  border-radius: 7px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.paintArmed::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 16px;
+  border: 6px solid transparent;
+  border-top-color: #7dd3fc;
+  border-bottom: 0;
 }
 
 .paintText {
@@ -1150,7 +1173,7 @@ function edgeColorOf(img: HTMLImageElement): string | null {
 }
 
 export default function App() {
-  const [shapeId, setShapeId] = useState<ShapeId>("triangle");
+  const [shapeId, setShapeId] = useState<ShapeId>("rectangle");
 
   const shape = useMemo(() => SHAPES.find((s) => s.id === shapeId)!, [shapeId]);
 
@@ -2774,6 +2797,13 @@ export default function App() {
 
           {view === "editor" && (
             <div className="paintBar">
+              {tool === "pick" && (
+                <span className="paintArmed">
+                  Click the picture to take{" "}
+                  {pickInto === "backdrop" ? "the backdrop" : "the brush"} colour
+                </span>
+              )}
+
               <div className="toolRow">
                 {TOOLS.map((t) => (
                   <button
@@ -2786,13 +2816,6 @@ export default function App() {
                   </button>
                 ))}
               </div>
-
-              {tool === "pick" && (
-                <span className="paintArmed">
-                  Click the picture to take{" "}
-                  {pickInto === "backdrop" ? "the backdrop" : "the brush"} colour
-                </span>
-              )}
 
               {/* Every setting is always here, greyed when the tool has no use
                   for it. Showing only what applies made the row rearrange
