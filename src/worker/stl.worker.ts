@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { buildBandSquash } from "../core/squash";
+import { buildToneLabels } from "../core/labels";
 import { bandCuts } from "../core/terrace";
 import { radialCellMm } from "../core/quality";
 
@@ -40,6 +41,11 @@ type JobRequest = {
    */
   inlayBaseLayers?: number;
   inlayTopLayers?: number;
+  /**
+   * Read the tones as numbers off a tone map rather than as thresholds on
+   * brightness. See core/labels.ts.
+   */
+  vector?: boolean;
   /** "vertical" stands the model up; "flat" leaves it lying down. */
   orientation: "vertical" | "flat";
 };
@@ -183,6 +189,18 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
           )
         : null;
 
+    // An inlay reads the picture as tone numbers rather than brightness, so a
+    // tone lying between two others cannot turn up along their shared edge.
+    const labels =
+      msg.vector !== false && inlay !== null && levels >= 2
+        ? buildToneLabels(
+            hmRaw,
+            bandCuts(levels, toneCuts),
+            msg.widthMm / hmRaw.w,
+            smoothing * radialCellMm(msg.quality) * (hmRaw.w / msg.widthMm),
+          )
+        : null;
+
     const buildParams = {
       widthMm: msg.widthMm,
       heightMm: msg.heightMm,
@@ -198,6 +216,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       toneCuts,
       squash,
       inlay,
+      labels,
       splitZs: cuts,
     };
 

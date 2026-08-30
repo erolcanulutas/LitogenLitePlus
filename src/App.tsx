@@ -376,6 +376,24 @@ body {
   cursor: pointer;
 }
 
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkRow input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #4ea1c9;
+  cursor: pointer;
+  margin: 0;
+}
+
 .bandSegPick {
   display: block;
   width: 100%;
@@ -846,6 +864,17 @@ export default function App() {
    * layer the printer stops at.
    */
   const [inlayMode, setInlayMode] = useState(false);
+
+  /**
+   * Read the tones as numbers off a tone map, rather than as thresholds on a
+   * brightness field.
+   *
+   * Thresholds cannot help putting a tone that lies between two others
+   * wherever those two meet — brightness has to pass through its values on the
+   * way — so a white shape on black comes out outlined in it. Off, the surface
+   * is built the way it always was.
+   */
+  const [vector, setVector] = useState(true);
   const [baseLayers, setBaseLayers] = useState(6);
   const [pictureLayers, setPictureLayers] = useState(4);
 
@@ -964,7 +993,7 @@ export default function App() {
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
     quality, smoothing, levels, tonePlateaus, toneCuts, layerHeight, splitLayers, colors,
-    inlayMode, baseLayers, pictureLayers,
+    inlayMode, baseLayers, pictureLayers, vector,
     orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
@@ -1364,6 +1393,7 @@ export default function App() {
           toneCuts: levels > 0 ? toneCuts : [],
           inlayBaseLayers: inlayMode ? baseLayers : 0,
           inlayTopLayers: inlayMode ? pictureLayers : 0,
+          vector,
           colors,
           layerHeight,
           emboss: "back",
@@ -1489,6 +1519,18 @@ export default function App() {
               Inlay
             </button>
           </div>
+
+          {inlayMode && (
+            <label className="checkRow">
+              <input
+                type="checkbox"
+                checked={vector}
+                onChange={(e) => setVector(e.target.checked)}
+              />
+              <span>Tones as regions</span>
+              <InfoIcon text="Reads the picture as tone numbers and gives each its own region, instead of taking thresholds on brightness. A tone that sits between two others in brightness — a red between black and white, say — cannot help appearing where those two meet if the tones are read off brightness, so shapes come out outlined in it. Read as regions there is nothing in between for it to occupy. Off, the surface is built the way it was before." />
+            </label>
+          )}
 
           <div className="bandHint">
             {inlayMode

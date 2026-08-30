@@ -286,3 +286,189 @@ export function emitInlayRim(
   mb.setTag(toneBody(bandOfLum((pl + l1) / 2, cuts)));
   wall(px, py, x1, y1, baseZ, topZ);
 }
+
+/** A point of the split, and whether any neighbouring triangle can see it. */
+type Kind = 0 | 1 | 2; // corner, crossing on an edge, invented inside
+
+type Pt = { x: number; y: number; kind: Kind };
+
+/**
+ * A fan that keeps every triangle it is given, however thin.
+ *
+ * The relief drops slivers, because a slicer would rather not see them. A
+ * region here cannot afford that: its share of one triangle joins its share of
+ * the next along their shared edge, and a piece dropped on one side of that
+ * edge leaves the piece on the other side with nothing to meet. Measured, that
+ * is not a rounding error — whole regions went missing and the bodies drifted
+ * five to fifteen per cent. A triangle of no area costs nothing and holds the
+ * seam shut.
+ */
+function fanKeepAll(mb: MeshBuilder, pts: readonly Pt[], z: number, down: boolean) {
+  const n = pts.length;
+  if (n < 3) return;
+  for (let i = 1; i + 1 < n; i++) {
+    if (down) {
+      mb.addTriangle(pts[0].x, pts[0].y, z, pts[i + 1].x, pts[i + 1].y, z, pts[i].x, pts[i].y, z);
+    } else {
+      mb.addTriangle(pts[0].x, pts[0].y, z, pts[i].x, pts[i].y, z, pts[i + 1].x, pts[i + 1].y, z);
+    }
+  }
+}
+
+/**
+ * Cuts one surface triangle into tone regions and stands each on the base.
+ *
+ * **The tones arrive as numbers, not as brightness.** That is the whole
+ * difference. Read off a brightness field, a tone lying between two others has
+ * to appear wherever those two meet, because the field passes through its
+ * values on the way; a white shape on black comes out ringed in it however
+ * thin the ring is squeezed. Given a number per corner, an edge whose ends
+ * disagree gets exactly one crossing however far apart their tones are, and
+ * there is nothing in between for a third tone to occupy.
+ *
+ * The crossing is still placed against the field, solved for the brightness
+ * half way between the two tones, so edges land where the picture puts them
+ * rather than stepping along its pixels.
+ */
+export function emitInlayTriangleByTone(
+  mb: MeshBuilder,
+  ax: number, ay: number, al: number, ka: number,
+  bx: number, by: number, bl: number, kb: number,
+  cx: number, cy: number, cl: number, kc: number,
+  cuts: readonly number[],
+  span: InlaySpan,
+  field?: LumField,
+): void {
+  const { baseZ } = span;
+
+  const A: Pt = { x: ax, y: ay, kind: 0 };
+  const B: Pt = { x: bx, y: by, kind: 0 };
+  const C: Pt = { x: cx, y: cy, kind: 0 };
+
+  // The base slab owns a ceiling here, facing up out of itself, under
+  // everything the tones do above it.
+  mb.setTag(BASE_BODY);
+  fanKeepAll(mb, [A, B, C], baseZ, false);
+
+  if (ka === kb && kb === kc) {
+    emitRegion(mb, [A, B, C], ka, span);
+    return;
+  }
+
+  /** Where an edge changes tone: one point, whatever the gap between them. */
+  const cross = (
+    x0: number, y0: number, l0: number, k0: number,
+    x1: number, y1: number, l1: number, k1: number,
+  ): Pt => {
+    const lo = Math.min(k0, k1);
+    const hi = Math.max(k0, k1);
+    const t = (cuts[lo] + cuts[hi - 1]) / 2;
+    const p = crossingOn(x0, y0, l0, x1, y1, l1, t, field);
+    return { x: p.x, y: p.y, kind: 1 };
+  };
+
+  const pAB = ka !== kb ? cross(ax, ay, al, ka, bx, by, bl, kb) : null;
+  const pBC = kb !== kc ? cross(bx, by, bl, kb, cx, cy, cl, kc) : null;
+  const pCA = kc !== ka ? cross(cx, cy, cl, kc, ax, ay, al, ka) : null;
+
+  if (pAB && pBC && pCA) {
+    // Three tones meet somewhere inside. The middle is this triangle's own,
+    // seen by nothing else, so the centroid will do.
+    const M: Pt = { x: (ax + bx + cx) / 3, y: (ay + by + cy) / 3, kind: 2 };
+    emitRegion(mb, [A, pAB, M, pCA], ka, span);
+    emitRegion(mb, [B, pBC, M, pAB], kb, span);
+    emitRegion(mb, [C, pCA, M, pBC], kc, span);
+    return;
+  }
+
+  // One corner stands apart and the other two agree: a corner and a quad.
+  if (!pBC) {
+    emitRegion(mb, [A, pAB!, pCA!], ka, span);
+    emitRegion(mb, [pAB!, B, C, pCA!], kb, span);
+  } else if (!pCA) {
+    emitRegion(mb, [B, pBC, pAB!], kb, span);
+    emitRegion(mb, [pBC, C, A, pAB!], kc, span);
+  } else {
+    emitRegion(mb, [C, pCA, pBC], kc, span);
+    emitRegion(mb, [pCA, A, B, pBC], ka, span);
+  }
+}
+
+/**
+ * One tone's share of a triangle: a ceiling, a floor, and a wall on every side
+ * another tone is on the far side of.
+ *
+ * A side between two of the triangle's own points — a corner, or a crossing on
+ * one of its edges — is where the next triangle carries on, and needs no wall.
+ * A side between two points this split invented is a boundary between tones,
+ * and the region's own winding already says which way it faces.
+ */
+function emitRegion(
+  mb: MeshBuilder,
+  pts: readonly Pt[],
+  band: number,
+  span: InlaySpan,
+): void {
+  const { baseZ, topZ } = span;
+
+  mb.setTag(toneBody(band));
+  fanKeepAll(mb, pts, topZ, false);
+  fanKeepAll(mb, pts, baseZ, true);
+
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    if (pts[i].kind === 0 || pts[j].kind === 0) continue;
+
+    const x0 = pts[i].x, y0 = pts[i].y;
+    const x1 = pts[j].x, y1 = pts[j].y;
+
+    mb.addTriangle(x0, y0, baseZ, x1, y1, baseZ, x1, y1, topZ);
+    mb.addTriangle(x0, y0, baseZ, x1, y1, topZ, x0, y0, topZ);
+  }
+}
+
+/**
+ * The outside wall of the model, over one segment of the rim.
+ *
+ * Below the picture it belongs to the base slab; above it belongs to whichever
+ * tone reaches the edge there, split where the tone changes. The split lands
+ * on the same point the surface put its boundary on, solved the same way.
+ */
+export function emitInlayRimByTone(
+  mb: MeshBuilder,
+  x0: number, y0: number, l0: number, k0: number,
+  x1: number, y1: number, l1: number, k1: number,
+  cuts: readonly number[],
+  span: InlaySpan,
+  field?: LumField,
+): void {
+  const { baseZ, topZ } = span;
+
+  const wall = (
+    px: number, py: number, qx: number, qy: number,
+    zA: number, zB: number,
+  ) => {
+    mb.addQuad(px, py, zB, px, py, zA, qx, qy, zA, qx, qy, zB);
+  };
+
+  mb.setTag(BASE_BODY);
+  wall(x0, y0, x1, y1, 0, baseZ);
+
+  if (k0 === k1) {
+    mb.setTag(toneBody(k0));
+    wall(x0, y0, x1, y1, baseZ, topZ);
+    return;
+  }
+
+  const lo = Math.min(k0, k1);
+  const hi = Math.max(k0, k1);
+  const t = (cuts[lo] + cuts[hi - 1]) / 2;
+  const p = crossingOn(x0, y0, l0, x1, y1, l1, t, field);
+
+  mb.setTag(toneBody(k0));
+  wall(x0, y0, p.x, p.y, baseZ, topZ);
+
+  mb.setTag(toneBody(k1));
+  wall(p.x, p.y, x1, y1, baseZ, topZ);
+}
+

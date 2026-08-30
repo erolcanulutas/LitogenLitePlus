@@ -1,3 +1,4 @@
+import { labelAt } from "../core/labels";
 import { squashLum } from "../core/squash";
 import { bandCuts } from "../core/terrace";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
@@ -30,7 +31,7 @@ export const PentagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels } = params;
 
     const range = maxT - minT;
 
@@ -77,6 +78,7 @@ export const PentagonShape: ShapePlugin = {
       toneZs,
       toneCuts,
       inlay: inlay ?? undefined,
+      toneAt: labels ? (x, y) => labelAt(labels, clamp01((x + bboxW / 2) / bboxW), clamp01(1 - (y + bboxH / 2) / bboxH)) : undefined,
 
       lumAt: (x, y, footprintMm) => {
         const u = clamp01((x + bboxW / 2) / bboxW);

@@ -1,4 +1,11 @@
-import { BASE_BODY, emitInlayRim, emitInlayTriangle, type InlaySpan } from "./inlay";
+import {
+  BASE_BODY,
+  emitInlayRim,
+  emitInlayRimByTone,
+  emitInlayTriangle,
+  emitInlayTriangleByTone,
+  type InlaySpan,
+} from "./inlay";
 import { MeshBuilder, type Mesh } from "./mesh";
 import { bandCuts, bandOfLum, emitTerracedTriangle } from "./terrace";
 import { emitWallColumn } from "./wall";
@@ -92,6 +99,9 @@ export type RadialSpec = {
    */
   inlay?: InlaySpan;
 
+  /** Tone number at a point, for an inlay. See core/labels.ts. */
+  toneAt?: (x: number, y: number) => number;
+
   /** Flat height held across the whole frame band. */
   frameHeight: number;
 
@@ -129,6 +139,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     toneZs,
     toneCuts,
     inlay,
+    toneAt,
     frameHeight,
     splitZs,
   } = spec;
@@ -267,7 +278,17 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     x2: number, y2: number, z2: number, l2: number,
   ) => {
     if (inlaid && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-      emitInlayTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, inlay!, field);
+      if (toneAt) {
+        emitInlayTriangleByTone(
+          mb,
+          x0, y0, l0, toneAt(x0, y0),
+          x1, y1, l1, toneAt(x1, y1),
+          x2, y2, l2, toneAt(x2, y2),
+          cuts, inlay!, field,
+        );
+      } else {
+        emitInlayTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, inlay!, field);
+      }
     } else if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
       emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight, field);
     } else {
@@ -346,12 +367,16 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     const j = (i + 1) % rimN;
 
     if (inlaid) {
-      emitInlayRim(
-        mb,
-        inX[i], inY[i], inL[i],
-        inX[j], inY[j], inL[j],
-        cuts, inlay!, field,
-      );
+      if (toneAt) {
+        emitInlayRimByTone(
+          mb,
+          inX[i], inY[i], inL[i], toneAt(inX[i], inY[i]),
+          inX[j], inY[j], inL[j], toneAt(inX[j], inY[j]),
+          cuts, inlay!, field,
+        );
+      } else {
+        emitInlayRim(mb, inX[i], inY[i], inL[i], inX[j], inY[j], inL[j], cuts, inlay!, field);
+      }
       continue;
     }
 

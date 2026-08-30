@@ -1,3 +1,4 @@
+import type { ToneLabels } from "./labels";
 import type { InlaySpan } from "./inlay";
 import type { BandSquash } from "./squash";
 import type { Quality } from "./quality";
@@ -107,6 +108,13 @@ export type ShapeBuildParams = {
    * layers. Null for a relief. See core/inlay.ts.
    */
   inlay: InlaySpan | null;
+
+  /**
+   * The picture as tone numbers, for the inlay. Reading tones off brightness
+   * cannot help putting a tone between two others along their shared edge;
+   * see core/labels.ts.
+   */
+  labels: ToneLabels | null;
 
   /**
    * Heights the model will later be cut at for a colour split, ascending.

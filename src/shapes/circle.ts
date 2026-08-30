@@ -1,3 +1,4 @@
+import { labelAt } from "../core/labels";
 import { squashLum } from "../core/squash";
 import { bandCuts } from "../core/terrace";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
@@ -16,7 +17,7 @@ export const CircleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels } = params;
 
     const range = maxT - minT;
 
@@ -51,6 +52,7 @@ export const CircleShape: ShapePlugin = {
       toneZs,
       toneCuts,
       inlay: inlay ?? undefined,
+      toneAt: labels ? (x, y) => labelAt(labels, (x + outerRadius) / (2 * outerRadius), (outerRadius - y) / (2 * outerRadius)) : undefined,
 
       lumAt: (x, y, footprintMm) => {
         const u = (x + outerRadius) / (2 * outerRadius);

@@ -1,4 +1,11 @@
-import { BASE_BODY, emitInlayRim, emitInlayTriangle } from "../core/inlay";
+import { labelAt } from "../core/labels";
+import {
+  BASE_BODY,
+  emitInlayRim,
+  emitInlayRimByTone,
+  emitInlayTriangle,
+  emitInlayTriangleByTone,
+} from "../core/inlay";
 import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
@@ -36,7 +43,7 @@ export const RectangleShape: ShapePlugin = {
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
     const {
-      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay,
+      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels,
     } = params;
 
     const W = Math.max(1, widthMm);
@@ -65,6 +72,7 @@ export const RectangleShape: ShapePlugin = {
 
     const terraced = levels >= 2;
     const inlaid = inlay != null && terraced;
+    const toneAt = (x: number, y: number) => labelAt(labels!, (x - x0) / W, 1 - (y - y0) / H);
     const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
@@ -131,7 +139,17 @@ export const RectangleShape: ShapePlugin = {
       cx: number, cy: number, cz: number, cl: number,
     ) => {
       if (inlaid && al >= 0 && bl >= 0 && cl >= 0) {
-        emitInlayTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, cuts, inlay!, field);
+        if (labels) {
+          emitInlayTriangleByTone(
+            mb,
+            ax, ay, al, toneAt(ax, ay),
+            bx, by, bl, toneAt(bx, by),
+            cx, cy, cl, toneAt(cx, cy),
+            cuts, inlay!, field,
+          );
+        } else {
+          emitInlayTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, cuts, inlay!, field);
+        }
       } else if (terraced && al >= 0 && bl >= 0 && cl >= 0) {
         emitTerracedTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, cuts, bandHeight, field);
       } else {
@@ -221,12 +239,16 @@ export const RectangleShape: ShapePlugin = {
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
       if (inlaid) {
-        emitInlayRim(
-          mb,
-          edgeX[i], edgeY[i], edgeL[i],
-          edgeX[j], edgeY[j], edgeL[j],
-          cuts, inlay!, field,
-        );
+        if (labels) {
+          emitInlayRimByTone(
+            mb,
+            edgeX[i], edgeY[i], edgeL[i], toneAt(edgeX[i], edgeY[i]),
+            edgeX[j], edgeY[j], edgeL[j], toneAt(edgeX[j], edgeY[j]),
+            cuts, inlay!, field,
+          );
+        } else {
+          emitInlayRim(mb, edgeX[i], edgeY[i], edgeL[i], edgeX[j], edgeY[j], edgeL[j], cuts, inlay!, field);
+        }
         continue;
       }
 

@@ -1,4 +1,11 @@
-import { BASE_BODY, emitInlayRim, emitInlayTriangle } from "../core/inlay";
+import { labelAt } from "../core/labels";
+import {
+  BASE_BODY,
+  emitInlayRim,
+  emitInlayRimByTone,
+  emitInlayTriangle,
+  emitInlayTriangleByTone,
+} from "../core/inlay";
 import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
@@ -28,7 +35,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay, labels } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -51,6 +58,7 @@ export const TriangleShape: ShapePlugin = {
 
     const terraced = levels >= 2;
     const inlaid = inlay != null && terraced;
+    const toneAt = (x: number, y: number) => labelAt(labels!, (x + side / 2) / side, ((2 * hTri) / 3 - y) / hTri);
     const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
@@ -107,7 +115,17 @@ export const TriangleShape: ShapePlugin = {
       x2: number, y2: number, z2: number, l2: number,
     ) => {
       if (inlaid && l0 >= 0 && l1 >= 0 && l2 >= 0) {
-        emitInlayTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, inlay!, field);
+        if (labels) {
+          emitInlayTriangleByTone(
+            mb,
+            x0, y0, l0, toneAt(x0, y0),
+            x1, y1, l1, toneAt(x1, y1),
+            x2, y2, l2, toneAt(x2, y2),
+            cuts, inlay!, field,
+          );
+        } else {
+          emitInlayTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, inlay!, field);
+        }
       } else if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
         emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight, field);
       } else {
@@ -223,12 +241,16 @@ export const TriangleShape: ShapePlugin = {
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
       if (inlaid) {
-        emitInlayRim(
-          mb,
-          edgeX[i], edgeY[i], edgeL[i],
-          edgeX[j], edgeY[j], edgeL[j],
-          cuts, inlay!, field,
-        );
+        if (labels) {
+          emitInlayRimByTone(
+            mb,
+            edgeX[i], edgeY[i], edgeL[i], toneAt(edgeX[i], edgeY[i]),
+            edgeX[j], edgeY[j], edgeL[j], toneAt(edgeX[j], edgeY[j]),
+            cuts, inlay!, field,
+          );
+        } else {
+          emitInlayRim(mb, edgeX[i], edgeY[i], edgeL[i], edgeX[j], edgeY[j], edgeL[j], cuts, inlay!, field);
+        }
         continue;
       }
 

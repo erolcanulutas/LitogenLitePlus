@@ -349,3 +349,137 @@ export function emitTerracedTriangle(
     mb.addQuad(x0, y0, zA, x1, y1, zA, x1, y1, zB, x0, y0, zB);
   }
 }
+
+/** A point of a tone split, and whether a neighbouring triangle can see it. */
+type TonePt = { x: number; y: number; kind: 0 | 1 | 2 };
+
+/** A fan that keeps every triangle, so a seam cannot open where one is thin. */
+function fanAll(mb: MeshBuilder, pts: readonly TonePt[], z: number) {
+  for (let i = 1; i + 1 < pts.length; i++) {
+    mb.addTriangle(
+      pts[0].x, pts[0].y, z,
+      pts[i].x, pts[i].y, z,
+      pts[i + 1].x, pts[i + 1].y, z,
+    );
+  }
+}
+
+/** Middle of a region, for deciding which side of a step is which. */
+function centre(pts: readonly TonePt[]): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  for (const p of pts) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / pts.length, y: y / pts.length };
+}
+
+/**
+ * Terracing from tone numbers rather than from brightness.
+ *
+ * The thresholded version has to put a tone that lies between two others
+ * wherever those two meet: brightness passes through its values on the way, so
+ * a white shape on black grows a plateau of that tone all the way round, and no
+ * amount of squeezing removes it — only thins it. Given one number per corner,
+ * an edge whose ends disagree gets one crossing however far apart their tones
+ * are, and there is no room left in between.
+ *
+ * The crossing is still solved against the brightness field, at the value half
+ * way between the two tones, so the step lands where the picture puts it.
+ */
+export function emitTerracedTriangleByTone(
+  mb: MeshBuilder,
+  ax: number, ay: number, al: number, ka: number,
+  bx: number, by: number, bl: number, kb: number,
+  cx: number, cy: number, cl: number, kc: number,
+  cuts: readonly number[],
+  heightOf: (band: number) => number,
+  field?: LumField,
+): void {
+  const A: TonePt = { x: ax, y: ay, kind: 0 };
+  const B: TonePt = { x: bx, y: by, kind: 0 };
+  const C: TonePt = { x: cx, y: cy, kind: 0 };
+
+  if (ka === kb && kb === kc) {
+    fanAll(mb, [A, B, C], heightOf(ka));
+    return;
+  }
+
+  const cross = (
+    x0: number, y0: number, l0: number, k0: number,
+    x1: number, y1: number, l1: number, k1: number,
+  ): TonePt => {
+    const lo = Math.min(k0, k1);
+    const hi = Math.max(k0, k1);
+    const t = (cuts[lo] + cuts[hi - 1]) / 2;
+    const p = crossingOn(x0, y0, l0, x1, y1, l1, t, field);
+    return { x: p.x, y: p.y, kind: 1 };
+  };
+
+  /** The step between two regions, facing whichever of them is lower. */
+  const step = (
+    p: TonePt, q: TonePt,
+    kLeft: number, cLeft: { x: number; y: number },
+    kRight: number, cRight: { x: number; y: number },
+  ) => {
+    const zL = heightOf(kLeft);
+    const zR = heightOf(kRight);
+    if (Math.abs(zL - zR) < EPS) return;
+
+    const lower = zL < zR ? cLeft : cRight;
+    let x0 = p.x, y0 = p.y, x1 = q.x, y1 = q.y;
+
+    // Wound bottom-edge-first the normal is (dy, -dx); point it at the low side.
+    const midX = (x0 + x1) / 2;
+    const midY = (y0 + y1) / 2;
+    const facesLow =
+      (y1 - y0) * (lower.x - midX) - (x1 - x0) * (lower.y - midY) > 0;
+    if (!facesLow) {
+      [x0, x1] = [x1, x0];
+      [y0, y1] = [y1, y0];
+    }
+
+    const zA = Math.min(zL, zR);
+    const zB = Math.max(zL, zR);
+    mb.addQuad(x0, y0, zA, x1, y1, zA, x1, y1, zB, x0, y0, zB);
+  };
+
+  const pAB = ka !== kb ? cross(ax, ay, al, ka, bx, by, bl, kb) : null;
+  const pBC = kb !== kc ? cross(bx, by, bl, kb, cx, cy, cl, kc) : null;
+  const pCA = kc !== ka ? cross(cx, cy, cl, kc, ax, ay, al, ka) : null;
+
+  if (pAB && pBC && pCA) {
+    const M: TonePt = { x: (ax + bx + cx) / 3, y: (ay + by + cy) / 3, kind: 2 };
+    const rA = [A, pAB, M, pCA];
+    const rB = [B, pBC, M, pAB];
+    const rC = [C, pCA, M, pBC];
+    fanAll(mb, rA, heightOf(ka));
+    fanAll(mb, rB, heightOf(kb));
+    fanAll(mb, rC, heightOf(kc));
+    step(pAB, M, ka, centre(rA), kb, centre(rB));
+    step(pBC, M, kb, centre(rB), kc, centre(rC));
+    step(pCA, M, kc, centre(rC), ka, centre(rA));
+    return;
+  }
+
+  if (!pBC) {
+    const r1 = [A, pAB!, pCA!];
+    const r2 = [pAB!, B, C, pCA!];
+    fanAll(mb, r1, heightOf(ka));
+    fanAll(mb, r2, heightOf(kb));
+    step(pAB!, pCA!, ka, centre(r1), kb, centre(r2));
+  } else if (!pCA) {
+    const r1 = [B, pBC, pAB!];
+    const r2 = [pBC, C, A, pAB!];
+    fanAll(mb, r1, heightOf(kb));
+    fanAll(mb, r2, heightOf(kc));
+    step(pBC, pAB!, kb, centre(r1), kc, centre(r2));
+  } else {
+    const r1 = [C, pCA, pBC];
+    const r2 = [pCA, A, B, pBC];
+    fanAll(mb, r1, heightOf(kc));
+    fanAll(mb, r2, heightOf(ka));
+    step(pCA, pBC, kc, centre(r1), ka, centre(r2));
+  }
+}
