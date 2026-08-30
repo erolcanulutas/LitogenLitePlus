@@ -766,6 +766,81 @@ function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * What a picture is standing on, read off its own edge.
+ *
+ * Whatever fills the corners of the crop has to be some colour, and the only
+ * answer that is ever right is the one the picture already uses behind itself.
+ * White was the default and is wrong for most logos — this one sits on black,
+ * so every uncovered corner came out as a bright square unless it was set by
+ * hand.
+ *
+ * The edge is where to look. A picture drawn on a backdrop carries it all the
+ * way to its border, so the most common colour around the outside is the
+ * backdrop; a photograph has no single one and the vote comes out split, which
+ * is why a clear majority is asked for before the answer is used at all.
+ */
+function edgeColorOf(img: HTMLImageElement): string | null {
+  const w = Math.min(256, img.naturalWidth || img.width);
+  const h = Math.min(256, img.naturalHeight || img.height);
+  if (w < 4 || h < 4) return null;
+
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0, w, h);
+
+  let d: Uint8ClampedArray;
+  try {
+    d = ctx.getImageData(0, 0, w, h).data;
+  } catch {
+    return null;
+  }
+
+  // Counted coarsely, so an edge that is not perfectly flat still agrees with
+  // itself. One bucket per 16 levels is far finer than any eye needs and far
+  // coarser than the noise in a border.
+  const bin = new Map<number, { n: number; r: number; g: number; b: number }>();
+  let total = 0;
+
+  const take = (x: number, y: number) => {
+    const o = (y * w + x) * 4;
+    if (d[o + 3] < 128) return;
+    const key =
+      ((d[o] >> 4) << 8) | ((d[o + 1] >> 4) << 4) | (d[o + 2] >> 4);
+    const e = bin.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+    e.n++;
+    e.r += d[o];
+    e.g += d[o + 1];
+    e.b += d[o + 2];
+    bin.set(key, e);
+    total++;
+  };
+
+  for (let x = 0; x < w; x++) {
+    take(x, 0);
+    take(x, h - 1);
+  }
+  for (let y = 1; y < h - 1; y++) {
+    take(0, y);
+    take(w - 1, y);
+  }
+
+  if (total === 0) return null;
+
+  let best: { n: number; r: number; g: number; b: number } | null = null;
+  for (const e of bin.values()) if (!best || e.n > best.n) best = e;
+  if (!best || best.n / total < 0.6) return null;
+
+  const hex = (v: number) =>
+    Math.max(0, Math.min(255, Math.round(v / best!.n)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${hex(best.r)}${hex(best.g)}${hex(best.b)}`;
+}
+
 export default function App() {
   const [shapeId, setShapeId] = useState<ShapeId>("triangle");
 
@@ -1031,6 +1106,8 @@ export default function App() {
 
     img.onload = () => {
       setImgEl(img);
+      const found = edgeColorOf(img);
+      if (found) setBgColor(found);
       URL.revokeObjectURL(url);
     };
 
