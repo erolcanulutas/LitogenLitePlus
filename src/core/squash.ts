@@ -197,11 +197,18 @@ export function buildBandSquash(
   // whole of it, rings included. Rolex got away with it only because each
   // letter carries its own separate ring.
   //
-  // "Too thin" is a morphological opening: a pixel is part of a region if a
-  // disc the size of a region fits inside the band and covers it. The disc
-  // fits wherever the distance to another band is at least its radius, so the
-  // opening is that test spread over the disc. A wide region keeps all of
-  // itself, including its edge; a strip narrower than the disc keeps none.
+  // "Too thin" is answered by degree, not yes or no. Take the thickest the
+  // band gets anywhere within a region's reach of the point — that is a
+  // morphological opening with the answer kept rather than thresholded — and
+  // read the verdict off it: full strength below half a region's width, none
+  // at a full one, and a ramp between.
+  //
+  // Degree matters because a thread does not keep one thickness along its
+  // length. Answered yes or no it comes out marked here, unmarked a few pixels
+  // on, marked again — and the band it is closing opens and shuts with it, so
+  // the thread survives as a row of red dashes, which is worse than the hair
+  // it replaced. Thickness varies smoothly, so a verdict that follows it does
+  // too, and there is nothing left to dash.
   //
   // "Separating two others" is the local range of the band index. A ramp has
   // something darker on one side and something lighter on the other. A thin
@@ -251,36 +258,48 @@ export function buildBandSquash(
     }
   }
 
-  const fits = new Uint8Array(n);
-  const opened = new Uint8Array(n);
-  const tmpOpen = new Uint8Array(n);
+  const own = new Float32Array(n);
+  const rowMax = new Float32Array(n);
+  const thick = new Float32Array(n);
 
   for (let b = 1; b < levels - 1; b++) {
-    for (let i = 0; i < n; i++) fits[i] = band[i] === b && dist[i] >= limitCh ? 1 : 0;
+    for (let i = 0; i < n; i++) own[i] = band[i] === b ? dist[i] : -1;
 
     for (let y = 0; y < hPx; y++) {
       for (let x = 0; x < w; x++) {
-        let m = 0;
+        let m = -1;
         const x0 = Math.max(0, x - R);
         const x1 = Math.min(w - 1, x + R);
-        for (let k = x0; k <= x1 && m === 0; k++) m = fits[y * w + k];
-        tmpOpen[y * w + x] = m;
+        for (let k = x0; k <= x1; k++) {
+          const v = own[y * w + k];
+          if (v > m) m = v;
+        }
+        rowMax[y * w + x] = m;
       }
     }
     for (let x = 0; x < w; x++) {
       for (let y = 0; y < hPx; y++) {
-        let m = 0;
+        let m = -1;
         const y0 = Math.max(0, y - R);
         const y1 = Math.min(hPx - 1, y + R);
-        for (let k = y0; k <= y1 && m === 0; k++) m = tmpOpen[k * w + x];
-        opened[y * w + x] = m;
+        for (let k = y0; k <= y1; k++) {
+          const v = rowMax[k * w + x];
+          if (v > m) m = v;
+        }
+        thick[y * w + x] = m;
       }
     }
 
     for (let i = 0; i < n; i++) {
-      if (band[i] !== b || opened[i]) continue;
+      if (band[i] !== b) continue;
       if (lmin[i] >= b || lmax[i] <= b) continue;
-      amount[i * levels + b] = 255;
+
+      // Full strength up to half a region's width, none at a whole one.
+      const t = thick[i] / limitCh;
+      const a = t <= 0.5 ? 1 : t >= 1 ? 0 : (1 - t) * 2;
+      if (a <= 0) continue;
+
+      amount[i * levels + b] = Math.round(a * 255);
       marked++;
     }
   }
