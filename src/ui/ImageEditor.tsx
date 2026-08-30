@@ -851,8 +851,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       if (!textAt) return;
       const body = draft;
       const box = boxRef.current;
-      const wide = slackInPicture(box?.offsetWidth ?? 240);
-      const tall = slackInPicture(box?.offsetHeight ?? 80);
+      const wide = slackInPicture(box?.clientWidth ?? 240);
+      const tall = slackInPicture(box?.clientHeight ?? 80);
 
       setTextAt(null);
       setDraft("");
@@ -1600,7 +1600,9 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
             grab.mode === "new"
               ? { from: grab.orig.from, to: at }
               : afterGrab(grab, at);
-          pendingRef.current = { kind: working.kind, from: next.from, to: next.to };
+          // Spread, so anything the object carries beyond its corners — the
+          // text's own words — survives being moved.
+          pendingRef.current = { ...working, from: next.from, to: next.to };
           ringOnlyRef.current = true;
           draw();
           return;
@@ -1715,6 +1717,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         y: y0,
         w: Math.max(90, onScreen(x1 - x0)),
         h: Math.max(34, onScreen(y1 - y0)),
+
       });
       draw();
     };
@@ -1800,7 +1803,10 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
                 spellCheck={false}
                 placeholder="Type here"
                 style={{
-                  font: `${fontSize * viewScale}px ${fontFamily}`,
+                  // The size is a size on screen, and the stamp works out to
+                  // exactly that at whatever zoom it is made — so the box has
+                  // to be that too, with no zoom of its own applied on top.
+                  font: `${fontSize}px ${fontFamily}`,
                   color: paintColor,
                   ...(textAt.w ? { width: textAt.w } : {}),
                   ...(textAt.h ? { height: textAt.h } : {}),

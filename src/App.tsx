@@ -467,11 +467,14 @@ body {
   min-height: 34px;
   width: 260px;
   height: 74px;
-  padding: 2px 4px;
+  /* No padding and no border: the box the text wraps to on the canvas is this
+     box, so anything inset here would make the two disagree. The dashed edge
+     is an outline, which sits outside the layout. */
+  padding: 0;
+  border: none;
+  outline: 1px dashed rgba(255, 255, 255, 0.85);
   background: rgba(0, 0, 0, 0.22);
-  border: 1px dashed rgba(255, 255, 255, 0.85);
-  border-radius: 3px;
-  outline: none;
+  border-radius: 0;
   resize: both;
   overflow: hidden;
   line-height: 1.2;
