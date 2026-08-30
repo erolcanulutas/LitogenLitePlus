@@ -873,6 +873,7 @@ export default function App() {
 
   const editorRef = useRef<ImageEditorHandle>(null);
 
+
   const [widthMm, setWidthMm] = useState(80);
   const [minT, setMinT] = useState(0.8);
   const [maxT, setMaxT] = useState(3.0);
@@ -950,6 +951,15 @@ export default function App() {
    * is built the way it always was.
    */
   const [vector, setVector] = useState(true);
+  /**
+   * How big a crop the editor hands over.
+   *
+   * Reading tones as regions traces boundaries along the crop's own pixel
+   * grid, so the crop is what the edges are made of and 900 across shows every
+   * one of its steps. Everything else resamples what it is given down to the
+   * printed layers and cannot tell the difference, so it keeps the small one.
+   */
+  const traceDetail = vector && (inlayMode || graphic) ? 3000 * 2600 : 900 * 780;
   const [baseLayers, setBaseLayers] = useState(6);
   const [pictureLayers, setPictureLayers] = useState(4);
 
@@ -2348,6 +2358,7 @@ export default function App() {
                 flipH={flipH}
                 flipV={flipV}
                 bgColor={bgColor}
+                detail={traceDetail}
                 frameMm={frameMm}
                 widthMm={widthMm}
                 snapDeg={snapRotation ? ROTATION_SNAP_DEG : 0}

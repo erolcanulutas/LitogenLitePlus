@@ -66,6 +66,16 @@ type Props = {
    * White is usually what is wanted: thin, and light passes through.
    */
   bgColor: string;
+  /**
+   * How many pixels the crop is handed over as, at most.
+   *
+   * A relief resamples whatever it is given down to a couple of samples per
+   * printed layer, so a modest crop has always been enough for it. Tracing
+   * tones as regions does not resample: a boundary is a line, and it is drawn
+   * along the pixel grid it was traced from, so every pixel of the crop is a
+   * step you can see. That mode asks for a bigger one.
+   */
+  detail?: number;
   /** Frame band width in mm, for showing what it will cover. */
   frameMm: number;
   /** Print width in mm; the frame is only meaningful relative to it. */
@@ -136,7 +146,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
   (
     {
       image, cropRatio, shapeId, rotate, flipH, flipV,
-      bgColor, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
+      bgColor, detail, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
       onImageData,
     },
     ref
@@ -355,7 +365,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         // free-form rectangle reaches, a fixed 900 wide would have asked for a
         // 900 x 9000 buffer. At the ratios the fixed shapes use this comes out
         // at the 900 it always was.
-        const OUT_AREA = 900 * 780;
+        const OUT_AREA = detail ?? 900 * 780;
         const OUT_W = Math.max(64, Math.round(Math.sqrt(OUT_AREA * cropRatio)));
         const OUT_H = Math.max(64, Math.round(OUT_W / cropRatio));
 
@@ -571,7 +581,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       // 5. Output generation
       triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
-        frameMm, widthMm, bgColor, freeRatio]);
+        frameMm, widthMm, bgColor, detail, freeRatio]);
 
     /* ---------------------------------------------
      * Interaction Logic
