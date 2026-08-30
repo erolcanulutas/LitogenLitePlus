@@ -1,4 +1,4 @@
-import { isRamp, squashLum } from "../core/squash";
+import { squashLum } from "../core/squash";
 import { bandOfLum } from "../core/terrace";
 import { bandCuts } from "../core/terrace";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
@@ -80,11 +80,7 @@ export const PentagonShape: ShapePlugin = {
         sampleHeightFiltered(sampler, uu, vv, smoothing * radialCellMm(quality) * pxPerMm),
         cuts,
       );
-      const k = bandOfLum(l, cuts);
-      if (k > 0 && k < levels - 1 && isRamp(squash, uu, vv, k)) {
-        return l - cuts[k - 1] < cuts[k] - l ? k - 1 : k + 1;
-      }
-      return k;
+      return bandOfLum(l, cuts);
     };
     const pxPerMm = heightmap.w / bboxW;
 

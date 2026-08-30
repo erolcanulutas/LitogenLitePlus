@@ -368,6 +368,35 @@ export function buildBandSquash(
  * piecewise linear and strictly increasing, so it is one continuous field
  * turned into another and everything built on top of it is undisturbed.
  */
+/**
+ * How far a band is closed at a point, read smoothly.
+ *
+ * Nearest pixel is not good enough here. The verdict is feathered, so over the
+ * whole of that feather it takes a different value in every pixel, and reading
+ * it a pixel at a time puts a step in the field at every pixel boundary. The
+ * contour then follows those steps and the edge comes out as a staircase of
+ * little squares — which is exactly what showed along the edges of the flames,
+ * where the feather from a nearby rim reaches. Blending between the four
+ * around the point keeps the field smooth and the contour with it.
+ */
+function amountAt(s: BandSquash, u: number, v: number, band: number): number {
+  const fx = Math.max(0, Math.min(s.w - 1, u * (s.w - 1)));
+  const fy = Math.max(0, Math.min(s.hPx - 1, v * (s.hPx - 1)));
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const x1 = Math.min(s.w - 1, x0 + 1);
+  const y1 = Math.min(s.hPx - 1, y0 + 1);
+  const tx = fx - x0;
+  const ty = fy - y0;
+
+  const a = s.amount[(y0 * s.w + x0) * s.levels + band];
+  const b = s.amount[(y0 * s.w + x1) * s.levels + band];
+  const c = s.amount[(y1 * s.w + x0) * s.levels + band];
+  const d = s.amount[(y1 * s.w + x1) * s.levels + band];
+
+  return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+}
+
 export function squashLum(
   s: BandSquash | null,
   u: number,
@@ -378,16 +407,13 @@ export function squashLum(
   if (!s) return l;
 
   const levels = s.levels;
-  const px = Math.max(0, Math.min(s.w - 1, Math.round(u * (s.w - 1))));
-  const py = Math.max(0, Math.min(s.hPx - 1, Math.round(v * (s.hPx - 1))));
-  const base = (py * s.w + px) * levels;
 
   const width: number[] = [];
   let total = 0;
   for (let k = 0; k < levels; k++) {
     const lo = k === 0 ? 0 : cuts[k - 1];
     const hi = k === levels - 1 ? 1 : cuts[k];
-    const a = s.amount[base + k] / 255;
+    const a = amountAt(s, u, v, k) / 255;
     const keep = 1 - a * (1 - MIN_KEEP);
     const wk = (hi - lo) * keep;
     width.push(wk);
@@ -424,7 +450,5 @@ export function isRamp(
   band: number,
 ): boolean {
   if (!s) return false;
-  const x = Math.max(0, Math.min(s.w - 1, Math.round(u * (s.w - 1))));
-  const y = Math.max(0, Math.min(s.hPx - 1, Math.round(v * (s.hPx - 1))));
-  return s.amount[(y * s.w + x) * s.levels + band] > 127;
+  return amountAt(s, u, v, band) > 127;
 }

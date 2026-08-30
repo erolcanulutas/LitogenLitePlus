@@ -5,7 +5,7 @@ import {
   emitInlayTriangle,
   emitInlayTriangleByTone,
 } from "../core/inlay";
-import { isRamp, squashLum } from "../core/squash";
+import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
 import { buildAreaSampler, sampleHeightFiltered } from "../core/sample";
@@ -84,11 +84,7 @@ export const RectangleShape: ShapePlugin = {
         sampleHeightFiltered(sampler, uu, vv, footprintPx),
         cuts,
       );
-      const k = bandOfLum(l, cuts);
-      if (k > 0 && k < levels - 1 && isRamp(squash, uu, vv, k)) {
-        return l - cuts[k - 1] < cuts[k] - l ? k - 1 : k + 1;
-      }
-      return k;
+      return bandOfLum(l, cuts);
     };
     const pxPerMm = heightmap.w / W;
     // Each vertex stands in for a cell this wide; filter over it rather than
