@@ -1678,7 +1678,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     const cursor =
       tool === "brush" || tool === "erase"
         ? "none"
-        : tool === "crop"
+        : tool === "crop" || tool === "pick"
           ? "crosshair"
           : "default";
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * A colour swatch that opens a picker of our own.
@@ -18,13 +18,15 @@ type Props = {
   /** Extra colours to offer, on top of the fixed row — the picture's tones. */
   presets?: string[];
   /**
-   * What to do when the browser has no eyedropper of its own.
+   * Hands picking back to the caller, which arms the canvas for one click.
    *
-   * Chrome and Edge can sample any pixel on the screen and are the right thing
-   * to use where they exist. Everywhere else this falls back to whatever the
-   * caller offers, which here means switching to the Pick tool.
+   * The browser has an eyedropper of its own in Chrome and Edge, and it can
+   * sample any pixel on the screen — but it is not everywhere, it needs the
+   * click that opened it to still count as a gesture, and what is wanted here
+   * is a colour off the picture. Doing it on the canvas works in every browser
+   * and is the thing being asked for.
    */
-  onPickFallback?: () => void;
+  onPick?: () => void;
 };
 
 const FIXED = [
@@ -89,13 +91,24 @@ export default function ColorField({
   disabled,
   title,
   presets,
-  onPickFallback,
+  onPick,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [hue, setHue] = useState(() => hexToHsv(value)?.h ?? 0);
   const [text, setText] = useState(value);
   const [seen, setSeen] = useState(value);
   const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * Where the popover actually fits.
+   *
+   * Laid out against the viewport rather than the swatch, because the swatch
+   * can be anywhere — including hard against the right-hand end of a toolbar,
+   * where a popover hung off its left corner goes straight off the screen.
+   */
+  const [spot, setSpot] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
 
   // Caught up during the render that brings a new colour in, rather than in an
   // effect afterwards, so there is never a frame showing the old one.
@@ -109,6 +122,38 @@ export default function ColorField({
     const hsv = hexToHsv(value);
     if (hsv && hsv.s > 0.02) setHue(hsv.h);
   }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const place = () => {
+      const anchor = btnRef.current?.getBoundingClientRect();
+      const pop = popRef.current?.getBoundingClientRect();
+      if (!anchor || !pop) return;
+
+      const pad = 8;
+      const left = Math.max(
+        pad,
+        Math.min(anchor.left, window.innerWidth - pop.width - pad),
+      );
+
+      const below = anchor.bottom + 6;
+      const top =
+        below + pop.height + pad <= window.innerHeight
+          ? below
+          : Math.max(pad, anchor.top - pop.height - 6);
+
+      setSpot({ left, top });
+    };
+
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -145,6 +190,7 @@ export default function ColorField({
   return (
     <div className="colorField" ref={rootRef}>
       <button
+        ref={btnRef}
         type="button"
         className="paintSwatch"
         style={{ background: value }}
@@ -154,7 +200,11 @@ export default function ColorField({
       />
 
       {open && !disabled && (
-        <div className="colorPop">
+        <div
+          className="colorPop"
+          ref={popRef}
+          style={{ left: spot.left, top: spot.top }}
+        >
           <div
             className="colorSquare"
             style={{ background: hsvToHex(hue, 1, 1) }}
@@ -203,24 +253,10 @@ export default function ColorField({
             <button
               type="button"
               className="colorDrop"
-              title="Take a colour off the screen"
-              onClick={async () => {
-                type Dropper = { open: () => Promise<{ sRGBHex: string }> };
-                const Ctor = (window as unknown as {
-                  EyeDropper?: new () => Dropper;
-                }).EyeDropper;
-
-                if (!Ctor) {
-                  setOpen(false);
-                  onPickFallback?.();
-                  return;
-                }
-                try {
-                  const got = await new Ctor().open();
-                  if (got?.sRGBHex) onChange(got.sRGBHex);
-                } catch {
-                  // Cancelled with Escape, which is not a failure.
-                }
+              title="Take a colour off the picture — click the swatch, then click the picture"
+              onClick={() => {
+                setOpen(false);
+                onPick?.();
               }}
             >
               ⌖

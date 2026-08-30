@@ -508,6 +508,14 @@ body {
   margin-left: 12px;
 }
 
+.paintArmed {
+  padding: 3px 9px;
+  font-size: 11px;
+  color: #0b1220;
+  background: #7dd3fc;
+  border-radius: 6px;
+}
+
 .paintText {
   width: 190px;
   padding: 5px 8px;
@@ -536,10 +544,8 @@ body {
 }
 
 .colorPop {
-  position: absolute;
-  z-index: 40;
-  top: 28px;
-  left: 0;
+  position: fixed;
+  z-index: 60;
   width: 208px;
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -985,7 +991,6 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "rect", label: "Box", hint: "Drag out a filled rectangle." },
   { id: "ellipse", label: "Oval", hint: "Drag out a filled ellipse." },
   { id: "fill", label: "Fill", hint: "Flood everything of a near enough colour, from wherever you click." },
-  { id: "pick", label: "Pick", hint: "Take the brush colour off the picture." },
   { id: "text", label: "Text", hint: "Click where it should go, then type. Ctrl+Enter places it." },
 ];
 
@@ -1168,8 +1173,21 @@ export default function App() {
   const [softness, setSoftness] = useState(0);
   const [fontFamily, setFontFamily] = useState("Outfit");
   const [fontSize, setFontSize] = useState(64);
-  /** Which colour the Pick tool is currently feeding. */
+  /**
+   * Picking a colour off the picture is a errand, not a mode.
+   *
+   * The swatch arms it, the next click on the picture answers it, and the tool
+   * that was in use comes straight back — so it never has to be found again in
+   * the toolbar, and there is no button for a state nobody stays in.
+   */
   const [pickInto, setPickInto] = useState<"brush" | "backdrop">("brush");
+  const pickReturn = useRef<Tool>("crop");
+
+  const armPicker = (into: "brush" | "backdrop") => {
+    pickReturn.current = tool === "pick" ? "crop" : tool;
+    setPickInto(into);
+    setTool("pick");
+  };
   /** What the last Auto reading found, or null if it has not been asked. */
   const [autoNote, setAutoNote] = useState<string | null>(null);
 
@@ -2682,10 +2700,7 @@ export default function App() {
                     value={bgColor}
                     onChange={setBgColor}
                     presets={colors}
-                    onPickFallback={() => {
-                      setTool("pick");
-                      setPickInto("backdrop");
-                    }}
+                    onPick={() => armPicker("backdrop")}
                   />
                 </label>
               </div>
@@ -2732,16 +2747,20 @@ export default function App() {
                   <button
                     key={t.id}
                     className={`segment toolBtn ${tool === t.id ? "active" : ""}`}
-                    onClick={() => {
-                      setTool(t.id);
-                      if (t.id === "pick") setPickInto("brush");
-                    }}
+                    onClick={() => setTool(t.id)}
                     title={t.hint}
                   >
                     {t.label}
                   </button>
                 ))}
               </div>
+
+              {tool === "pick" && (
+                <span className="paintArmed">
+                  Click the picture to take{" "}
+                  {pickInto === "backdrop" ? "the backdrop" : "the brush"} colour
+                </span>
+              )}
 
               {/* Every setting is always here, greyed when the tool has no use
                   for it. Showing only what applies made the row rearrange
@@ -2750,8 +2769,9 @@ export default function App() {
                 <ColorField
                   value={paintColor}
                   onChange={setPaintColor}
-                  disabled={tool === "crop" || tool === "erase" || tool === "pick"}
+                  disabled={tool === "crop" || tool === "erase"}
                   presets={colors}
+                  onPick={() => armPicker("brush")}
                 />
               </div>
 
@@ -2899,6 +2919,7 @@ export default function App() {
                 onPickColor={(hex) => {
                   if (pickInto === "backdrop") setBgColor(hex);
                   else setPaintColor(hex);
+                  setTool(pickReturn.current);
                 }}
                 frameMm={frameMm}
                 widthMm={widthMm}
