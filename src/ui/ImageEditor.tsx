@@ -47,6 +47,23 @@ type DragState = {
   startRatio?: number;
 };
 
+/**
+ * What a drag does.
+ *
+ * "crop" is the frame around the picture and every other one draws on it.
+ * Holding them in one list rather than a paint switch beside the crop is what
+ * keeps the two from ever both wanting the same drag.
+ */
+export type Tool =
+  | "crop"
+  | "brush"
+  | "erase"
+  | "line"
+  | "rect"
+  | "ellipse"
+  | "fill"
+  | "pick";
+
 export type ImageEditorHandle = {
   reset: () => void;
   /** Undoes the last brush stroke; strokes are kept a dozen deep. */
@@ -105,11 +122,13 @@ type Props = {
    * generator both. That is what makes a stroke survive cropping, rotating and
    * flipping: it is part of the picture from then on, not part of the view.
    */
-  paintOn?: boolean;
+  tool?: Tool;
   paintColor?: string;
   /** Brush width on screen, so it stays the size it looks whatever the zoom. */
   paintSize?: number;
-  paintErase?: boolean;
+  /** How close a colour has to be for the fill to run into it, 0..255. */
+  fillTolerance?: number;
+  onPickColor?: (hex: string) => void;
   onImageData: (img: ImageData | null) => void;
 };
 
@@ -163,7 +182,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     {
       image, cropRatio, shapeId, rotate, flipH, flipV,
       bgColor, detail, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
-      paintOn, paintColor, paintSize, paintErase,
+      tool = "crop", paintColor, paintSize, fillTolerance, onPickColor,
       onImageData,
     },
     ref
@@ -462,6 +481,11 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      */
     const ringOnlyRef = useRef(false);
 
+    /** A line, box or oval being dragged out, before the button comes up. */
+    const pendingRef = useRef<
+      { from: { x: number; y: number }; to: { x: number; y: number } } | null
+    >(null);
+
     useEffect(() => {
       undoRef.current = [];
       if (!image) {
@@ -503,25 +527,187 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       return Math.max(1, (paintSize ?? 24) / Math.max(1e-6, perPixel));
     };
 
-    const strokeTo = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-      const layer = paintRef.current;
-      if (!layer) return;
-      const ctx = layer.getContext("2d");
-      if (!ctx) return;
+    /** Every tool but the crop frame draws, and they all draw the same way. */
+    const paints = tool !== "crop" && tool !== "pick";
+    const dragsAShape = tool === "line" || tool === "rect" || tool === "ellipse";
 
-      ctx.save();
-      ctx.globalCompositeOperation = paintErase ? "destination-out" : "source-over";
+    const dressUp = (ctx: CanvasRenderingContext2D) => {
+      ctx.globalCompositeOperation = tool === "erase" ? "destination-out" : "source-over";
       ctx.strokeStyle = paintColor ?? "#ffffff";
       ctx.fillStyle = ctx.strokeStyle;
       ctx.lineWidth = brushInPicture();
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
+    };
 
+    const strokeTo = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      const layer = paintRef.current;
+      const ctx = layer?.getContext("2d");
+      if (!ctx) return;
+
+      ctx.save();
+      dressUp(ctx);
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
       ctx.stroke();
       ctx.restore();
+    };
+
+    /** A line, box or oval between two corners, in the picture's own pixels. */
+    const shapePath = (
+      ctx: CanvasRenderingContext2D,
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+    ) => {
+      ctx.beginPath();
+      if (tool === "line") {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      } else if (tool === "rect") {
+        ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      } else {
+        ctx.ellipse(
+          (a.x + b.x) / 2, (a.y + b.y) / 2,
+          Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2,
+          0, 0, Math.PI * 2,
+        );
+      }
+    };
+
+    const commitShape = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const ctx = paintRef.current?.getContext("2d");
+      if (!ctx) return;
+      ctx.save();
+      dressUp(ctx);
+      shapePath(ctx, a, b);
+      if (tool === "line") ctx.stroke();
+      else ctx.fill();
+      ctx.restore();
+    };
+
+    /**
+     * Floods outwards from a point over everything close enough in colour.
+     *
+     * Judged on the picture with the paint already over it, which is the thing
+     * on screen, so a fill runs up against an earlier stroke the way it looks
+     * as though it should. Big pictures are left alone — two more copies of a
+     * forty-megapixel one is not worth a bucket tool.
+     */
+    const floodFrom = (seed: { x: number; y: number }) => {
+      const layer = paintRef.current;
+      const lctx = layer?.getContext("2d", { willReadFrequently: true });
+      if (!image || !layer || !lctx) return;
+
+      const w = layer.width;
+      const h = layer.height;
+      if (w * h > 40e6) return;
+
+      const sx = Math.floor(seed.x);
+      const sy = Math.floor(seed.y);
+      if (sx < 0 || sy < 0 || sx >= w || sy >= h) return;
+
+      const flat = document.createElement("canvas");
+      flat.width = w;
+      flat.height = h;
+      const fctx = flat.getContext("2d", { willReadFrequently: true });
+      if (!fctx) return;
+      fctx.drawImage(image, 0, 0, w, h);
+      fctx.drawImage(layer, 0, 0);
+
+      const src = fctx.getImageData(0, 0, w, h).data;
+      const out = lctx.getImageData(0, 0, w, h);
+      const dst = out.data;
+
+      const at = (sy * w + sx) * 4;
+      const r0 = src[at], g0 = src[at + 1], b0 = src[at + 2];
+
+      const tol = Math.max(0, fillTolerance ?? 40);
+      const limit = tol * tol * 3;
+
+      const hex = paintColor ?? "#ffffff";
+      const rN = parseInt(hex.slice(1, 3), 16);
+      const gN = parseInt(hex.slice(3, 5), 16);
+      const bN = parseInt(hex.slice(5, 7), 16);
+      const erasing = tool === "erase";
+
+      const done = new Uint8Array(w * h);
+
+      const close = (i: number) => {
+        const o = i * 4;
+        const dr = src[o] - r0;
+        const dg = src[o + 1] - g0;
+        const db = src[o + 2] - b0;
+        return dr * dr + dg * dg + db * db <= limit;
+      };
+
+      const put = (i: number) => {
+        const o = i * 4;
+        if (erasing) {
+          dst[o + 3] = 0;
+        } else {
+          dst[o] = rN;
+          dst[o + 1] = gN;
+          dst[o + 2] = bN;
+          dst[o + 3] = 255;
+        }
+        done[i] = 1;
+      };
+
+      // A run at a time rather than a pixel at a time. Filling a big flat area
+      // pixelwise holds one entry per pixel waiting to be looked at, which for
+      // a picture this size is millions; by runs it is a few hundred.
+      const stack: number[] = [sx, sy];
+
+      while (stack.length) {
+        const y = stack.pop()!;
+        const x = stack.pop()!;
+        const row = y * w;
+        if (done[row + x] || !close(row + x)) continue;
+
+        let lo = x;
+        while (lo > 0 && !done[row + lo - 1] && close(row + lo - 1)) lo--;
+        let hi = x;
+        while (hi + 1 < w && !done[row + hi + 1] && close(row + hi + 1)) hi++;
+
+        for (let i = lo; i <= hi; i++) put(row + i);
+
+        for (const ny of [y - 1, y + 1]) {
+          if (ny < 0 || ny >= h) continue;
+          const above = ny * w;
+          let run = false;
+          for (let i = lo; i <= hi; i++) {
+            const ok = !done[above + i] && close(above + i);
+            if (ok && !run) {
+              stack.push(i, ny);
+              run = true;
+            } else if (!ok) {
+              run = false;
+            }
+          }
+        }
+      }
+
+      lctx.putImageData(out, 0, 0);
+    };
+
+    /** The colour under a point, picture and paint together. */
+    const pickAt = (p: { x: number; y: number }): string | null => {
+      const layer = paintRef.current;
+      if (!image || !layer) return null;
+
+      const c = document.createElement("canvas");
+      c.width = 1;
+      c.height = 1;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return null;
+
+      ctx.drawImage(image, -p.x, -p.y, layer.width, layer.height);
+      ctx.drawImage(layer, -p.x, -p.y);
+
+      const d = ctx.getImageData(0, 0, 1, 1).data;
+      const two = (v: number) => v.toString(16).padStart(2, "0");
+      return `#${two(d[0])}${two(d[1])}${two(d[2])}`;
     };
 
     const draw = useCallback(() => {
@@ -581,6 +767,19 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
       if (paintRef.current) {
         ctx.drawImage(paintRef.current, -dw / 2, -dh / 2, dw, dh);
+      }
+      if (pendingRef.current) {
+        // Drawn exactly as it will land, so there is nothing to be surprised by
+        // when the button comes up.
+        const { from, to } = pendingRef.current;
+        ctx.save();
+        ctx.translate(-dw / 2, -dh / 2);
+        ctx.scale(dw / image.naturalWidth, dh / image.naturalHeight);
+        dressUp(ctx);
+        shapePath(ctx, from, to);
+        if (tool === "line") ctx.stroke();
+        else ctx.fill();
+        ctx.restore();
       }
       ctx.restore();
 
@@ -704,7 +903,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       // 5. The brush, so its width is something you can see rather than guess.
       // Drawn after the zoom has been put back, so the pointer's scene position
       // has to come forward to the screen with it.
-      if (paintOn && hoverRef.current) {
+      if (paints && hoverRef.current) {
         const sx = (hoverRef.current.x - W / 2) * viewScale + W / 2;
         const sy = (hoverRef.current.y - H / 2) * viewScale + H / 2;
         const r = ((brushInPicture() * dw) / image.naturalWidth / 2) * viewScale;
@@ -725,7 +924,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       if (ringOnlyRef.current) ringOnlyRef.current = false;
       else triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
-        frameMm, widthMm, bgColor, detail, freeRatio, paintOn, paintSize]);
+        frameMm, widthMm, bgColor, detail, freeRatio, tool, paintColor, paintSize]);
 
     useEffect(() => {
       drawRef.current = draw;
@@ -763,22 +962,41 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
       const { x, y } = getScenePointerPos(e);
 
-      if (paintOn) {
+      if (tool !== "crop") {
         const at = toPicture(x, y);
-        const layer = paintRef.current;
-        if (!at || !layer) return;
+        if (!at) return;
+        hoverRef.current = { x, y };
 
-        // One snapshot per stroke, not per move, so undo steps back the way it
-        // was drawn. A dozen is plenty and keeps a big picture's worth of them
-        // from sitting in memory.
-        const ctx = layer.getContext("2d");
-        if (ctx) {
-          undoRef.current.push(ctx.getImageData(0, 0, layer.width, layer.height));
+        if (tool === "pick") {
+          const hex = pickAt(at);
+          if (hex) onPickColor?.(hex);
+          return;
+        }
+
+        // One snapshot per thing done, not per move, so undo steps back the
+        // way it was drawn. A dozen is plenty and keeps a big picture's worth
+        // of them from sitting in memory.
+        const layer = paintRef.current;
+        const lctx = layer?.getContext("2d", { willReadFrequently: true });
+        if (layer && lctx) {
+          undoRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
           if (undoRef.current.length > 12) undoRef.current.shift();
         }
 
+        if (tool === "fill") {
+          floodFrom(at);
+          draw();
+          return;
+        }
+
+        if (dragsAShape) {
+          pendingRef.current = { from: at, to: at };
+          ringOnlyRef.current = true;
+          draw();
+          return;
+        }
+
         strokeRef.current = at;
-        hoverRef.current = { x, y };
         strokeTo(at, at);
         draw();
         return;
@@ -869,17 +1087,25 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-      if (paintOn) {
+      if (tool !== "crop") {
         const { x, y } = getScenePointerPos(e);
         hoverRef.current = { x, y };
+        const at = toPicture(x, y);
+
+        const pending = pendingRef.current;
+        if (pending && at) {
+          // The shape is not on the layer yet, so nothing has changed and the
+          // crop does not need handing over again.
+          pendingRef.current = { from: pending.from, to: at };
+          ringOnlyRef.current = true;
+          draw();
+          return;
+        }
 
         const from = strokeRef.current;
-        if (from) {
-          const to = toPicture(x, y);
-          if (to) {
-            strokeTo(from, to);
-            strokeRef.current = to;
-          }
+        if (from && at) {
+          strokeTo(from, at);
+          strokeRef.current = at;
         } else {
           ringOnlyRef.current = true;
         }
@@ -952,6 +1178,15 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
     const handlePointerUp = () => {
       dragRef.current = null;
+
+      const pending = pendingRef.current;
+      if (pending) {
+        pendingRef.current = null;
+        commitShape(pending.from, pending.to);
+        draw();
+        return;
+      }
+
       if (strokeRef.current) {
         strokeRef.current = null;
         draw();

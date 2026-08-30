@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import ImageEditor from "./ui/ImageEditor";
-import type { ImageEditorHandle } from "./ui/ImageEditor";
+import type { ImageEditorHandle, Tool } from "./ui/ImageEditor";
 
 import ImageControls from "./ui/ImageControls";
 import BandSlider from "./ui/BandSlider";
@@ -400,6 +400,17 @@ body {
   width: 90px;
 }
 
+.toolRow {
+  display: flex;
+  gap: 2px;
+}
+
+.toolBtn {
+  padding: 3px 8px;
+  font-size: 11px;
+  min-width: 0;
+}
+
 .checkRow input[type="checkbox"] {
   width: 15px;
   height: 15px;
@@ -747,6 +758,18 @@ function imageSignature(d: ImageData): string {
   return `${d.width}x${d.height}:${hash.toString(16)}`;
 }
 
+/** What a drag in the editor does. The frame is one of them. */
+const TOOLS: { id: Tool; label: string; hint: string }[] = [
+  { id: "crop", label: "Crop", hint: "Move, resize and rotate the frame around the picture." },
+  { id: "brush", label: "Brush", hint: "Draw freehand. White prints thin, dark prints thick." },
+  { id: "erase", label: "Erase", hint: "Rub paint off again — the picture underneath comes back." },
+  { id: "line", label: "Line", hint: "Drag out a straight line." },
+  { id: "rect", label: "Box", hint: "Drag out a filled rectangle." },
+  { id: "ellipse", label: "Oval", hint: "Drag out a filled ellipse." },
+  { id: "fill", label: "Fill", hint: "Flood everything of a near enough colour, from wherever you click." },
+  { id: "pick", label: "Pick", hint: "Take the brush colour off the picture." },
+];
+
 const FLAT_HINT_KEY = "litogen.hideFlatHint";
 
 /** Step the editor's rotation lands on while snapping is switched on. */
@@ -902,10 +925,10 @@ export default function App() {
    * in a logo, blocking off a corner. White prints thin and dark prints thick,
    * so the brush colour is a thickness as much as a colour.
    */
-  const [paintOn, setPaintOn] = useState(false);
+  const [tool, setTool] = useState<Tool>("crop");
   const [paintColor, setPaintColor] = useState("#ffffff");
   const [paintSize, setPaintSize] = useState(28);
-  const [paintErase, setPaintErase] = useState(false);
+  const [fillTolerance, setFillTolerance] = useState(40);
   /** What the last Auto reading found, or null if it has not been asked. */
   const [autoNote, setAutoNote] = useState<string | null>(null);
 
@@ -2397,59 +2420,70 @@ export default function App() {
                   marginRight: 10,
                 }}
               >
-                <label className="shadeToggle" title="Draw straight onto the picture. White prints thin, dark prints thick, so the brush is a thickness as much as a colour. Strokes stay with the picture through cropping, rotating and flipping.">
-                  <input
-                    type="checkbox"
-                    checked={paintOn}
-                    onChange={(e) => setPaintOn(e.target.checked)}
-                  />
-                  <span>Paint</span>
-                </label>
+                <div className="toolRow">
+                  {TOOLS.map((t) => (
+                    <button
+                      key={t.id}
+                      className={`segment toolBtn ${tool === t.id ? "active" : ""}`}
+                      onClick={() => setTool(t.id)}
+                      title={t.hint}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
 
-                {paintOn && (
-                  <>
-                    <input
-                      type="color"
-                      className="paintSwatch"
-                      value={paintColor}
-                      disabled={paintErase}
-                      onChange={(e) => setPaintColor(e.target.value)}
-                      title="Brush colour"
-                    />
-                    <label className="shadeToggle" title="Rub strokes out again rather than painting over them.">
-                      <input
-                        type="checkbox"
-                        checked={paintErase}
-                        onChange={(e) => setPaintErase(e.target.checked)}
-                      />
-                      <span>Erase</span>
-                    </label>
-                    <input
-                      className="range paintRange"
-                      type="range"
-                      min={2}
-                      max={120}
-                      step={1}
-                      value={paintSize}
-                      onChange={(e) => setPaintSize(Number(e.target.value))}
-                      title={`Brush width: ${paintSize} px`}
-                    />
-                    <button
-                      className="autoBtn"
-                      onClick={() => editorRef.current?.undoPaint()}
-                      title="Undo the last stroke"
-                    >
-                      Undo
-                    </button>
-                    <button
-                      className="autoBtn"
-                      onClick={() => editorRef.current?.clearPaint()}
-                      title="Take all the paint off"
-                    >
-                      Clear
-                    </button>
-                  </>
+                {tool !== "crop" && tool !== "pick" && (
+                  <input
+                    type="color"
+                    className="paintSwatch"
+                    value={paintColor}
+                    disabled={tool === "erase"}
+                    onChange={(e) => setPaintColor(e.target.value)}
+                    title="Brush colour. White prints thin, dark prints thick."
+                  />
                 )}
+
+                {(tool === "brush" || tool === "erase" || tool === "line") && (
+                  <input
+                    className="range paintRange"
+                    type="range"
+                    min={2}
+                    max={120}
+                    step={1}
+                    value={paintSize}
+                    onChange={(e) => setPaintSize(Number(e.target.value))}
+                    title={`Brush width: ${paintSize} px`}
+                  />
+                )}
+
+                {tool === "fill" && (
+                  <input
+                    className="range paintRange"
+                    type="range"
+                    min={0}
+                    max={120}
+                    step={2}
+                    value={fillTolerance}
+                    onChange={(e) => setFillTolerance(Number(e.target.value))}
+                    title={`How far the fill spreads into neighbouring colours: ${fillTolerance}`}
+                  />
+                )}
+
+                <button
+                  className="autoBtn"
+                  onClick={() => editorRef.current?.undoPaint()}
+                  title="Undo the last thing painted"
+                >
+                  Undo
+                </button>
+                <button
+                  className="autoBtn"
+                  onClick={() => editorRef.current?.clearPaint()}
+                  title="Take all the paint off"
+                >
+                  Clear
+                </button>
 
                 <label
                   className="shadeToggle"
@@ -2534,10 +2568,11 @@ export default function App() {
                 flipV={flipV}
                 bgColor={bgColor}
                 detail={traceDetail}
-                paintOn={paintOn}
+                tool={tool}
                 paintColor={paintColor}
                 paintSize={paintSize}
-                paintErase={paintErase}
+                fillTolerance={fillTolerance}
+                onPickColor={setPaintColor}
                 frameMm={frameMm}
                 widthMm={widthMm}
                 snapDeg={snapRotation ? ROTATION_SNAP_DEG : 0}
