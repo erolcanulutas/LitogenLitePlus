@@ -507,10 +507,6 @@ body {
   align-items: center;
 }
 
-.paintFontSet {
-  margin-left: 12px;
-}
-
 .paintArmed {
   padding: 3px 9px;
   font-size: 11px;
@@ -533,12 +529,16 @@ body {
 .paintEnd {
   display: flex;
   gap: 6px;
-  margin-left: auto;
 }
 
-/* The font controls sit past the buttons, hard against the right-hand end. */
-.paintBar > .paintSet:last-child {
-  margin-right: 0;
+/* Between groups: drawing and its settings, then text and its settings, then
+   what can be done to what is already down. */
+.paintDiv {
+  width: 1px;
+  align-self: stretch;
+  min-height: 22px;
+  margin: 0 2px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .colorField {
@@ -994,8 +994,14 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "rect", label: "Box", hint: "Drag out a filled rectangle." },
   { id: "ellipse", label: "Oval", hint: "Drag out a filled ellipse." },
   { id: "fill", label: "Fill", hint: "Flood everything of a near enough colour, from wherever you click." },
-  { id: "text", label: "Text", hint: "Click, type, Ctrl+Enter. It then sits there as a box you can drag, resize and restyle until you move on; double-click it to retype." },
 ];
+
+/** Text sits with its own settings rather than in the row of drawing tools. */
+const TEXT_TOOL = {
+  id: "text" as Tool,
+  label: "Text",
+  hint: "Click, type, Ctrl+Enter. It then sits there as a box you can drag, resize and restyle until you move on; double-click it to retype.",
+};
 
 /**
  * Typefaces for the text tool.
@@ -2844,19 +2850,17 @@ export default function App() {
                 <span>Solid</span>
               </label>
 
-              <div className="paintEnd">
-                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title="Step back">
-                  Undo
-                </button>
-                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title="Step forward again">
-                  Redo
-                </button>
-                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title="Take all the paint off">
-                  Clear
-                </button>
-              </div>
+              <span className="paintDiv" />
 
-              <label className="paintSet paintFontSet" title={`Text size: ${fontSize} px`}>
+              <button
+                className={`segment toolBtn ${tool === TEXT_TOOL.id ? "active" : ""}`}
+                onClick={() => setTool(TEXT_TOOL.id)}
+                title={TEXT_TOOL.hint}
+              >
+                {TEXT_TOOL.label}
+              </button>
+
+              <label className="paintSet" title={`Text size: ${fontSize} px`}>
                 <span className="paintTag">Size</span>
                 <input
                   className="range paintRange"
@@ -2885,6 +2889,20 @@ export default function App() {
                   ))}
                 </select>
               </label>
+
+              <span className="paintDiv" />
+
+              <div className="paintEnd">
+                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title="Step back">
+                  Undo
+                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title="Step forward again">
+                  Redo
+                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title="Take all the paint off">
+                  Clear
+                </button>
+              </div>
             </div>
           )}
 
