@@ -853,6 +853,17 @@ export default function App() {
    * rectangle the printed height is whatever the crop box was dragged to, so
    * the number has to reach the worker as well as the canvas.
    */
+  /**
+   * Wrap the model round a cylinder, and through how much of one.
+   *
+   * The angle is what the model's width subtends, so it means the same thing
+   * whatever the print is scaled to: 90 degrees is a quarter turn of a barrel
+   * whether that barrel is 40mm across or 200. The relief ends up on the
+   * outside of the curve, which is the way a lithophane sits round a lamp.
+   */
+  const [curved, setCurved] = useState(false);
+  const [curveDeg, setCurveDeg] = useState(60);
+
   const [boxRatio, setBoxRatio] = useState(1.5);
   const cropRatio = shape.freeRatio ? boxRatio : shape.cropRatio;
 
@@ -1076,7 +1087,7 @@ export default function App() {
 
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
-    imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
+    imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm, curved, curveDeg,
     quality, smoothing, levels, tonePlateaus, toneCuts, layerHeight, splitLayers, colors,
     inlayMode, baseLayers, pictureLayers, vector,
     orientation,
@@ -1146,6 +1157,8 @@ export default function App() {
     setMaxT(3.0);
     setMinT(0.8);
     setFrameMm(1.5);
+    setCurved(false);
+    setCurveDeg(60);
     setSplitLayers([]);
     setColors(["#f2f2f2"]);
   }
@@ -1473,6 +1486,7 @@ export default function App() {
           smoothing,
           levels,
           orientation,
+          curveDeg: curved ? curveDeg : 0,
           splitHeightsMm: splitLayers.map((n) => +(n * layerHeight).toFixed(4)),
           toneHeightsMm: graphic
             ? tonePlateaus.map((n) => +(n * layerHeight).toFixed(4))
@@ -1646,6 +1660,65 @@ export default function App() {
               </option>
             ))}
           </select>
+
+          <label className="checkRow">
+            <input
+              type="checkbox"
+              checked={curved}
+              onChange={(e) => setCurved(e.target.checked)}
+            />
+            <span>Curve</span>
+            <InfoIcon text="Wraps the model round a cylinder, with the picture on the outside of the curve — the way a lithophane sits round a lamp. The angle is what the width wraps through, so it means the same at any print size: 90 degrees is a quarter turn, 180 a half. The base curves with it, so the print stands on an arc rather than a straight edge and wants a brim." />
+          </label>
+
+          {curved && (
+            <>
+              <div className="label-row" style={{ marginTop: 10 }}>
+                <label className="miniLabel">Curve (degrees)</label>
+                <InfoIcon text="How much of a turn the model's width wraps through. Small angles give a gentle bow; 180 folds it into a half cylinder." />
+              </div>
+
+              <div style={{ display: "grid", gap: 8 }}>
+                <input
+                  className="range"
+                  type="range"
+                  min={5}
+                  max={180}
+                  step={5}
+                  value={curveDeg}
+                  onChange={(e) => setCurveDeg(Number(e.target.value))}
+                />
+                <div className="spinRow">
+                  <input
+                    className="spinInput"
+                    type="number"
+                    min={5}
+                    max={180}
+                    step={5}
+                    value={curveDeg}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (!Number.isNaN(v)) setCurveDeg(Math.max(5, Math.min(180, v)));
+                    }}
+                  />
+                  <div className="spinBtns">
+                    <button
+                      className="spinBtn"
+                      onClick={() => setCurveDeg((v) => Math.min(180, v + 5))}
+                    >
+                      ▲
+                    </button>
+                    <button
+                      className="spinBtn"
+                      onClick={() => setCurveDeg((v) => Math.max(5, v - 5))}
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
             <label className="miniLabel">Width (mm)</label>

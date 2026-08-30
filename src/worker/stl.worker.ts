@@ -5,6 +5,7 @@ import { radialCellMm } from "../core/quality";
 
 import { imageToHeightmap } from "../core/heightmap";
 import { writeBinarySTL } from "../core/stl_writer";
+import { bendAroundY, bendRadius, stripeX, stripWidth } from "../core/bend";
 import { writeColored3MF } from "../core/3mf_writer";
 import { splitMeshAtLevels } from "../core/split_mesh";
 import { groupByBody } from "../core/inlay";
@@ -49,6 +50,13 @@ type JobRequest = {
    * an inlay and to a terraced relief; see core/vectorise.ts.
    */
   vector?: boolean;
+  /**
+   * Arc the model is wrapped through, in degrees, or 0 to leave it flat.
+   *
+   * Applied about the picture's own vertical, so once the model is stood up it
+   * curves left to right with the relief on the outside. See core/bend.ts.
+   */
+  curveDeg?: number;
   /** "vertical" stands the model up; "flat" leaves it lying down. */
   orientation: "vertical" | "flat";
 };
@@ -295,10 +303,22 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
 
     const upright = msg.orientation !== "flat";
 
+    // Cut into strips across the bend before anything is split or grouped, so
+    // the extra triangles are shared by whatever comes after. The bend itself
+    // waits until the very end: everything between here and there works in
+    // thicknesses, and a thickness means nothing once the model is curved.
+    const radius = bendRadius(msg.widthMm, msg.curveDeg ?? 0);
+    if (radius > 0) mesh = stripeX(mesh, stripWidth(radius));
+
+    const curve = (positions: Float32Array, floatCount: number) => {
+      if (radius > 0) bendAroundY(positions, floatCount, radius);
+    };
+
     if (inlay) {
       // The bodies are already separate — side by side, not stacked — so there
       // is nothing to cut. They only have to be gathered.
       const { banded, kept } = groupByBody(mesh, levels + 1);
+      curve(banded.positions, banded.triangleCount * 9);
       orientForPrinting(banded.positions, banded.triangleCount * 9, upright);
 
       const all = msg.colors ?? [];
@@ -323,6 +343,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     if (cuts.length > 0) {
       // Split while the mesh is still flat: the cuts are thicknesses.
       const split = splitMeshAtLevels(mesh, cuts);
+      curve(split.positions, split.triangleCount * 9);
       orientForPrinting(split.positions, split.triangleCount * 9, upright);
 
       const file = await writeColored3MF(split, msg.colors ?? []);
@@ -343,6 +364,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       return;
     }
 
+    curve(mesh.positions, mesh.triangleCount * 9);
     orientForPrinting(mesh.positions, mesh.triangleCount * 9, upright);
     const file = writeBinarySTL(mesh);
     const preview = mesh.positions.slice(0, mesh.triangleCount * 9);
