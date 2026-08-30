@@ -415,13 +415,36 @@ body {
 
 .toolRow {
   display: flex;
-  gap: 2px;
+  gap: 4px;
 }
 
+/*
+ * A segment normally lives inside a .segmented, which is where its background
+ * and border come from; on the toolbar there is no such box round them, so
+ * they were reading as bare words. Faint enough to stay out of the way, solid
+ * enough to look like something you press.
+ */
 .toolBtn {
-  padding: 3px 9px;
+  flex: 0 0 auto;
+  padding: 4px 10px;
   font-size: 11px;
   min-width: 0;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+}
+
+.toolBtn:hover {
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.toolBtn.active {
+  color: #0f172a;
+  background: #a5f3fc;
+  border-color: #a5f3fc;
 }
 
 /* Fixed slots, so picking a tool greys controls out rather than moving them. */
