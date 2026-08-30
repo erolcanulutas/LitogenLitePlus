@@ -99,7 +99,7 @@ export type RadialSpec = {
    */
   inlay?: InlaySpan;
 
-  /** Tone number at a point, for an inlay. See core/labels.ts. */
+  /** Tone number at a point, for an inlay. */
   toneAt?: (x: number, y: number) => number;
 
   /** Flat height held across the whole frame band. */

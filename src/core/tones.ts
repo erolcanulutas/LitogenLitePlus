@@ -241,6 +241,21 @@ function evenCuts(levels: number): number[] {
  * near enough that averaging a thin red feature over a mesh cell tips it into
  * the black band and the feature is simply gone.
  */
+/**
+ * The brightness of each of `levels` tones, darkest first.
+ *
+ * Same fit Auto uses, but for a count that is already settled rather than one
+ * being searched for. Anything working on tones as tones rather than as
+ * thresholds needs the tones themselves — where a tone actually sits, not
+ * where the boundary either side of it is — and the count may since have been
+ * changed by hand, so it is measured again off the picture rather than
+ * remembered from whenever Auto last ran.
+ */
+export function fitTonesFor(img: ImageData, levels: number): number[] {
+  const k = Math.round(Math.min(MAX_LEVELS, Math.max(MIN_LEVELS, levels)));
+  return fitTones(histogramOf(img), k).tones;
+}
+
 export function suggestToneLevels(img: ImageData): ToneSuggestion {
   const h = histogramOf(img);
 

@@ -1597,7 +1597,7 @@ export default function App() {
             </button>
           </div>
 
-          {inlayMode && (
+          {(inlayMode || graphic) && (
             <label className="checkRow">
               <input
                 type="checkbox"
@@ -1605,7 +1605,7 @@ export default function App() {
                 onChange={(e) => setVector(e.target.checked)}
               />
               <span>Tones as regions</span>
-              <InfoIcon text="Reads the picture as tone numbers and gives each its own region, instead of taking thresholds on brightness. A tone that sits between two others in brightness — a red between black and white, say — cannot help appearing where those two meet if the tones are read off brightness, so shapes come out outlined in it. Read as regions there is nothing in between for it to occupy. Off, the surface is built the way it was before." />
+              <InfoIcon text="Traces each tone out of the picture as a closed outline and gives it its own solid, instead of deciding tones by thresholds on brightness. Read off brightness, a tone that sits between two others — a red between black and white, say — cannot help appearing where those two meet, so shapes come out outlined in it, and every edge steps along the sampling grid. Traced, the boundary between two tones is one line with nothing in it, drawn at the picture's own resolution. Off, the surface is built the way it was before." />
             </label>
           )}
 

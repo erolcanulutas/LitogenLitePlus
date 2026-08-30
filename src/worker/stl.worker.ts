@@ -8,6 +8,9 @@ import { writeBinarySTL } from "../core/stl_writer";
 import { writeColored3MF } from "../core/3mf_writer";
 import { splitMeshAtLevels } from "../core/split_mesh";
 import { groupByBody } from "../core/inlay";
+import { buildVectorInlay } from "../core/vector_inlay";
+import { buildVectorGraphic } from "../core/vector_graphic";
+import { fitTonesFor } from "../core/tones";
 import type { EmbossSide } from "../core/types";
 import { getShape } from "../shapes";
 import type { Quality } from "../core/quality";
@@ -41,8 +44,9 @@ type JobRequest = {
   inlayBaseLayers?: number;
   inlayTopLayers?: number;
   /**
-   * Read the tones as numbers off a tone map rather than as thresholds on
-   * brightness. See core/labels.ts.
+   * Trace each tone out of the picture as a closed outline and give it its own
+   * solid, rather than deciding tones by thresholds on brightness. Applies to
+   * an inlay and to a terraced relief; see core/vectorise.ts.
    */
   vector?: boolean;
   /** "vertical" stands the model up; "flat" leaves it lying down. */
@@ -100,6 +104,52 @@ function orientForPrinting(
   if (Number.isFinite(minZ) && minZ !== 0) {
     for (let i = 2; i < floatCount; i += 3) positions[i] -= minZ;
   }
+}
+
+/** Longest side the picture is traced at, in pixels. */
+const TRACE_MAX = 3000;
+
+/**
+ * Redraws the inlay's tones as traced regions.
+ *
+ * Traced off its own copy of the picture rather than off the heightmap. The
+ * heightmap is sized for a relief — a couple of samples per printed layer,
+ * around a thousand rows — and a region's edge is a line rather than a height,
+ * so it shows every pixel it was traced from as a step. Two or three times the
+ * resolution costs a few tens of milliseconds here and puts the steps below
+ * anything a printer or the preview can show.
+ */
+async function tracePicture(
+  src: ImageData,
+  levels: number,
+  floor: number,
+): Promise<{ lum: Float64Array; w: number; h: number; tones: number[] } | null> {
+  const aspect = src.width / src.height;
+  const long = Math.max(floor, Math.min(TRACE_MAX, Math.max(src.width, src.height)));
+  const w = Math.max(8, Math.round(aspect >= 1 ? long : long * aspect));
+  const h = Math.max(8, Math.round(aspect >= 1 ? long / aspect : long));
+
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.clearRect(0, 0, w, h);
+
+  const bitmap = await createImageBitmap(src);
+  ctx.drawImage(bitmap, 0, 0, src.width, src.height, 0, 0, w, h);
+  bitmap.close();
+
+  const img = ctx.getImageData(0, 0, w, h);
+  const lum = new Float64Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const o = i * 4;
+    lum[i] =
+      (0.2126 * img.data[o] + 0.7152 * img.data[o + 1] + 0.0722 * img.data[o + 2]) / 255;
+  }
+
+  return { lum, w, h, tones: fitTonesFor(img, levels) };
 }
 
 self.onmessage = async (ev: MessageEvent<JobRequest>) => {
@@ -207,8 +257,41 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       splitZs: cuts,
     };
 
+    // With regions on the tones are redrawn from their own outlines, so the
+    // picture is traced first and what the shape is asked for depends on
+    // whether the trace came back. The inlay keeps the shape's slab and gets
+    // new tones on top of it; the relief is rebuilt outright, one column per
+    // tone, and only needs the shape for its outline — so it is not asked to
+    // terrace a surface that is about to be thrown away.
+    const wantsRegions =
+      buildParams.vector && levels >= 2 && (inlay !== null || (msg.toneHeightsMm?.length ?? 0) > 0);
+    const pic = wantsRegions ? await tracePicture(msg.image, levels, hmRaw.w) : null;
+
     const shape = getShape(msg.shapeId);
-    const mesh = shape.build(buildCtx, buildParams);
+    let mesh = shape.build(
+      buildCtx,
+      pic && !inlay ? { ...buildParams, levels: 0, toneZs: [], vector: false } : buildParams,
+    );
+
+    if (pic) {
+      if (inlay) {
+        mesh = buildVectorInlay(mesh, pic.lum, pic.w, pic.h, pic.tones, inlay);
+      } else {
+        const range = msg.maxT - msg.minT;
+        const even = (band: number) => {
+          const l = (band + 0.5) / levels;
+          return msg.emboss === "back" ? msg.maxT - l * range : msg.minT + l * range;
+        };
+        const plateau = Array.from(
+          { length: levels },
+          (_, band) => msg.toneHeightsMm?.[band] ?? even(band),
+        );
+        mesh = buildVectorGraphic(
+          mesh, pic.lum, pic.w, pic.h, pic.tones,
+          plateau, msg.frameMm, msg.maxT,
+        );
+      }
+    }
 
     const upright = msg.orientation !== "flat";
 
