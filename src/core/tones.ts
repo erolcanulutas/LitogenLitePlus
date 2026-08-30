@@ -16,6 +16,8 @@ export type ToneSuggestion = {
   cuts: number[];
   /** Each tone's own colour, taken from the picture, as #rrggbb. */
   colors: string[];
+  /** The tone covering most of the picture — what a solid base should match. */
+  dominant: number;
 };
 
 const MIN_LEVELS = 2;
@@ -166,6 +168,18 @@ function hex(v: number): string {
  * reaches has no colour of its own and gets a grey off the brightness it
  * stands for.
  */
+function dominantBand(h: Hist, cuts: readonly number[], levels: number): number {
+  const n = new Float64Array(levels);
+  for (let i = 0; i < 256; i++) {
+    const w = h.n[i];
+    if (w === 0) continue;
+    n[Math.min(levels - 1, bandOfLum(i / 255, cuts))] += w;
+  }
+  let best = 0;
+  for (let k = 1; k < levels; k++) if (n[k] > n[best]) best = k;
+  return best;
+}
+
 function colorsFor(h: Hist, cuts: readonly number[], levels: number): string[] {
   const n = new Float64Array(levels);
   const r = new Float64Array(levels);
@@ -239,6 +253,7 @@ export function suggestToneLevels(img: ImageData): ToneSuggestion {
       tones: [],
       cuts,
       colors: colorsFor(h, cuts, SMOOTH_FALLBACK),
+      dominant: dominantBand(h, cuts, SMOOTH_FALLBACK),
     };
   }
 
@@ -254,6 +269,7 @@ export function suggestToneLevels(img: ImageData): ToneSuggestion {
         tones,
         cuts,
         colors: colorsFor(h, cuts, k),
+        dominant: dominantBand(h, cuts, k),
       };
     }
   }
@@ -266,5 +282,6 @@ export function suggestToneLevels(img: ImageData): ToneSuggestion {
     tones: [],
     cuts,
     colors: colorsFor(h, cuts, SMOOTH_FALLBACK),
+    dominant: dominantBand(h, cuts, SMOOTH_FALLBACK),
   };
 }

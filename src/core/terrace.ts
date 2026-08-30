@@ -21,7 +21,7 @@ import type { MeshBuilder } from "./mesh";
  */
 
 /** Polygon carrying brightness per vertex, so clipping can interpolate it. */
-type Poly = {
+export type Poly = {
   x: number[];
   y: number[];
   l: number[];
@@ -62,7 +62,7 @@ export function bandOfLum(l: number, cuts: readonly number[]): number {
 }
 
 /** Keeps the part of `p` on one side of brightness `t`. */
-function clipByLum(p: Poly, t: number, keepAbove: boolean): Poly {
+export function clipByLum(p: Poly, t: number, keepAbove: boolean): Poly {
   const out: Poly = { x: [], y: [], l: [] };
   const n = p.x.length;
   if (n === 0) return out;
@@ -95,7 +95,7 @@ function clipByLum(p: Poly, t: number, keepAbove: boolean): Poly {
 }
 
 /** Emits a flat polygon at height z, wound counter-clockwise (facing +Z). */
-function fanFlat(mb: MeshBuilder, p: Poly, z: number) {
+export function fanFlat(mb: MeshBuilder, p: Poly, z: number) {
   const n = p.x.length;
   if (n < 3) return;
 
@@ -142,7 +142,7 @@ const REFINE_STEPS = 10;
  * the surface opens, so the solve is run in a canonical direction: whichever
  * triangle asks, the inputs are the same and so is the answer.
  */
-function crossingOn(
+export function crossingOn(
   x0: number, y0: number, l0: number,
   x1: number, y1: number, l1: number,
   t: number,
@@ -206,7 +206,7 @@ function crossingOn(
  * A crossing vertex holds the cut's brightness exactly, so clipping finds it
  * by value rather than interpolating towards it a second time.
  */
-function outlineWithCrossings(
+export function outlineWithCrossings(
   ax: number, ay: number, al: number,
   bx: number, by: number, bl: number,
   cx: number, cy: number, cl: number,

@@ -1,3 +1,4 @@
+import { BASE_BODY, emitInlayRim, emitInlayTriangle, type InlaySpan } from "./inlay";
 import { MeshBuilder, type Mesh } from "./mesh";
 import { bandCuts, bandOfLum, emitTerracedTriangle } from "./terrace";
 import { emitWallColumn } from "./wall";
@@ -83,6 +84,14 @@ export type RadialSpec = {
    */
   levels: number;
 
+  /**
+   * Build a flat inlay between these two heights instead of a relief.
+   *
+   * The surface goes to one height everywhere and the picture only says which
+   * body each part of it belongs to. See core/inlay.ts.
+   */
+  inlay?: InlaySpan;
+
   /** Flat height held across the whole frame band. */
   frameHeight: number;
 
@@ -119,6 +128,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     levels,
     toneZs,
     toneCuts,
+    inlay,
     frameHeight,
     splitZs,
   } = spec;
@@ -137,6 +147,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
 
   const terraced = levels >= 2;
   const cuts = bandCuts(levels, toneCuts);
+  const inlaid = inlay !== undefined && terraced;
 
   /**
    * The brightness field the terracing solves against.
@@ -159,9 +170,11 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   const bandHeight = (band: number) =>
     toneZs[band] ?? heightOf((band + 0.5) / levels);
   const heightForLum = (l: number) =>
-    terraced
-      ? bandHeight(bandOfLum(l, cuts))
-      : heightOf(l);
+    inlaid
+      ? inlay!.topZ
+      : terraced
+        ? bandHeight(bandOfLum(l, cuts))
+        : heightOf(l);
 
   // Radius fraction of ring r. Ring 0 is the centre, ring totalRings the rim.
   const ringT = (r: number): number => {
@@ -253,7 +266,9 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
     x1: number, y1: number, z1: number, l1: number,
     x2: number, y2: number, z2: number, l2: number,
   ) => {
-    if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
+    if (inlaid && l0 >= 0 && l1 >= 0 && l2 >= 0) {
+      emitInlayTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, inlay!, field);
+    } else if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
       emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight, field);
     } else {
       mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
@@ -320,6 +335,7 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   const rimN = innerN;
 
   // --- flat base, one fan from the centre ---------------------------------
+  if (inlaid) mb.setTag(BASE_BODY);
   for (let i = 0; i < rimN; i++) {
     const j = (i + 1) % rimN;
     mb.addTriangle(0, 0, 0, inX[j], inY[j], 0, inX[i], inY[i], 0);
@@ -328,6 +344,17 @@ export function buildRadialMesh(spec: RadialSpec): Mesh {
   // --- rim wall ------------------------------------------------------------
   for (let i = 0; i < rimN; i++) {
     const j = (i + 1) % rimN;
+
+    if (inlaid) {
+      emitInlayRim(
+        mb,
+        inX[i], inY[i], inL[i],
+        inX[j], inY[j], inL[j],
+        cuts, inlay!, field,
+      );
+      continue;
+    }
+
     emitWallColumn(
       mb,
       inX[i], inY[i], inZ[i],

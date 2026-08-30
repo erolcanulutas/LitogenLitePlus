@@ -1,3 +1,4 @@
+import { BASE_BODY, emitInlayRim, emitInlayTriangle } from "../core/inlay";
 import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
@@ -27,7 +28,7 @@ export const TriangleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
 
     const N = Math.min(
       MAX_SUBDIVISIONS,
@@ -49,6 +50,7 @@ export const TriangleShape: ShapePlugin = {
     const footprintPx = smoothing * (side / N) * (heightmap.w / side);
 
     const terraced = levels >= 2;
+    const inlaid = inlay != null && terraced;
     const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
@@ -58,9 +60,11 @@ export const TriangleShape: ShapePlugin = {
     const bandHeight = (band: number) =>
       toneZs[band] ?? heightOf((band + 0.5) / levels);
     const heightForLum = (l: number) =>
-      terraced
-        ? bandHeight(bandOfLum(l, cuts))
-        : heightOf(l);
+      inlaid
+        ? inlay!.topZ
+        : terraced
+          ? bandHeight(bandOfLum(l, cuts))
+          : heightOf(l);
 
     // Brightness everywhere, with no frame mask on it, so the terracing can
     // solve for where a contour actually runs. See core/terrace.ts.
@@ -80,7 +84,7 @@ export const TriangleShape: ShapePlugin = {
 
     /** Brightness at a grid point, or -1 inside the flat frame band. */
     const lumAt = (u: number, v: number, w: number, x: number, y: number) => {
-      if (frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return -1;
+      if (!inlay && frameMm > 0 && Math.min(u, v, w) * hTri <= frameMm) return -1;
 
       const uu = (x + side / 2) / side;
       const vv = ((2 * hTri) / 3 - y) / hTri;
@@ -102,7 +106,9 @@ export const TriangleShape: ShapePlugin = {
       x1: number, y1: number, z1: number, l1: number,
       x2: number, y2: number, z2: number, l2: number,
     ) => {
-      if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
+      if (inlaid && l0 >= 0 && l1 >= 0 && l2 >= 0) {
+        emitInlayTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, inlay!, field);
+      } else if (terraced && l0 >= 0 && l1 >= 0 && l2 >= 0) {
         emitTerracedTriangle(mb, x0, y0, l0, x1, y1, l1, x2, y2, l2, cuts, bandHeight, field);
       } else {
         mb.addTriangle(x0, y0, z0, x1, y1, z1, x2, y2, z2);
@@ -115,6 +121,7 @@ export const TriangleShape: ShapePlugin = {
     const edgeX = new Float64Array(edgeCount);
     const edgeY = new Float64Array(edgeCount);
     const edgeZ = new Float64Array(edgeCount);
+    const edgeL = new Float64Array(edgeCount);
 
     let prev = new Float64Array((N + 1) * STRIDE);
     let cur = new Float64Array((N + 1) * STRIDE);
@@ -145,6 +152,8 @@ export const TriangleShape: ShapePlugin = {
           edgeX[c] = row[o];
           edgeY[c] = row[o + 1];
           edgeZ[c] = row[o + 2];
+          edgeL[c] = row[o + 3];
+          edgeL[c] = row[o + 3];
         }
       }
       if (r < N) {
@@ -153,12 +162,15 @@ export const TriangleShape: ShapePlugin = {
         edgeX[i] = row[o];
         edgeY[i] = row[o + 1];
         edgeZ[i] = row[o + 2];
+        edgeL[i] = row[o + 3];
+        edgeL[i] = row[o + 3];
       }
       if (r >= 1) {
         const i = 3 * N - r;
         edgeX[i] = row[0];
         edgeY[i] = row[1];
         edgeZ[i] = row[2];
+        edgeL[i] = row[3];
       }
     };
 
@@ -197,6 +209,7 @@ export const TriangleShape: ShapePlugin = {
     }
 
     // --- flat base, one fan from the centroid ------------------------------
+    if (inlaid) mb.setTag(BASE_BODY);
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
       mb.addTriangle(
@@ -209,6 +222,16 @@ export const TriangleShape: ShapePlugin = {
     // --- rim ---------------------------------------------------------------
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
+      if (inlaid) {
+        emitInlayRim(
+          mb,
+          edgeX[i], edgeY[i], edgeL[i],
+          edgeX[j], edgeY[j], edgeL[j],
+          cuts, inlay!, field,
+        );
+        continue;
+      }
+
       emitWallColumn(
         mb,
         edgeX[i], edgeY[i], edgeZ[i],

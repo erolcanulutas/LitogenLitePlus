@@ -30,7 +30,7 @@ export const PentagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
 
     const range = maxT - minT;
 
@@ -41,7 +41,7 @@ export const PentagonShape: ShapePlugin = {
 
     const frameSize = Math.max(0, frameMm);
     const innerApothem = apothem - frameSize;
-    const hasFrame = frameSize > 0.001 && innerApothem > 0.0001;
+    const hasFrame = frameSize > 0.001 && innerApothem > 0.0001 && !inlay;
 
     // Vertex-up rotated by 36° puts one edge flat along the bottom.
     const theta0 = -Math.PI / 2 + Math.PI / SIDES;
@@ -76,6 +76,7 @@ export const PentagonShape: ShapePlugin = {
       levels,
       toneZs,
       toneCuts,
+      inlay: inlay ?? undefined,
 
       lumAt: (x, y, footprintMm) => {
         const u = clamp01((x + bboxW / 2) / bboxW);

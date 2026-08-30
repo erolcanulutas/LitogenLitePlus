@@ -22,7 +22,7 @@ export const HexagonShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
 
     const range = maxT - minT;
 
@@ -35,7 +35,7 @@ export const HexagonShape: ShapePlugin = {
 
     const frameSize = Math.max(0, frameMm);
     const innerApothem = Math.max(0, apothem - frameSize);
-    const hasFrame = frameSize > 0.001;
+    const hasFrame = frameSize > 0.001 && !inlay;
 
     const corners = Array.from({ length: SIDES }, (_, s) => {
       const a = (s * Math.PI) / 3;
@@ -65,6 +65,7 @@ export const HexagonShape: ShapePlugin = {
       levels,
       toneZs,
       toneCuts,
+      inlay: inlay ?? undefined,
 
       lumAt: (x, y, footprintMm) => {
         const u = clamp01((x + circumradius) / totalW);

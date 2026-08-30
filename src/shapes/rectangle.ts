@@ -1,3 +1,4 @@
+import { BASE_BODY, emitInlayRim, emitInlayTriangle } from "../core/inlay";
 import { squashLum } from "../core/squash";
 import type { BuildContext, ShapeBuildParams, ShapePlugin } from "../core/types";
 import { MeshBuilder, type Mesh } from "../core/mesh";
@@ -35,7 +36,7 @@ export const RectangleShape: ShapePlugin = {
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
     const {
-      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash,
+      widthMm, heightMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay,
     } = params;
 
     const W = Math.max(1, widthMm);
@@ -63,6 +64,7 @@ export const RectangleShape: ShapePlugin = {
     const footprintPx = smoothing * Math.max(dx, dy) * pxPerMm;
 
     const terraced = levels >= 2;
+    const inlaid = inlay != null && terraced;
     const cuts = bandCuts(levels, toneCuts);
     const heightOf = (lum: number) =>
       emboss === "back" ? maxT - lum * range : minT + lum * range;
@@ -72,9 +74,11 @@ export const RectangleShape: ShapePlugin = {
     const bandHeight = (band: number) =>
       toneZs[band] ?? heightOf((band + 0.5) / levels);
     const heightForLum = (l: number) =>
-      terraced
-        ? bandHeight(bandOfLum(l, cuts))
-        : heightOf(l);
+      inlaid
+        ? inlay!.topZ
+        : terraced
+          ? bandHeight(bandOfLum(l, cuts))
+          : heightOf(l);
 
     // Brightness everywhere, with no frame mask on it, so the terracing can
     // solve for where a contour actually runs. See core/terrace.ts.
@@ -92,7 +96,7 @@ export const RectangleShape: ShapePlugin = {
         }
       : undefined;
 
-    const inset = Math.max(0, frameMm);
+    const inset = inlay ? 0 : Math.max(0, frameMm);
 
     /** Brightness at a grid point, or -1 where the flat frame band covers it. */
     const lumAt = (x: number, y: number): number => {
@@ -126,7 +130,9 @@ export const RectangleShape: ShapePlugin = {
       bx: number, by: number, bz: number, bl: number,
       cx: number, cy: number, cz: number, cl: number,
     ) => {
-      if (terraced && al >= 0 && bl >= 0 && cl >= 0) {
+      if (inlaid && al >= 0 && bl >= 0 && cl >= 0) {
+        emitInlayTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, cuts, inlay!, field);
+      } else if (terraced && al >= 0 && bl >= 0 && cl >= 0) {
         emitTerracedTriangle(mb, ax, ay, al, bx, by, bl, cx, cy, cl, cuts, bandHeight, field);
       } else {
         mb.addTriangle(ax, ay, az, bx, by, bz, cx, cy, cz);
@@ -139,6 +145,7 @@ export const RectangleShape: ShapePlugin = {
     const edgeX = new Float64Array(edgeCount);
     const edgeY = new Float64Array(edgeCount);
     const edgeZ = new Float64Array(edgeCount);
+    const edgeL = new Float64Array(edgeCount);
 
     const cols = nx + 1;
     let prev = new Float64Array(cols * STRIDE);
@@ -162,6 +169,8 @@ export const RectangleShape: ShapePlugin = {
       edgeX[k] = row[o];
       edgeY[k] = row[o + 1];
       edgeZ[k] = row[o + 2];
+      edgeL[k] = row[o + 3];
+      edgeL[k] = row[o + 3];
     };
 
     const recordRow = (j: number, row: Float64Array) => {
@@ -202,6 +211,7 @@ export const RectangleShape: ShapePlugin = {
     }
 
     // --- flat base, one fan from the centre ----------------------------------
+    if (inlaid) mb.setTag(BASE_BODY);
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
       mb.addTriangle(0, 0, 0, edgeX[j], edgeY[j], 0, edgeX[i], edgeY[i], 0);
@@ -210,6 +220,16 @@ export const RectangleShape: ShapePlugin = {
     // --- rim -----------------------------------------------------------------
     for (let i = 0; i < edgeCount; i++) {
       const j = (i + 1) % edgeCount;
+      if (inlaid) {
+        emitInlayRim(
+          mb,
+          edgeX[i], edgeY[i], edgeL[i],
+          edgeX[j], edgeY[j], edgeL[j],
+          cuts, inlay!, field,
+        );
+        continue;
+      }
+
       emitWallColumn(
         mb,
         edgeX[i], edgeY[i], edgeZ[i],

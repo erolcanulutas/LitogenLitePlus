@@ -7,6 +7,7 @@ import { imageToHeightmap } from "../core/heightmap";
 import { writeBinarySTL } from "../core/stl_writer";
 import { writeColored3MF } from "../core/3mf_writer";
 import { splitMeshAtLevels } from "../core/split_mesh";
+import { groupByBody } from "../core/inlay";
 import type { EmbossSide } from "../core/types";
 import { getShape } from "../shapes";
 import type { Quality } from "../core/quality";
@@ -32,6 +33,13 @@ type JobRequest = {
   smoothing: number;
   levels: number;
   toneCuts?: number[];
+  /**
+   * Layers of solid colour under the picture, and layers the picture is set
+   * into above it. Present means an inlay: one flat slab with the tones side
+   * by side in its top layers, rather than a relief.
+   */
+  inlayBaseLayers?: number;
+  inlayTopLayers?: number;
   /** "vertical" stands the model up; "flat" leaves it lying down. */
   orientation: "vertical" | "flat";
 };
@@ -147,6 +155,18 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     }
 
     const smoothing = clamp(msg.smoothing ?? 1, 0.4, 3);
+
+    // An inlay is measured in layers, not millimetres: the point of it is that
+    // the filament changes on a layer the printer actually lands on.
+    const inlayBase = Math.max(1, Math.round(msg.inlayBaseLayers ?? 0));
+    const inlayTop = Math.max(1, Math.round(msg.inlayTopLayers ?? 0));
+    const inlaid = (msg.inlayBaseLayers ?? 0) >= 1 && (msg.inlayTopLayers ?? 0) >= 1;
+    const inlay = inlaid
+      ? {
+          baseZ: +(inlayBase * msg.layerHeight).toFixed(4),
+          topZ: +((inlayBase + inlayTop) * msg.layerHeight).toFixed(4),
+        }
+      : null;
     const levels = msg.levels >= 2 ? Math.round(clamp(msg.levels, 2, 16)) : 0;
     const toneCuts = msg.toneCuts ?? [];
 
@@ -177,6 +197,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
       toneZs: msg.toneHeightsMm ?? [],
       toneCuts,
       squash,
+      inlay,
       splitZs: cuts,
     };
 
@@ -184,6 +205,31 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     const mesh = shape.build(buildCtx, buildParams);
 
     const upright = msg.orientation !== "flat";
+
+    if (inlay) {
+      // The bodies are already separate — side by side, not stacked — so there
+      // is nothing to cut. They only have to be gathered.
+      const { banded, kept } = groupByBody(mesh, levels + 1);
+      orientForPrinting(banded.positions, banded.triangleCount * 9, upright);
+
+      const all = msg.colors ?? [];
+      const file = await writeColored3MF(banded, kept.map((b) => all[b] ?? "#cccccc"));
+      const preview = banded.positions.slice(0, banded.triangleCount * 9);
+
+      const res: JobResponse = {
+        id: msg.id,
+        ok: true,
+        file,
+        extension: "3mf",
+        preview: preview.buffer,
+        previewTriangles: banded.triangleCount,
+        previewBands: banded.bandStarts,
+      };
+      (self as unknown as Worker).postMessage(res, {
+        transfer: [file, preview.buffer],
+      });
+      return;
+    }
 
     if (cuts.length > 0) {
       // Split while the mesh is still flat: the cuts are thicknesses.

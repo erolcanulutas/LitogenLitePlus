@@ -16,13 +16,13 @@ export const CircleShape: ShapePlugin = {
 
   build: (ctx: BuildContext, params: ShapeBuildParams): Mesh => {
     const { heightmap, minT, maxT, frameMm, emboss } = ctx;
-    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash } = params;
+    const { widthMm, quality, smoothing, levels, splitZs, toneZs, toneCuts, squash, inlay } = params;
 
     const range = maxT - minT;
 
     const outerRadius = widthMm / 2;
     const innerRadius = (widthMm - 2 * frameMm) / 2;
-    const hasFrame = frameMm > 0.05 && innerRadius > 0;
+    const hasFrame = frameMm > 0.05 && innerRadius > 0 && !inlay;
 
     const cuts = bandCuts(levels, toneCuts);
     const sampler = buildAreaSampler(heightmap);
@@ -50,6 +50,7 @@ export const CircleShape: ShapePlugin = {
       levels,
       toneZs,
       toneCuts,
+      inlay: inlay ?? undefined,
 
       lumAt: (x, y, footprintMm) => {
         const u = (x + outerRadius) / (2 * outerRadius);

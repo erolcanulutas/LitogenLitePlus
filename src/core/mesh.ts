@@ -14,6 +14,16 @@ export type Mesh = {
   /** 9 floats per triangle. Length is always `triangleCount * 9`. */
   positions: Float32Array;
   triangleCount: number;
+  /**
+   * Which body each triangle belongs to, when the model is several solids in
+   * the same layers rather than stacked ones.
+   *
+   * A lithophane says colour with thickness, so its bodies are slabs and a
+   * plane cut separates them. An inlay says colour side by side at one height,
+   * so nothing separates the bodies geometrically and each triangle has to
+   * carry the answer. Absent means the whole mesh is one body.
+   */
+  tags?: Uint8Array;
 };
 
 const FLOATS_PER_TRI = 9;
@@ -22,6 +32,22 @@ const FLOATS_PER_TRI = 9;
 export class MeshBuilder {
   private data: Float32Array;
   private used = 0;
+  private tagData: Uint8Array | null = null;
+  private tagNow = 0;
+
+  /**
+   * Which body triangles now belong to.
+   *
+   * Left alone, nothing is tagged and the mesh is one solid, exactly as before.
+   * Set once, tagging starts and every triangle already written is taken to
+   * belong to body 0.
+   */
+  setTag(tag: number): void {
+    if (this.tagData === null) {
+      this.tagData = new Uint8Array(Math.max(1, this.data.length / FLOATS_PER_TRI));
+    }
+    this.tagNow = tag;
+  }
 
   /**
    * @param expectedTriangles Capacity hint. Generators know their triangle
@@ -49,6 +75,8 @@ export class MeshBuilder {
     d[o + 3] = bx; d[o + 4] = by; d[o + 5] = bz;
     d[o + 6] = cx; d[o + 7] = cy; d[o + 8] = cz;
 
+    if (this.tagData !== null) this.tagData[o / FLOATS_PER_TRI] = this.tagNow;
+
     this.used = o + FLOATS_PER_TRI;
   }
 
@@ -67,13 +95,21 @@ export class MeshBuilder {
     const next = new Float32Array(this.data.length * 2);
     next.set(this.data);
     this.data = next;
+
+    if (this.tagData !== null) {
+      const t = new Uint8Array(next.length / FLOATS_PER_TRI);
+      t.set(this.tagData);
+      this.tagData = t;
+    }
   }
 
   /** View over exactly the written region. Shares memory with the builder. */
   finish(): Mesh {
+    const count = this.used / FLOATS_PER_TRI;
     return {
       positions: this.data.subarray(0, this.used),
-      triangleCount: this.used / FLOATS_PER_TRI,
+      triangleCount: count,
+      tags: this.tagData === null ? undefined : this.tagData.subarray(0, count),
     };
   }
 }

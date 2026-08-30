@@ -1,3 +1,4 @@
+import type { InlaySpan } from "./inlay";
 import type { BandSquash } from "./squash";
 import type { Quality } from "./quality";
 import type { Mesh } from "./mesh";
@@ -99,6 +100,13 @@ export type ShapeBuildParams = {
    * squeezed shut. See core/squash.ts.
    */
   squash: BandSquash | null;
+
+  /**
+   * Build a flat inlay between these heights instead of a relief: the top is
+   * one height everywhere and the tones become bodies side by side in the same
+   * layers. Null for a relief. See core/inlay.ts.
+   */
+  inlay: InlaySpan | null;
 
   /**
    * Heights the model will later be cut at for a colour split, ascending.

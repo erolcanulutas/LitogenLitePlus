@@ -349,6 +349,33 @@ body {
   right: 0;
 }
 
+.inlayColors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.inlayColor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+.inlayColor input[type="color"] {
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
 .bandSegPick {
   display: block;
   width: 100%;
@@ -810,8 +837,20 @@ export default function App() {
   // one number meant Photo had to write 0 over the tone count, so coming back
   // to Graphic had nothing left to come back to.
   const [graphic, setGraphic] = useState(false);
+
+  /**
+   * Inlay: one flat slab with the picture set into its top layers, rather
+   * than a relief. The filament changes partway across a layer instead of
+   * between two, which is what a coaster or a sign wants. Counted in layers,
+   * not millimetres, because the whole point is that the change lands on a
+   * layer the printer stops at.
+   */
+  const [inlayMode, setInlayMode] = useState(false);
+  const [baseLayers, setBaseLayers] = useState(6);
+  const [pictureLayers, setPictureLayers] = useState(4);
+
   const [toneLevels, setToneLevels] = useState(2);
-  const levels = graphic ? toneLevels : 0;
+  const levels = graphic || inlayMode ? toneLevels : 0;
 
   /**
    * Where a given number of tones would sit, in layers, thickest first.
@@ -925,6 +964,7 @@ export default function App() {
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm,
     quality, smoothing, levels, tonePlateaus, toneCuts, layerHeight, splitLayers, colors,
+    inlayMode, baseLayers, pictureLayers,
     orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
@@ -1117,6 +1157,23 @@ export default function App() {
   }
 
   /**
+   * Keeps one colour per body when the tone count moves.
+   *
+   * An inlay has a body for the base and one per tone, and no boundaries
+   * through the thickness at all, so the band slider's bookkeeping does not
+   * apply — only the length of the colour list does.
+   */
+  function applyInlayColors(count: number) {
+    setColors((prev) => {
+      const out = prev.slice(0, count + 1);
+      while (out.length < count + 1) {
+        out.push(BAND_PALETTE[out.length % BAND_PALETTE.length]);
+      }
+      return out;
+    });
+  }
+
+  /**
    * Reads the tone count off the picture.
    *
    * The right number is a property of the artwork, not a taste: a two-colour
@@ -1130,7 +1187,16 @@ export default function App() {
     const found = suggestToneLevels(imgData);
     setToneLevels(found.levels);
     setToneCuts(found.smooth ? [] : found.cuts);
-    applyToneBands(found.levels, found.colors);
+
+    if (inlayMode) {
+      // One body per tone, on a base that starts out matching whichever tone
+      // covers most of the picture — usually its background, which is the one
+      // a coaster wants underneath.
+      setColors([found.colors[found.dominant], ...found.colors]);
+    } else {
+      applyToneBands(found.levels, found.colors);
+    }
+
     setToneOverride(null);
     setAutoNote(
       found.smooth
@@ -1295,7 +1361,9 @@ export default function App() {
           toneHeightsMm: graphic
             ? tonePlateaus.map((n) => +(n * layerHeight).toFixed(4))
             : [],
-          toneCuts: graphic ? toneCuts : [],
+          toneCuts: levels > 0 ? toneCuts : [],
+          inlayBaseLayers: inlayMode ? baseLayers : 0,
+          inlayTopLayers: inlayMode ? pictureLayers : 0,
           colors,
           layerHeight,
           emboss: "back",
@@ -1380,6 +1448,7 @@ export default function App() {
             <button
               className={`segment ${levels === 0 ? "active" : ""}`}
               onClick={() => {
+                setInlayMode(false);
                 if (!graphic) return;
                 graphicBandsRef.current = { splits: splitLayers, colors };
                 setGraphic(false);
@@ -1394,8 +1463,9 @@ export default function App() {
                 is already on leaves the tone count and the orientation
                 exactly as they were set. */}
             <button
-              className={`segment ${levels > 0 ? "active" : ""}`}
+              className={`segment ${graphic && !inlayMode ? "active" : ""}`}
               onClick={() => {
+                setInlayMode(false);
                 if (graphic) return;
                 setGraphic(true);
                 setOrientation("flat");
@@ -1404,12 +1474,28 @@ export default function App() {
             >
               Graphic
             </button>
+            <button
+              className={`segment ${inlayMode ? "active" : ""}`}
+              onClick={() => {
+                if (inlayMode) return;
+                if (graphic) graphicBandsRef.current = { splits: splitLayers, colors };
+                setInlayMode(true);
+                setGraphic(false);
+                setOrientation("flat");
+                setSplitLayers([]);
+                applyInlayColors(toneLevels);
+              }}
+            >
+              Inlay
+            </button>
           </div>
 
           <div className="bandHint">
-            {levels === 0
-              ? "Sampled as a continuous surface — what a photograph wants."
-              : "Cut along the picture's own contours, so hard edges come out straight."}
+            {inlayMode
+              ? "One flat slab, the picture set into its top layers — the filament changes across a layer, not between two."
+              : levels === 0
+                ? "Sampled as a continuous surface — what a photograph wants."
+                : "Cut along the picture's own contours, so hard edges come out straight."}
           </div>
 
         </div>
@@ -1526,6 +1612,7 @@ export default function App() {
             Thickness
           </div>
 
+          {!inlayMode && (<>
           <div className="label-row">
             <label className="miniLabel">Max (mm)</label>
             <InfoIcon text="The thickness of the darkest (black) areas. Ideal value: 2.5mm - 3.2mm." />
@@ -1649,6 +1736,62 @@ export default function App() {
               trim.
             </div>
           )}
+          </>)}
+
+          {inlayMode && (
+            <>
+              <div className="label-row">
+                <label className="miniLabel">Base Layers</label>
+                <InfoIcon text="Solid colour under the picture. These print in one filament and carry the part; the picture never reaches down into them." />
+              </div>
+              <div className="spinRow">
+                <input
+                  className="spinInput"
+                  type="number"
+                  min={1}
+                  max={200}
+                  step={1}
+                  value={baseLayers}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (!Number.isNaN(v)) setBaseLayers(Math.max(1, Math.min(200, v)));
+                  }}
+                />
+                <div className="spinBtns">
+                  <button className="spinBtn" onClick={() => setBaseLayers((v) => Math.min(200, v + 1))}>▲</button>
+                  <button className="spinBtn" onClick={() => setBaseLayers((v) => Math.max(1, v - 1))}>▼</button>
+                </div>
+              </div>
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Picture Layers</label>
+                <InfoIcon text="Layers the picture is set into, on top of the base. Every tone stands in all of them, side by side, so the filament changes partway across a layer rather than between two." />
+              </div>
+              <div className="spinRow">
+                <input
+                  className="spinInput"
+                  type="number"
+                  min={1}
+                  max={200}
+                  step={1}
+                  value={pictureLayers}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (!Number.isNaN(v)) setPictureLayers(Math.max(1, Math.min(200, v)));
+                  }}
+                />
+                <div className="spinBtns">
+                  <button className="spinBtn" onClick={() => setPictureLayers((v) => Math.min(200, v + 1))}>▲</button>
+                  <button className="spinBtn" onClick={() => setPictureLayers((v) => Math.max(1, v - 1))}>▼</button>
+                </div>
+              </div>
+
+              <div className="bandHint">
+                {baseLayers + pictureLayers} layers ·{" "}
+                {((baseLayers + pictureLayers) * layerHeight).toFixed(2)} mm total
+              </div>
+            </>
+          )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
             <label className="miniLabel">Layer Height (mm)</label>
@@ -1714,7 +1857,8 @@ export default function App() {
                     const next = Math.max(2, Math.min(16, v));
                     setToneLevels(next);
                     setToneCuts([]);
-                    applyToneBands(next);
+                    if (inlayMode) applyInlayColors(next);
+                    else applyToneBands(next);
                     setAutoNote(null);
                   }}
                 />
@@ -1725,7 +1869,8 @@ export default function App() {
                       const next = Math.min(16, toneLevels + 1);
                       setToneLevels(next);
                       setToneCuts([]);
-                      applyToneBands(next);
+                      if (inlayMode) applyInlayColors(next);
+                      else applyToneBands(next);
                       setAutoNote(null);
                     }}
                   >
@@ -1737,7 +1882,8 @@ export default function App() {
                       const next = Math.max(2, toneLevels - 1);
                       setToneLevels(next);
                       setToneCuts([]);
-                      applyToneBands(next);
+                      if (inlayMode) applyInlayColors(next);
+                      else applyToneBands(next);
                       setAutoNote(null);
                     }}
                   >
@@ -1754,6 +1900,33 @@ export default function App() {
             </div>
           )}
 
+          {inlayMode ? (
+            <>
+              <div className="label-row">
+                <label className="miniLabel">Colors · {levels + 1} bodies</label>
+                <InfoIcon text="One body for the base and one for each tone, all exported as a 3MF. They stand in the same layers rather than on top of each other, so a slicer changes filament partway across a layer. Assign one to each." />
+              </div>
+
+              <div className="inlayColors">
+                {Array.from({ length: levels + 1 }, (_, b) => (
+                  <label className="inlayColor" key={`ic${b}`}>
+                    <input
+                      type="color"
+                      value={colors[b] ?? "#cccccc"}
+                      onChange={(e) => setBandColor(b, e.target.value)}
+                    />
+                    <span>{b === 0 ? "Base" : `Tone ${b}`}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="bandHint">
+                Base is the solid colour under the picture; tones run darkest
+                first. Auto above reads all of them off the picture.
+              </div>
+            </>
+          ) : (
+          <>
           <div className="label-row">
             <label className="miniLabel">
               Color Bands · {totalLayers} layers
@@ -1808,6 +1981,8 @@ export default function App() {
           >
             + Add color band
           </button>
+          </>
+          )}
 
           <button
             className="btn"
