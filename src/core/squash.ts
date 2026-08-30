@@ -53,11 +53,21 @@ export type BandSquash = {
 /**
  * How thick a band has to get, somewhere along its run, to count as a region.
  *
- * A half-width, measured from the middle of the run. The rings this is meant to
- * close come out around 0.12mm from their middle and stay there; anything a
- * printer could deliberately lay down as its own colour is wider than this.
+ * A half-width, measured from the middle of the run.
+ *
+ * Most of a ring is about 0.12mm from its middle, and 0.25mm closed 99.2% of
+ * them. What it left was where a ring runs into a real area of the same tone —
+ * a flame tip coming down onto a white edge, say. The two merge, the merged
+ * thing is over a millimetre across, and at that size there is nothing to tell
+ * it from something the artist drew. Measured on the samurai, one such patch
+ * survived, 1.16mm across, and it is the wedge that shows on the eye.
+ *
+ * 0.6mm closes all of them. It costs 0.32% of the middle tone's real area —
+ * the outermost sliver of anything genuinely narrower than about 1.2mm — and
+ * nothing visible with it. Rolex does not move at all at any setting between
+ * 0.25 and 0.8: its crown is far wider than either.
  */
-const REGION_HALF_WIDTH_MM = 0.25;
+const REGION_HALF_WIDTH_MM = 0.6;
 
 /**
  * What a fully closed band keeps of its range.
@@ -92,6 +102,7 @@ export function buildBandSquash(
   cuts: readonly number[],
   mmPerPx: number,
   filterPx: number,
+  regionHalfWidthMm: number = REGION_HALF_WIDTH_MM,
 ): BandSquash | null {
   const levels = cuts.length + 1;
   if (levels < 3 || !(mmPerPx > 0)) return null;
@@ -195,8 +206,8 @@ export function buildBandSquash(
   // thing that is really there has the same band both sides — the samurai iris
   // is red with the black of the eye either side, and closing it took the eye
   // out of the picture.
-  const limitCh = (REGION_HALF_WIDTH_MM / mmPerPx) * 3;
-  const R = Math.max(1, Math.round(REGION_HALF_WIDTH_MM / mmPerPx));
+  const limitCh = (regionHalfWidthMm / mmPerPx) * 3;
+  const R = Math.max(1, Math.round(regionHalfWidthMm / mmPerPx));
   const amount = new Uint8Array(n * levels);
   let marked = 0;
 
