@@ -529,9 +529,11 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      */
     const pendingRef = useRef<
       {
-        kind: "line" | "rect" | "ellipse";
+        kind: "line" | "rect" | "ellipse" | "text";
         from: { x: number; y: number };
         to: { x: number; y: number };
+        /** Only for text: what it says. The box is what it wraps to. */
+        body?: string;
       } | null
     >(null);
 
@@ -547,7 +549,9 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      * anyone has, for free, and it can be dragged to size by its own corner.
      * What it is showing is what will be laid down — same face, same size.
      */
-    const [textAt, setTextAt] = useState<{ x: number; y: number } | null>(null);
+    const [textAt, setTextAt] = useState<
+      { x: number; y: number; w?: number; h?: number } | null
+    >(null);
     const [draft, setDraft] = useState("");
     const boxRef = useRef<HTMLTextAreaElement>(null);
     const settleTextRef = useRef<(() => void) | null>(null);
@@ -715,7 +719,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
     /** The eight grips round a box, or the two ends of a line. */
     const gripsOf = (p: {
-      kind: "line" | "rect" | "ellipse";
+      kind: "line" | "rect" | "ellipse" | "text";
       from: { x: number; y: number };
       to: { x: number; y: number };
     }) => {
@@ -831,11 +835,12 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       const p = pendingRef.current;
       if (!p) return false;
       pendingRef.current = null;
-      if (Math.abs(p.to.x - p.from.x) < 0.5 && Math.abs(p.to.y - p.from.y) < 0.5) {
+      if (p.kind === "text" ? !p.body?.trim() : Math.abs(p.to.x - p.from.x) < 0.5 && Math.abs(p.to.y - p.from.y) < 0.5) {
         return false;
       }
       remember();
-      commitShape(p.kind, p.from, p.to);
+      if (p.kind === "text") commitText(p.from, p.to, p.body ?? "");
+      else commitShape(p.kind, p.from, p.to);
       return true;
     };
 
@@ -845,14 +850,22 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     const settleText = () => {
       if (!textAt) return;
       const body = draft;
-      const wide = boxRef.current?.offsetWidth ?? 240;
+      const box = boxRef.current;
+      const wide = slackInPicture(box?.offsetWidth ?? 240);
+      const tall = slackInPicture(box?.offsetHeight ?? 80);
 
       setTextAt(null);
       setDraft("");
 
+      // It becomes the working object rather than paint, so it can still be
+      // moved and resized. It only reaches the layer when it is finished with.
       if (body.trim()) {
-        remember();
-        commitText(textAt, body, wide);
+        pendingRef.current = {
+          kind: "text",
+          from: textAt,
+          to: { x: textAt.x + wide, y: textAt.y + tall },
+          body,
+        };
         drawRef.current?.();
       }
     };
@@ -867,23 +880,20 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      * picture and would otherwise come out back to front — which is the one
      * thing text cannot get away with.
      */
-    const commitText = (
-      at: { x: number; y: number },
+    const layText = (
+      ctx: CanvasRenderingContext2D,
+      from: { x: number; y: number },
+      to: { x: number; y: number },
       body: string,
-      boxWidthOnScreen: number,
     ) => {
-      const ctx = paintRef.current?.getContext("2d");
-      if (!ctx || !body.trim()) return;
-
-      const p = toLayer(at);
       const size = textInPicture();
-      const wide = slackInPicture(boxWidthOnScreen) * paintScaleRef.current;
+      const corner = toLayer({ x: Math.min(from.x, to.x), y: Math.min(from.y, to.y) });
+      const wide = Math.max(size, Math.abs(toLayer(to).x - toLayer(from).x));
 
-      ctx.save();
-      dressUp(ctx);
       layOutText(ctx);
       ctx.textBaseline = "top";
-      ctx.translate(p.x, p.y);
+      ctx.save();
+      ctx.translate(corner.x, corner.y);
       ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
 
       let line = 0;
@@ -903,6 +913,26 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         line++;
       }
 
+      ctx.restore();
+    };
+
+    /**
+     * Lays the text down for good, wrapped to its box.
+     *
+     * Mirrored on the way if the picture is, because the paint goes down with
+     * the picture and would otherwise come out back to front — which is the
+     * one thing text cannot get away with.
+     */
+    const commitText = (
+      from: { x: number; y: number },
+      to: { x: number; y: number },
+      body: string,
+    ) => {
+      const ctx = paintRef.current?.getContext("2d");
+      if (!ctx || !body.trim()) return;
+      ctx.save();
+      dressUp(ctx);
+      layText(ctx, from, to, body);
       ctx.restore();
     };
 
@@ -1129,11 +1159,13 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         ctx.restore();
       };
 
-      if (pendingRef.current) {
-        const { kind, from, to } = pendingRef.current;
+      const work = pendingRef.current;
+      if (work && work.kind === "text") {
+        inLayer((c) => layText(c, work.from, work.to, work.body ?? ""));
+      } else if (work) {
         inLayer((c) => {
-          shapePath(c, kind, toLayer(from), toLayer(to));
-          if (kind === "line" || !shapeFill) c.stroke();
+          shapePath(c, work.kind as "line" | "rect" | "ellipse", toLayer(work.from), toLayer(work.to));
+          if (work.kind === "line" || !shapeFill) c.stroke();
           else c.fill();
         });
       }
@@ -1408,7 +1440,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         // resized, inside it is moved, and anywhere else means it is finished
         // with and the click starts the next one.
         const working = pendingRef.current;
-        if (working && dragsAShape) {
+        if (working) {
           const slack = slackInPicture(HANDLE_SIZE + 6);
           const grip = gripsOf(working).find(
             (g) => Math.hypot(g.x - at.x, g.y - at.y) <= slack,
@@ -1648,6 +1680,45 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       }
     };
 
+    /** Text already placed goes back into a box to be retyped. */
+    const handleDoubleClick = (e: React.MouseEvent) => {
+      if (tool !== "text" || !image) return;
+
+      const work = pendingRef.current;
+      if (!work || work.kind !== "text") return;
+
+      const rect = containerRef.current!.getBoundingClientRect();
+      const { w: W, h: H } = viewRef.current;
+      const scene = {
+        x: (e.clientX - rect.left - W / 2) / viewScale + W / 2,
+        y: (e.clientY - rect.top - H / 2) / viewScale + H / 2,
+      };
+      const at = toPicture(scene.x, scene.y);
+      if (!at) return;
+
+      const x0 = Math.min(work.from.x, work.to.x);
+      const x1 = Math.max(work.from.x, work.to.x);
+      const y0 = Math.min(work.from.y, work.to.y);
+      const y1 = Math.max(work.from.y, work.to.y);
+      if (at.x < x0 || at.x > x1 || at.y < y0 || at.y > y1) return;
+
+      const onScreen = (v: number) => {
+        const { dw } = fitRef.current;
+        if (!image || !(dw > 0)) return v;
+        return v * (dw / image.naturalWidth) * viewScale;
+      };
+
+      pendingRef.current = null;
+      setDraft(work.body ?? "");
+      setTextAt({
+        x: x0,
+        y: y0,
+        w: Math.max(90, onScreen(x1 - x0)),
+        h: Math.max(34, onScreen(y1 - y0)),
+      });
+      draw();
+    };
+
     const handlePointerUp = () => {
       dragRef.current = null;
       grabRef.current = null;
@@ -1696,6 +1767,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
       >
         <canvas
@@ -1730,6 +1802,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
                 style={{
                   font: `${fontSize * viewScale}px ${fontFamily}`,
                   color: paintColor,
+                  ...(textAt.w ? { width: textAt.w } : {}),
+                  ...(textAt.h ? { height: textAt.h } : {}),
                 }}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -1743,7 +1817,11 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
                 }}
               />
               <div className="textBoxBar">
-                <button className="autoBtn" onClick={settleText} title="Place it (Ctrl+Enter)">
+                <button
+                  className="autoBtn"
+                  onClick={settleText}
+                  title="Put it on the picture — it stays movable until you change tool (Ctrl+Enter)"
+                >
                   Place
                 </button>
                 <button

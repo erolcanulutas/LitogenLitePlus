@@ -991,7 +991,7 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "rect", label: "Box", hint: "Drag out a filled rectangle." },
   { id: "ellipse", label: "Oval", hint: "Drag out a filled ellipse." },
   { id: "fill", label: "Fill", hint: "Flood everything of a near enough colour, from wherever you click." },
-  { id: "text", label: "Text", hint: "Click where it should go, then type. Ctrl+Enter places it." },
+  { id: "text", label: "Text", hint: "Click, type, Ctrl+Enter. It then sits there as a box you can drag, resize and restyle until you move on; double-click it to retype." },
 ];
 
 /**
