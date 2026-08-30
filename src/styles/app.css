@@ -97,6 +97,15 @@ body{
   outline:none;
 }
 
+/* The closed control is ours to colour; the list it drops down is the
+   operating system's, painted on its own light background. White on white is
+   what the panel's own text colour gets you there, so the list says otherwise. */
+select option,
+select optgroup{
+  color:#0f172a;
+  background:#ffffff;
+}
+
 .btn{
   background:#ffffff0a;
   border:1px solid rgba(255,255,255,.14);

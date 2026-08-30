@@ -4,6 +4,7 @@ import type { ImageEditorHandle, Tool } from "./ui/ImageEditor";
 
 import ImageControls from "./ui/ImageControls";
 import BandSlider from "./ui/BandSlider";
+import ColorField from "./ui/ColorField";
 import type { PreviewMesh } from "./ui/MeshPreview";
 
 // three.js is most of the bundle, and plenty of sessions never open the 3D
@@ -400,15 +401,175 @@ body {
   width: 90px;
 }
 
+.paintBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #ffffff08;
+}
+
 .toolRow {
   display: flex;
   gap: 2px;
 }
 
 .toolBtn {
-  padding: 3px 8px;
+  padding: 3px 9px;
   font-size: 11px;
   min-width: 0;
+}
+
+/* Fixed slots, so picking a tool greys controls out rather than moving them. */
+.paintSet {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.paintSet:has(input:disabled),
+.paintSet:has(button:disabled),
+.paintFont:disabled,
+.paintText:disabled {
+  opacity: 0.35;
+}
+
+.paintTag {
+  width: 44px;
+  text-align: right;
+  user-select: none;
+}
+
+.paintRange {
+  width: 84px;
+}
+
+.paintFont {
+  width: 150px;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.paintText {
+  width: 190px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #fff;
+  background: #00000040;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  outline: none;
+}
+
+.paintEnd {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.colorField {
+  position: relative;
+  display: inline-flex;
+}
+
+.colorPop {
+  position: absolute;
+  z-index: 40;
+  top: 28px;
+  left: 0;
+  width: 208px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: #0b1220;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+
+.colorSquare {
+  position: relative;
+  width: 188px;
+  height: 122px;
+  border-radius: 6px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.colorSquareWhite,
+.colorSquareBlack {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+}
+
+.colorSquareWhite {
+  background: linear-gradient(to right, #fff, transparent);
+}
+
+.colorSquareBlack {
+  background: linear-gradient(to top, #000, transparent);
+}
+
+.colorDot {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.colorHue {
+  width: 188px;
+  margin: 10px 0 8px;
+  appearance: none;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+.colorHue::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 16px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+
+.colorHex {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #fff;
+  background: #00000040;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  outline: none;
+}
+
+.colorPresets {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.colorPreset {
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .checkRow input[type="checkbox"] {
@@ -768,6 +929,22 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "ellipse", label: "Oval", hint: "Drag out a filled ellipse." },
   { id: "fill", label: "Fill", hint: "Flood everything of a near enough colour, from wherever you click." },
   { id: "pick", label: "Pick", hint: "Take the brush colour off the picture." },
+  { id: "text", label: "Text", hint: "Type in the box, then click to place it." },
+];
+
+/**
+ * Typefaces for the text tool.
+ *
+ * All of them ship with Windows apart from Outfit, which the page already
+ * loads for its own headings — so the list costs nothing to offer and every
+ * name in it draws as itself in the dropdown.
+ */
+const FONTS = [
+  "Outfit", "Arial", "Arial Black", "Impact", "Segoe UI", "Tahoma", "Verdana",
+  "Trebuchet MS", "Georgia", "Times New Roman", "Palatino Linotype", "Garamond",
+  "Cambria", "Constantia", "Corbel", "Candara", "Franklin Gothic Medium",
+  "Century Gothic", "Courier New", "Consolas", "Lucida Console",
+  "Comic Sans MS", "Segoe Script", "Segoe Print", "Ink Free", "Bahnschrift",
 ];
 
 const FLAT_HINT_KEY = "litogen.hideFlatHint";
@@ -929,6 +1106,12 @@ export default function App() {
   const [paintColor, setPaintColor] = useState("#ffffff");
   const [paintSize, setPaintSize] = useState(28);
   const [fillTolerance, setFillTolerance] = useState(40);
+  const [shapeFill, setShapeFill] = useState(true);
+  const [opacity, setOpacity] = useState(1);
+  const [softness, setSoftness] = useState(0);
+  const [text, setText] = useState("");
+  const [fontFamily, setFontFamily] = useState("Outfit");
+  const [fontSize, setFontSize] = useState(64);
   /** What the last Auto reading found, or null if it has not been asked. */
   const [autoNote, setAutoNote] = useState<string | null>(null);
 
@@ -2420,71 +2603,6 @@ export default function App() {
                   marginRight: 10,
                 }}
               >
-                <div className="toolRow">
-                  {TOOLS.map((t) => (
-                    <button
-                      key={t.id}
-                      className={`segment toolBtn ${tool === t.id ? "active" : ""}`}
-                      onClick={() => setTool(t.id)}
-                      title={t.hint}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-
-                {tool !== "crop" && tool !== "pick" && (
-                  <input
-                    type="color"
-                    className="paintSwatch"
-                    value={paintColor}
-                    disabled={tool === "erase"}
-                    onChange={(e) => setPaintColor(e.target.value)}
-                    title="Brush colour. White prints thin, dark prints thick."
-                  />
-                )}
-
-                {(tool === "brush" || tool === "erase" || tool === "line") && (
-                  <input
-                    className="range paintRange"
-                    type="range"
-                    min={2}
-                    max={120}
-                    step={1}
-                    value={paintSize}
-                    onChange={(e) => setPaintSize(Number(e.target.value))}
-                    title={`Brush width: ${paintSize} px`}
-                  />
-                )}
-
-                {tool === "fill" && (
-                  <input
-                    className="range paintRange"
-                    type="range"
-                    min={0}
-                    max={120}
-                    step={2}
-                    value={fillTolerance}
-                    onChange={(e) => setFillTolerance(Number(e.target.value))}
-                    title={`How far the fill spreads into neighbouring colours: ${fillTolerance}`}
-                  />
-                )}
-
-                <button
-                  className="autoBtn"
-                  onClick={() => editorRef.current?.undoPaint()}
-                  title="Undo the last thing painted"
-                >
-                  Undo
-                </button>
-                <button
-                  className="autoBtn"
-                  onClick={() => editorRef.current?.clearPaint()}
-                  title="Take all the paint off"
-                >
-                  Clear
-                </button>
-
                 <label
                   className="shadeToggle"
                   title={`Rotation lands on multiples of ${ROTATION_SNAP_DEG}° — both the crop box's handle and the rotation slider below. Off, either is free.`}
@@ -2546,6 +2664,149 @@ export default function App() {
             )}
           </div>
 
+          {view === "editor" && (
+            <div className="paintBar">
+              <div className="toolRow">
+                {TOOLS.map((t) => (
+                  <button
+                    key={t.id}
+                    className={`segment toolBtn ${tool === t.id ? "active" : ""}`}
+                    onClick={() => setTool(t.id)}
+                    title={t.hint}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Every setting is always here, greyed when the tool has no use
+                  for it. Showing only what applies made the row rearrange
+                  itself under the pointer every time a tool was picked. */}
+              <div className="paintSet" title="Brush colour. White prints thin, dark prints thick.">
+                <ColorField
+                  value={paintColor}
+                  onChange={setPaintColor}
+                  disabled={tool === "crop" || tool === "erase" || tool === "pick"}
+                  presets={colors}
+                />
+              </div>
+
+              <label className="paintSet" title={`Brush and outline width: ${paintSize} px`}>
+                <span className="paintTag">Size</span>
+                <input
+                  className="range paintRange"
+                  type="range"
+                  min={2}
+                  max={160}
+                  step={1}
+                  value={paintSize}
+                  disabled={tool === "crop" || tool === "fill" || tool === "pick" || tool === "text"}
+                  onChange={(e) => setPaintSize(Number(e.target.value))}
+                />
+              </label>
+
+              <label className="paintSet" title={`How much shows through: ${Math.round(opacity * 100)}%`}>
+                <span className="paintTag">Opacity</span>
+                <input
+                  className="range paintRange"
+                  type="range"
+                  min={5}
+                  max={100}
+                  step={5}
+                  value={Math.round(opacity * 100)}
+                  disabled={tool === "crop" || tool === "pick"}
+                  onChange={(e) => setOpacity(Number(e.target.value) / 100)}
+                />
+              </label>
+
+              <label className="paintSet" title={`How far the edge is feathered: ${Math.round(softness * 100)}%`}>
+                <span className="paintTag">Soft</span>
+                <input
+                  className="range paintRange"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={Math.round(softness * 100)}
+                  disabled={tool === "crop" || tool === "fill" || tool === "pick"}
+                  onChange={(e) => setSoftness(Number(e.target.value) / 100)}
+                />
+              </label>
+
+              <label className="paintSet" title={`How far a fill spreads into neighbouring colours: ${fillTolerance}`}>
+                <span className="paintTag">Spread</span>
+                <input
+                  className="range paintRange"
+                  type="range"
+                  min={0}
+                  max={160}
+                  step={2}
+                  value={fillTolerance}
+                  disabled={tool !== "fill"}
+                  onChange={(e) => setFillTolerance(Number(e.target.value))}
+                />
+              </label>
+
+              <label className="paintSet shadeToggle" title="Boxes and ovals come out solid, or as an outline of the brush's width.">
+                <input
+                  type="checkbox"
+                  checked={shapeFill}
+                  disabled={tool !== "rect" && tool !== "ellipse"}
+                  onChange={(e) => setShapeFill(e.target.checked)}
+                />
+                <span>Solid</span>
+              </label>
+
+              <select
+                className="paintFont"
+                value={fontFamily}
+                disabled={tool !== "text"}
+                onChange={(e) => setFontFamily(e.target.value)}
+                title="Typeface"
+              >
+                {FONTS.map((name) => (
+                  <option key={name} value={name} style={{ fontFamily: name }}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+
+              <label className="paintSet" title={`Text size: ${fontSize} px`}>
+                <span className="paintTag">Text</span>
+                <input
+                  className="range paintRange"
+                  type="range"
+                  min={8}
+                  max={300}
+                  step={2}
+                  value={fontSize}
+                  disabled={tool !== "text"}
+                  onChange={(e) => setFontSize(Number(e.target.value))}
+                />
+              </label>
+
+              <input
+                className="paintText"
+                value={text}
+                placeholder="Type, then click to place"
+                disabled={tool !== "text"}
+                onChange={(e) => setText(e.target.value)}
+              />
+
+              <div className="paintEnd">
+                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title="Step back">
+                  Undo
+                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title="Step forward again">
+                  Redo
+                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title="Take all the paint off">
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Both stay mounted: the editor owns the crop, and remounting the
               WebGL context on every tab switch is wasteful. */}
           <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
@@ -2572,6 +2833,12 @@ export default function App() {
                 paintColor={paintColor}
                 paintSize={paintSize}
                 fillTolerance={fillTolerance}
+                shapeFill={shapeFill}
+                opacity={opacity}
+                softness={softness}
+                text={text}
+                fontFamily={fontFamily}
+                fontSize={fontSize}
                 onPickColor={setPaintColor}
                 frameMm={frameMm}
                 widthMm={widthMm}

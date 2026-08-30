@@ -62,12 +62,14 @@ export type Tool =
   | "rect"
   | "ellipse"
   | "fill"
-  | "pick";
+  | "pick"
+  | "text";
 
 export type ImageEditorHandle = {
   reset: () => void;
-  /** Undoes the last brush stroke; strokes are kept a dozen deep. */
+  /** Steps back through the last dozen things painted, and forward again. */
   undoPaint: () => void;
+  redoPaint: () => void;
   clearPaint: () => void;
 };
 
@@ -128,6 +130,16 @@ type Props = {
   paintSize?: number;
   /** How close a colour has to be for the fill to run into it, 0..255. */
   fillTolerance?: number;
+  /** Boxes and ovals come out solid, or as an outline of the brush's width. */
+  shapeFill?: boolean;
+  /** 0..1. Anything under one lets what is underneath show through. */
+  opacity?: number;
+  /** 0..1 of the brush's own width, as how far its edge is feathered. */
+  softness?: number;
+  text?: string;
+  fontFamily?: string;
+  /** Cap height on screen, like the brush width, so the zoom does not move it. */
+  fontSize?: number;
   onPickColor?: (hex: string) => void;
   onImageData: (img: ImageData | null) => void;
 };
@@ -183,6 +195,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       image, cropRatio, shapeId, rotate, flipH, flipV,
       bgColor, detail, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
       tool = "crop", paintColor, paintSize, fillTolerance, onPickColor,
+      shapeFill = true, opacity = 1, softness = 0,
+      text = "", fontFamily = "Arial", fontSize = 48,
       onImageData,
     },
     ref
@@ -214,16 +228,29 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       },
       undoPaint: () => {
         const layer = paintRef.current;
+        const ctx = layer?.getContext("2d", { willReadFrequently: true });
         const back = undoRef.current.pop();
-        if (!layer || !back) return;
-        layer.getContext("2d")?.putImageData(back, 0, 0);
+        if (!layer || !ctx || !back) return;
+        redoRef.current.push(ctx.getImageData(0, 0, layer.width, layer.height));
+        ctx.putImageData(back, 0, 0);
+        drawRef.current?.();
+      },
+      redoPaint: () => {
+        const layer = paintRef.current;
+        const ctx = layer?.getContext("2d", { willReadFrequently: true });
+        const forward = redoRef.current.pop();
+        if (!layer || !ctx || !forward) return;
+        undoRef.current.push(ctx.getImageData(0, 0, layer.width, layer.height));
+        ctx.putImageData(forward, 0, 0);
         drawRef.current?.();
       },
       clearPaint: () => {
         const layer = paintRef.current;
-        if (!layer) return;
-        undoRef.current = [];
-        layer.getContext("2d")?.clearRect(0, 0, layer.width, layer.height);
+        const ctx = layer?.getContext("2d", { willReadFrequently: true });
+        if (!layer || !ctx) return;
+        undoRef.current.push(ctx.getImageData(0, 0, layer.width, layer.height));
+        redoRef.current = [];
+        ctx.clearRect(0, 0, layer.width, layer.height);
         drawRef.current?.();
       },
     }));
@@ -468,6 +495,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
      */
     const paintRef = useRef<HTMLCanvasElement | null>(null);
     const undoRef = useRef<ImageData[]>([]);
+    const redoRef = useRef<ImageData[]>([]);
     const strokeRef = useRef<{ x: number; y: number } | null>(null);
     const hoverRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -488,6 +516,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
     useEffect(() => {
       undoRef.current = [];
+      redoRef.current = [];
       if (!image) {
         paintRef.current = null;
         return;
@@ -528,16 +557,38 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     };
 
     /** Every tool but the crop frame draws, and they all draw the same way. */
-    const paints = tool !== "crop" && tool !== "pick";
     const dragsAShape = tool === "line" || tool === "rect" || tool === "ellipse";
+    /** Only the freehand tools want a ring; a shape shows itself as it is drawn. */
+    const showsRing = tool === "brush" || tool === "erase";
 
     const dressUp = (ctx: CanvasRenderingContext2D) => {
       ctx.globalCompositeOperation = tool === "erase" ? "destination-out" : "source-over";
+      ctx.globalAlpha = Math.max(0.02, Math.min(1, opacity));
       ctx.strokeStyle = paintColor ?? "#ffffff";
       ctx.fillStyle = ctx.strokeStyle;
       ctx.lineWidth = brushInPicture();
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
+
+      // Feathering costs a blur of the whole stroke, so it is left off
+      // entirely rather than set to zero — a filter of "blur(0px)" still puts
+      // the canvas through the slow path.
+      const feather = softness * brushInPicture() * 0.25;
+      if (feather > 0.4) ctx.filter = `blur(${feather.toFixed(2)}px)`;
+    };
+
+    /** The text as it will be stamped, in the picture's own pixels. */
+    const textInPicture = () => {
+      const { dw } = fitRef.current;
+      if (!image || !(dw > 0)) return 1;
+      const perPixel = (dw / image.naturalWidth) * viewScale;
+      return Math.max(1, fontSize / Math.max(1e-6, perPixel));
+    };
+
+    const layOutText = (ctx: CanvasRenderingContext2D) => {
+      ctx.font = `${textInPicture()}px ${fontFamily}`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
     };
 
     const strokeTo = (from: { x: number; y: number }, to: { x: number; y: number }) => {
@@ -581,8 +632,19 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.save();
       dressUp(ctx);
       shapePath(ctx, a, b);
-      if (tool === "line") ctx.stroke();
+      if (tool === "line" || !shapeFill) ctx.stroke();
       else ctx.fill();
+      ctx.restore();
+    };
+
+    /** Stamps the typed text with its top-left corner where it was clicked. */
+    const commitText = (at: { x: number; y: number }) => {
+      const ctx = paintRef.current?.getContext("2d");
+      if (!ctx || !text) return;
+      ctx.save();
+      dressUp(ctx);
+      layOutText(ctx);
+      ctx.fillText(text, at.x, at.y);
       ctx.restore();
     };
 
@@ -768,18 +830,33 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       if (paintRef.current) {
         ctx.drawImage(paintRef.current, -dw / 2, -dh / 2, dw, dh);
       }
-      if (pendingRef.current) {
-        // Drawn exactly as it will land, so there is nothing to be surprised by
-        // when the button comes up.
-        const { from, to } = pendingRef.current;
+      // Drawn exactly where it will land, so there is nothing to be surprised
+      // by once the button comes up.
+      const inPicture = (run: (c: CanvasRenderingContext2D) => void) => {
         ctx.save();
         ctx.translate(-dw / 2, -dh / 2);
         ctx.scale(dw / image.naturalWidth, dh / image.naturalHeight);
         dressUp(ctx);
-        shapePath(ctx, from, to);
-        if (tool === "line") ctx.stroke();
-        else ctx.fill();
+        run(ctx);
         ctx.restore();
+      };
+
+      if (pendingRef.current) {
+        const { from, to } = pendingRef.current;
+        inPicture((c) => {
+          shapePath(c, from, to);
+          if (tool === "line" || !shapeFill) c.stroke();
+          else c.fill();
+        });
+      } else if (tool === "text" && text && hoverRef.current) {
+        const at = toPicture(hoverRef.current.x, hoverRef.current.y);
+        if (at) {
+          inPicture((c) => {
+            c.globalAlpha *= 0.65;
+            layOutText(c);
+            c.fillText(text, at.x, at.y);
+          });
+        }
       }
       ctx.restore();
 
@@ -903,7 +980,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       // 5. The brush, so its width is something you can see rather than guess.
       // Drawn after the zoom has been put back, so the pointer's scene position
       // has to come forward to the screen with it.
-      if (paints && hoverRef.current) {
+      if (showsRing && hoverRef.current) {
         const sx = (hoverRef.current.x - W / 2) * viewScale + W / 2;
         const sy = (hoverRef.current.y - H / 2) * viewScale + H / 2;
         const r = ((brushInPicture() * dw) / image.naturalWidth / 2) * viewScale;
@@ -924,7 +1001,8 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       if (ringOnlyRef.current) ringOnlyRef.current = false;
       else triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
-        frameMm, widthMm, bgColor, detail, freeRatio, tool, paintColor, paintSize]);
+        frameMm, widthMm, bgColor, detail, freeRatio, tool, paintColor, paintSize,
+        shapeFill, opacity, softness, text, fontFamily, fontSize]);
 
     useEffect(() => {
       drawRef.current = draw;
@@ -981,6 +1059,15 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         if (layer && lctx) {
           undoRef.current.push(lctx.getImageData(0, 0, layer.width, layer.height));
           if (undoRef.current.length > 12) undoRef.current.shift();
+          // Doing something new is where a branch that was undone stops being
+          // reachable, so that is where the way forward is dropped.
+          redoRef.current = [];
+        }
+
+        if (tool === "text") {
+          commitText(at);
+          draw();
+          return;
         }
 
         if (tool === "fill") {
@@ -1208,6 +1295,15 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       draw();
     }, [draw]);
 
+    // The freehand tools draw their own ring and it is the better pointer, so
+    // the system one gets out of the way. Everything else wants to be aimed.
+    const cursor =
+      tool === "brush" || tool === "erase"
+        ? "none"
+        : tool === "crop"
+          ? "crosshair"
+          : "default";
+
     return (
       <div
         ref={containerRef}
@@ -1215,7 +1311,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
           width: "100%",
           height: "100%",
           touchAction: "none",
-          cursor: "crosshair",
+          cursor,
           overflow: "hidden",
         }}
         onPointerDown={handlePointerDown}
