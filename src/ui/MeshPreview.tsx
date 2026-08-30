@@ -10,6 +10,17 @@ export type PreviewMesh = {
   bandStarts: number[];
   /** One CSS colour per band. */
   colors: string[];
+  /**
+   * Which way the picture faces, if the caller knows.
+   *
+   * It always does — the relief is built on +z and standing the model up turns
+   * that into -y — and it is worth saying rather than working out, because the
+   * shape of the model is not a reliable guide. Guessing from the bounding box
+   * means taking its thinnest axis and pointing away from the base plane, and a
+   * curved model has no single base plane: bend it far enough and its edges
+   * rise past its face, so the guess turns round and shows the back.
+   */
+  faceAxis?: [number, number, number];
 };
 
 type Props = {
@@ -61,6 +72,15 @@ export default function MeshPreview({
   const fitRef = useRef<(() => void) | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+
+  // The scene is built once and the geometry swapped into it, so framing runs
+  // long after this render's props are gone. Kept in a ref so it reads the mesh
+  // that is actually on screen.
+  const meshRef = useRef<PreviewMesh | null>(null);
+  // Set before the effect that swaps the geometry in, which is what frames it.
+  useEffect(() => {
+    meshRef.current = mesh;
+  }, [mesh]);
 
   // Scene lives for the lifetime of the panel; only the geometry swaps.
   useEffect(() => {
@@ -140,7 +160,12 @@ export default function MeshPreview({
       // Face the picture, whichever way the model is oriented, and keep "up"
       // off the view axis — otherwise the orbit degenerates.
       const box = geo.boundingBox;
-      const axis = box ? reliefAxis(box) : new THREE.Vector3(0, -1, 0);
+      const told = meshRef.current?.faceAxis;
+      const axis = told
+        ? new THREE.Vector3(told[0], told[1], told[2]).normalize()
+        : box
+          ? reliefAxis(box)
+          : new THREE.Vector3(0, -1, 0);
       const up = Math.abs(axis.z) > 0.5
         ? new THREE.Vector3(0, 1, 0)
         : new THREE.Vector3(0, 0, 1);

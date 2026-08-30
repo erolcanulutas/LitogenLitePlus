@@ -386,6 +386,20 @@ body {
   user-select: none;
 }
 
+.paintSwatch {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.paintRange {
+  width: 90px;
+}
+
 .checkRow input[type="checkbox"] {
   width: 15px;
   height: 15px;
@@ -879,6 +893,19 @@ export default function App() {
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
   const [snapRotation, setSnapRotation] = useState(false);
+
+  /**
+   * Painting on the picture before it becomes a model.
+   *
+   * Cheaper than going back to an image editor for what this actually gets
+   * used for: taking out a stray mark the tracing keeps finding, closing a gap
+   * in a logo, blocking off a corner. White prints thin and dark prints thick,
+   * so the brush colour is a thickness as much as a colour.
+   */
+  const [paintOn, setPaintOn] = useState(false);
+  const [paintColor, setPaintColor] = useState("#ffffff");
+  const [paintSize, setPaintSize] = useState(28);
+  const [paintErase, setPaintErase] = useState(false);
   /** What the last Auto reading found, or null if it has not been asked. */
   const [autoNote, setAutoNote] = useState<string | null>(null);
 
@@ -1095,8 +1122,8 @@ export default function App() {
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
   const [view, setView] = useState<"editor" | "preview">("editor");
   const [flatShading, setFlatShading] = useState(true);
-  const [lightBackground, setLightBackground] = useState(false);
-  const [showGrid, setShowGrid] = useState(false);
+  const [lightBackground, setLightBackground] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{
@@ -1509,6 +1536,8 @@ export default function App() {
           triangleCount: result.previewTriangles,
           bandStarts: result.previewBands,
           colors: [...colors],
+          // Built on +z, and standing it up turns that into -y.
+          faceAxis: orientation === "flat" ? [0, 0, 1] : [0, -1, 0],
         });
         setPreviewKey(settingsKey);
         setView("preview");
@@ -1652,7 +1681,11 @@ export default function App() {
           <select
             className="spinInput"
             value={shapeId}
-            onChange={(e) => setShapeId(e.target.value as ShapeId)}
+            onChange={(e) => {
+              setShapeId(e.target.value as ShapeId);
+              // The crop follows the shape, so that is what wants looking at.
+              setView("editor");
+            }}
           >
             {SHAPES.map((s) => (
               <option key={s.id} value={s.id}>
@@ -1910,34 +1943,6 @@ export default function App() {
             </div>
           </div>
 
-          <div className="label-row" style={{ marginTop: 4 }}>
-            <label className="miniLabel">Print Orientation</label>
-            <InfoIcon text="Vertical stands the lithophane up — best for single colour, and built a little under size so it still fits its frame. Flat lays it down so the relief runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer, and no trim needed." />
-          </div>
-
-          <div className="segmented">
-            <button
-              className={`segment ${orientation === "vertical" ? "active" : ""}`}
-              onClick={() => setOrientation("vertical")}
-            >
-              Vertical
-            </button>
-            <button
-              className={`segment ${orientation === "flat" ? "active" : ""}`}
-              onClick={() => setOrientation("flat")}
-            >
-              Flat
-            </button>
-          </div>
-
-          {orientation === "vertical" && (
-            <div className="bandHint">
-              Built at {buildWidthMm.toFixed(2)} mm, {VERTICAL_TRIM_MM.toFixed(2)}{" "}
-              mm under the {widthMm.toFixed(2)} mm set above — upright prints
-              come out a touch wide and stop fitting their frame. Flat needs no
-              trim.
-            </div>
-          )}
           </>)}
 
           {inlayMode && (
@@ -1993,6 +1998,35 @@ export default function App() {
                 {((baseLayers + pictureLayers) * layerHeight).toFixed(2)} mm total
               </div>
             </>
+          )}
+
+          <div className="label-row" style={{ marginTop: 12 }}>
+            <label className="miniLabel">Print Orientation</label>
+            <InfoIcon text="Vertical stands the model up — best for a single colour, and built a little under size so it still fits its frame. Flat lays it down so the thickness runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer, and no trim needed. An inlay is flat by nature, but standing one up is what you want for a curved panel." />
+          </div>
+
+          <div className="segmented">
+            <button
+              className={`segment ${orientation === "vertical" ? "active" : ""}`}
+              onClick={() => setOrientation("vertical")}
+            >
+              Vertical
+            </button>
+            <button
+              className={`segment ${orientation === "flat" ? "active" : ""}`}
+              onClick={() => setOrientation("flat")}
+            >
+              Flat
+            </button>
+          </div>
+
+          {orientation === "vertical" && (
+            <div className="bandHint">
+              Built at {buildWidthMm.toFixed(2)} mm, {VERTICAL_TRIM_MM.toFixed(2)}{" "}
+              mm under the {widthMm.toFixed(2)} mm set above — upright prints
+              come out a touch wide and stop fitting their frame. Flat needs no
+              trim.
+            </div>
           )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
@@ -2131,10 +2165,24 @@ export default function App() {
           <>
           <div className="label-row">
             <label className="miniLabel">
-              Color Bands · {totalLayers} layers
+              Color Bands ·{" "}
+              {orientation === "flat"
+                ? `${totalLayers} layers`
+                : `${maxT.toFixed(2)} mm thick`}
             </label>
             <InfoIcon text="Slices the lithophane into stacked bodies through its thickness and exports a 3MF instead of an STL. The bodies come out as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL." />
           </div>
+
+          {orientation === "vertical" && (
+            <div className="bandHint">
+              Standing up, the print is {buildHeightMm.toFixed(1)} mm tall —{" "}
+              {Math.max(1, Math.round(buildHeightMm / layerHeight))} layers. The
+              bands below run through its {maxT.toFixed(2)} mm of thickness,
+              which is across the layers rather than along them, so every layer
+              contains all of them and the printer changes filament on each one.
+              Lay it flat and each band becomes a run of layers instead.
+            </div>
+          )}
 
           <BandSlider
             totalLayers={totalLayers}
@@ -2349,6 +2397,60 @@ export default function App() {
                   marginRight: 10,
                 }}
               >
+                <label className="shadeToggle" title="Draw straight onto the picture. White prints thin, dark prints thick, so the brush is a thickness as much as a colour. Strokes stay with the picture through cropping, rotating and flipping.">
+                  <input
+                    type="checkbox"
+                    checked={paintOn}
+                    onChange={(e) => setPaintOn(e.target.checked)}
+                  />
+                  <span>Paint</span>
+                </label>
+
+                {paintOn && (
+                  <>
+                    <input
+                      type="color"
+                      className="paintSwatch"
+                      value={paintColor}
+                      disabled={paintErase}
+                      onChange={(e) => setPaintColor(e.target.value)}
+                      title="Brush colour"
+                    />
+                    <label className="shadeToggle" title="Rub strokes out again rather than painting over them.">
+                      <input
+                        type="checkbox"
+                        checked={paintErase}
+                        onChange={(e) => setPaintErase(e.target.checked)}
+                      />
+                      <span>Erase</span>
+                    </label>
+                    <input
+                      className="range paintRange"
+                      type="range"
+                      min={2}
+                      max={120}
+                      step={1}
+                      value={paintSize}
+                      onChange={(e) => setPaintSize(Number(e.target.value))}
+                      title={`Brush width: ${paintSize} px`}
+                    />
+                    <button
+                      className="autoBtn"
+                      onClick={() => editorRef.current?.undoPaint()}
+                      title="Undo the last stroke"
+                    >
+                      Undo
+                    </button>
+                    <button
+                      className="autoBtn"
+                      onClick={() => editorRef.current?.clearPaint()}
+                      title="Take all the paint off"
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
+
                 <label
                   className="shadeToggle"
                   title={`Rotation lands on multiples of ${ROTATION_SNAP_DEG}° — both the crop box's handle and the rotation slider below. Off, either is free.`}
@@ -2432,6 +2534,10 @@ export default function App() {
                 flipV={flipV}
                 bgColor={bgColor}
                 detail={traceDetail}
+                paintOn={paintOn}
+                paintColor={paintColor}
+                paintSize={paintSize}
+                paintErase={paintErase}
                 frameMm={frameMm}
                 widthMm={widthMm}
                 snapDeg={snapRotation ? ROTATION_SNAP_DEG : 0}

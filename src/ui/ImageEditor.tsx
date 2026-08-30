@@ -49,6 +49,9 @@ type DragState = {
 
 export type ImageEditorHandle = {
   reset: () => void;
+  /** Undoes the last brush stroke; strokes are kept a dozen deep. */
+  undoPaint: () => void;
+  clearPaint: () => void;
 };
 
 type Props = {
@@ -94,6 +97,19 @@ type Props = {
    * that is already off-step into line; the next drag does that.
    */
   snapDeg: number;
+  /**
+   * Painting straight onto the picture.
+   *
+   * Kept on a layer of its own, in the picture's own pixels, and stamped over
+   * the picture everywhere it is drawn — the panel and the crop handed to the
+   * generator both. That is what makes a stroke survive cropping, rotating and
+   * flipping: it is part of the picture from then on, not part of the view.
+   */
+  paintOn?: boolean;
+  paintColor?: string;
+  /** Brush width on screen, so it stays the size it looks whatever the zoom. */
+  paintSize?: number;
+  paintErase?: boolean;
   onImageData: (img: ImageData | null) => void;
 };
 
@@ -147,6 +163,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     {
       image, cropRatio, shapeId, rotate, flipH, flipV,
       bgColor, detail, frameMm, widthMm, snapDeg, freeRatio, onCropRatioChange,
+      paintOn, paintColor, paintSize, paintErase,
       onImageData,
     },
     ref
@@ -176,7 +193,24 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         setCrop(DEFAULT_CROP);
         setViewScale(1);
       },
+      undoPaint: () => {
+        const layer = paintRef.current;
+        const back = undoRef.current.pop();
+        if (!layer || !back) return;
+        layer.getContext("2d")?.putImageData(back, 0, 0);
+        drawRef.current?.();
+      },
+      clearPaint: () => {
+        const layer = paintRef.current;
+        if (!layer) return;
+        undoRef.current = [];
+        layer.getContext("2d")?.clearRect(0, 0, layer.width, layer.height);
+        drawRef.current?.();
+      },
     }));
+
+    // draw() is defined further down; the handle above needs to reach it.
+    const drawRef = useRef<(() => void) | null>(null);
 
     /**
      * Local-space Y of the rotation grip.
@@ -395,6 +429,9 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
         octx.rotate(deg2rad(rotate));
         octx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
         octx.drawImage(image, -dwBg / 2, -dhBg / 2, dwBg, dhBg);
+        if (paintRef.current) {
+          octx.drawImage(paintRef.current, -dwBg / 2, -dhBg / 2, dwBg, dhBg);
+        }
         octx.restore();
 
         onImageData(octx.getImageData(0, 0, OUT_W, OUT_H));
@@ -404,6 +441,89 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     /* ---------------------------------------------
      * Main Draw Loop
      * --------------------------------------------- */
+    /**
+     * The paint, at the picture's own resolution.
+     *
+     * A layer of its own rather than strokes drawn into the picture, so it can
+     * be undone and cleared, and so nothing is lost to being drawn twice.
+     */
+    const paintRef = useRef<HTMLCanvasElement | null>(null);
+    const undoRef = useRef<ImageData[]>([]);
+    const strokeRef = useRef<{ x: number; y: number } | null>(null);
+    const hoverRef = useRef<{ x: number; y: number } | null>(null);
+
+    /**
+     * Set for a redraw that only moved the brush ring.
+     *
+     * Every draw ends by handing the crop over to the generator, which reads a
+     * couple of million pixels back off a canvas. Moving the pointer with the
+     * brush on redraws constantly and none of those redraws change the picture,
+     * so they skip that last step.
+     */
+    const ringOnlyRef = useRef(false);
+
+    useEffect(() => {
+      undoRef.current = [];
+      if (!image) {
+        paintRef.current = null;
+        return;
+      }
+      const c = document.createElement("canvas");
+      c.width = image.naturalWidth;
+      c.height = image.naturalHeight;
+      paintRef.current = c;
+    }, [image]);
+
+    /** Where a point in the drawn scene lands in the picture, in its pixels. */
+    const toPicture = (x: number, y: number) => {
+      const { w: W, h: H } = viewRef.current;
+      const { dw, dh } = fitRef.current;
+      if (!image || !(dw > 0) || !(dh > 0)) return null;
+
+      const rad = deg2rad(rotate);
+      const a = x - W / 2;
+      const b = y - H / 2;
+
+      let u = a * Math.cos(rad) + b * Math.sin(rad);
+      let v = -a * Math.sin(rad) + b * Math.cos(rad);
+      if (flipH) u = -u;
+      if (flipV) v = -v;
+
+      return {
+        x: ((u + dw / 2) / dw) * image.naturalWidth,
+        y: ((v + dh / 2) / dh) * image.naturalHeight,
+      };
+    };
+
+    /** Brush width in the picture's pixels, from its width on screen. */
+    const brushInPicture = () => {
+      const { dw } = fitRef.current;
+      if (!image || !(dw > 0)) return 1;
+      const perPixel = (dw / image.naturalWidth) * viewScale;
+      return Math.max(1, (paintSize ?? 24) / Math.max(1e-6, perPixel));
+    };
+
+    const strokeTo = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      const layer = paintRef.current;
+      if (!layer) return;
+      const ctx = layer.getContext("2d");
+      if (!ctx) return;
+
+      ctx.save();
+      ctx.globalCompositeOperation = paintErase ? "destination-out" : "source-over";
+      ctx.strokeStyle = paintColor ?? "#ffffff";
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.lineWidth = brushInPicture();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      ctx.restore();
+    };
+
     const draw = useCallback(() => {
       const canvas = canvasRef.current;
       if (!canvas || !image) return;
@@ -459,6 +579,9 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.rotate(rad);
       ctx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
       ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
+      if (paintRef.current) {
+        ctx.drawImage(paintRef.current, -dw / 2, -dh / 2, dw, dh);
+      }
       ctx.restore();
 
       // 3. Shadow Mask
@@ -578,10 +701,35 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       ctx.restore();
       ctx.restore(); // zoom restore
 
-      // 5. Output generation
-      triggerOutputGeneration(dw, dh);
+      // 5. The brush, so its width is something you can see rather than guess.
+      // Drawn after the zoom has been put back, so the pointer's scene position
+      // has to come forward to the screen with it.
+      if (paintOn && hoverRef.current) {
+        const sx = (hoverRef.current.x - W / 2) * viewScale + W / 2;
+        const sy = (hoverRef.current.y - H / 2) * viewScale + H / 2;
+        const r = ((brushInPicture() * dw) / image.naturalWidth / 2) * viewScale;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(1, r), 0, Math.PI * 2);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(255,255,255,0.6)";
+        ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(0,0,0,0.8)";
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 6. Output generation
+      if (ringOnlyRef.current) ringOnlyRef.current = false;
+      else triggerOutputGeneration(dw, dh);
     }, [image, crop, rotate, flipH, flipV, shapeId, cropRatio, viewScale,
-        frameMm, widthMm, bgColor, detail, freeRatio]);
+        frameMm, widthMm, bgColor, detail, freeRatio, paintOn, paintSize]);
+
+    useEffect(() => {
+      drawRef.current = draw;
+    }, [draw]);
 
     /* ---------------------------------------------
      * Interaction Logic
@@ -614,6 +762,27 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       if (!image) return;
 
       const { x, y } = getScenePointerPos(e);
+
+      if (paintOn) {
+        const at = toPicture(x, y);
+        const layer = paintRef.current;
+        if (!at || !layer) return;
+
+        // One snapshot per stroke, not per move, so undo steps back the way it
+        // was drawn. A dozen is plenty and keeps a big picture's worth of them
+        // from sitting in memory.
+        const ctx = layer.getContext("2d");
+        if (ctx) {
+          undoRef.current.push(ctx.getImageData(0, 0, layer.width, layer.height));
+          if (undoRef.current.length > 12) undoRef.current.shift();
+        }
+
+        strokeRef.current = at;
+        hoverRef.current = { x, y };
+        strokeTo(at, at);
+        draw();
+        return;
+      }
       const { w: W, h: H } = viewRef.current;
       const { dw } = fitRef.current;
 
@@ -700,6 +869,24 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
+      if (paintOn) {
+        const { x, y } = getScenePointerPos(e);
+        hoverRef.current = { x, y };
+
+        const from = strokeRef.current;
+        if (from) {
+          const to = toPicture(x, y);
+          if (to) {
+            strokeTo(from, to);
+            strokeRef.current = to;
+          }
+        } else {
+          ringOnlyRef.current = true;
+        }
+        draw();
+        return;
+      }
+
       if (!dragRef.current) return;
       e.preventDefault();
 
@@ -765,6 +952,10 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
 
     const handlePointerUp = () => {
       dragRef.current = null;
+      if (strokeRef.current) {
+        strokeRef.current = null;
+        draw();
+      }
     };
 
     useEffect(() => {
