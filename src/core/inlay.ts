@@ -105,6 +105,12 @@ export function emitInlayTriangle(
     ax, ay, al, bx, by, bl, cx, cy, cl, cuts, lo, hi, field,
   );
 
+  // A band squeezed shut keeps its plateau and its walls even though there is
+  // nothing left of it. Dropping them was tried: whether a band comes out
+  // degenerate is decided per triangle, and a band can be degenerate in one
+  // and not in the one beside it, so the two stop agreeing about what wall
+  // stands between them. Left in, the closed band is a body of no volume that
+  // costs two unmatched edges in the whole model and nothing else.
   for (let k = lo; k <= hi; k++) {
     let band = tri;
     if (k > 0) band = clipByLum(band, cuts[k - 1], true);

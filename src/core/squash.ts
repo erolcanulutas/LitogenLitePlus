@@ -72,11 +72,22 @@ const REGION_HALF_WIDTH_MM = 0.6;
 /**
  * What a fully closed band keeps of its range.
  *
- * Not zero, so the remap stays strictly increasing and every band keeps a
- * preimage to be found in. At a fiftieth of its width the ring comes out around
- * 5µm across — a fortieth of a layer, and nothing a nozzle can lay down.
+ * Zero. A band closed to a fiftieth of its width is 5µm across — far under
+ * anything a nozzle lays down, and it was chosen to keep the remap strictly
+ * increasing. But a line of no width is still a line: it drew as a hairline in
+ * the preview all the way round every shape, about 1mm2 of it, because a
+ * region a thousandth of a millimetre wide still has two sides and still gets
+ * a face between them.
+ *
+ * At zero the two boundaries land on the same contour instead. The band gets
+ * no width at all, its plateaus come out degenerate and are dropped, its body
+ * disappears, and the two tones either side meet on exactly the same line. The
+ * remap stops being strictly increasing at that one point, which the crossing
+ * solve does not mind: both cuts bracket the same jump, so it converges to the
+ * same place from either side and the two triangles sharing an edge still
+ * agree.
  */
-const MIN_KEEP = 0.02;
+const MIN_KEEP = 0;
 
 /**
  * How far the verdict is feathered, in multiples of the sampling window.
