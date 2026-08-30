@@ -142,6 +142,69 @@ function quantise(
 }
 
 /**
+ * Takes the wobble out of the quantised picture.
+ *
+ * A hard edge in a JPEG does not arrive hard. The compression rings around it,
+ * strongest where the contrast is highest, and thresholding that ringing gives
+ * a boundary that jitters in and out by a pixel every few pixels along. It is
+ * not much to look at as pixels, but every one of those jags is a corner where
+ * the boundary changes direction twice, and to anything reading the picture as
+ * shapes it is a corner in the artwork.
+ *
+ * So each pixel is handed to whichever tone most of its neighbours are. A jag
+ * is outvoted by the straight run it interrupts and disappears; an edge the
+ * artist drew has the same tone all along one side of it and does not move. Two
+ * passes is enough for the jags and short of what it would take to start eating
+ * into a shape.
+ *
+ * Pixels outside the shape neither vote nor change, so the shape's own edge is
+ * left exactly where it was.
+ */
+function clean(at: Uint8Array, w: number, h: number, levels: number, passes: number): Uint8Array {
+  let src = at;
+  const votes = new Float64Array(levels);
+
+  for (let p = 0; p < passes; p++) {
+    const dst = new Uint8Array(src);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (src[i] === OUTSIDE) continue;
+
+        votes.fill(0);
+        const y0 = y > 0 ? y - 1 : 0;
+        const y1 = y + 1 < h ? y + 1 : h - 1;
+        const x0 = x > 0 ? x - 1 : 0;
+        const x1 = x + 1 < w ? x + 1 : w - 1;
+        for (let b = y0; b <= y1; b++) {
+          for (let a = x0; a <= x1; a++) {
+            const v = src[b * w + a];
+            if (v !== OUTSIDE) votes[v]++;
+          }
+        }
+
+        // Ties go to the tone it already has, so nothing moves without a
+        // majority actually asking for it.
+        let best = src[i];
+        let bestN = votes[best];
+        for (let k = 0; k < levels; k++) {
+          if (votes[k] > bestN) {
+            bestN = votes[k];
+            best = k;
+          }
+        }
+        dst[i] = best;
+      }
+    }
+
+    src = dst;
+  }
+
+  return src;
+}
+
+/**
  * The outline of one tone's region, as closed rings built out of shared arcs.
  *
  * The walk itself is over the cracks between pixels: every pixel of the tone
@@ -354,8 +417,9 @@ export function vectorise(
   smoothPx = 1,
   mask?: Uint8Array,
   minAreaPx = 3,
+  cleanPasses = 2,
 ): Vectorised {
-  const at = quantise(lum, w, h, tones, mask);
+  const at = clean(quantise(lum, w, h, tones, mask), w, h, tones.length, cleanPasses);
 
   // Enough passes that the averaging reaches a couple of pixels either side,
   // which is what it takes to flatten a staircase rather than round it off.
