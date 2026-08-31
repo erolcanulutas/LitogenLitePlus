@@ -101,6 +101,23 @@ function db(): PDO
     );
     $pdo->exec('CREATE INDEX IF NOT EXISTS miss_ip_at ON login_misses (ip, at)');
 
+    // Ways of proving you are a given account, beside its password. One row per
+    // provider per person, so the same account can be reached through Google
+    // and through a password, and so adding Apple later is another row rather
+    // than another column.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS identities (
+            id $auto,
+            provider VARCHAR(32) NOT NULL,
+            subject VARCHAR(190) NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS identity_once ON identities (provider, subject)'
+    );
+
     return $pdo;
 }
 

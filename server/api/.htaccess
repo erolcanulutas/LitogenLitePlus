@@ -1,6 +1,6 @@
 # The endpoints are meant to be called; these two are only ever included by
 # them. Nothing is served either way — they define functions and stop — but a
 # file that is reachable is a file that has to keep being harmless.
-<FilesMatch "^(db|lib)\.php$">
+<FilesMatch "^(db|lib|jwt)\.php$">
   Require all denied
 </FilesMatch>

@@ -16,6 +16,7 @@ import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
 import { signIn, signOut, signUp, whoAmI, type Account } from "./core/account";
+import { drawGoogleButton, signInOutcome } from "./core/google";
 
 /* -------------------------------------------------------------
  * BRAND FONT & STYLES
@@ -45,6 +46,30 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.googleSlot {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+  margin-bottom: 4px;
+}
+
+.orRule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.orRule::before,
+.orRule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #1e293b;
 }
 
 .accountError {
@@ -1206,15 +1231,32 @@ export default function App() {
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
 
+  const googleSlot = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     let live = true;
     whoAmI().then((a) => {
       if (live) setAccount(a);
     });
+
+    // Coming back from Google, the server has already decided; the address says
+    // which way, and whoAmI above is what actually reads the result.
+    if (signInOutcome() === "failed") {
+      setAccountError("Google could not sign you in. Try again, or use a password.");
+      setAccountOpen(true);
+    }
+
     return () => {
       live = false;
     };
   }, []);
+
+  // Google draws its own button, so it can only be drawn once there is
+  // somewhere to put it — which is when the panel opens.
+  useEffect(() => {
+    if (!accountOpen || !googleSlot.current) return;
+    drawGoogleButton(googleSlot.current);
+  }, [accountOpen]);
 
   async function submitAccount() {
     setAccountBusy(true);
@@ -3137,6 +3179,10 @@ export default function App() {
             <div className="modalTitle">
               {accountMode === "in" ? "Sign in" : "Make an account"}
             </div>
+
+            <div className="googleSlot" ref={googleSlot} />
+
+            <div className="orRule"><span>or</span></div>
 
             <form
               onSubmit={(e) => {
