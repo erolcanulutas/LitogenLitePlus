@@ -21,6 +21,27 @@
   --shadow-inner: inset 0 1px 1px rgba(255,255,255,0.06);
 }
 
+/* The same roles, read off a light ground. The accent darkens: a pale cyan
+   that carries on near-black is invisible on white. */
+:root[data-theme="light"] {
+  --bg-0: #eef2f6;
+  --bg-1: #ffffff;
+  --bg-2: #f6f8fa;
+
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-border: rgba(15, 23, 42, 0.1);
+
+  --accent: #0e7490;
+  --accent-soft: rgba(14, 116, 144, 0.18);
+  --accent-glow: rgba(14, 116, 144, 0.35);
+
+  --text-main: #0f172a;
+  --text-dim: #5b6675;
+
+  --shadow-soft: 0 12px 34px rgba(15, 23, 42, 0.14);
+  --shadow-inner: inset 0 1px 1px rgba(255, 255, 255, 0.9);
+}
+
 /* ---------- PANEL ---------- */
 .panel {
   background:

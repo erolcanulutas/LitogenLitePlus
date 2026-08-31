@@ -5,6 +5,7 @@ import type { ImageEditorHandle, Tool } from "./ui/ImageEditor";
 import ImageControls from "./ui/ImageControls";
 import BandSlider from "./ui/BandSlider";
 import ColorField from "./ui/ColorField";
+import AccountPanel from "./ui/AccountPanel";
 import type { PreviewMesh } from "./ui/MeshPreview";
 
 // three.js is most of the bundle, and plenty of sessions never open the 3D
@@ -25,14 +26,67 @@ import { drawGoogleButton, signInOutcome } from "./core/google";
  * BRAND FONT & STYLES
  * ------------------------------------------------------------- */
 const BRAND_STYLE = `
+/*
+ * The two grounds.
+ *
+ * Every neutral is a token, named for what it does rather than what it is —
+ * text, surface, line — because the same grey is dim text in one place and a
+ * border in another, and the light theme wants opposite things of the two.
+ * Colours that mean something (a warning, a balance, the hue strip in the
+ * picker) are not tokens: they mean the same on either ground.
+ */
+:root {
+  --k-line-1e293b: #1e293b;
+  --k-line-334155: #334155;
+  --k-line-475569: #475569;
+  --k-line-94a3b8: #94a3b8;
+  --k-line-fff: #fff;
+  --k-surface-020617: #020617;
+  --k-surface-0b1220: #0b1220;
+  --k-surface-0f172a: #0f172a;
+  --k-surface-1e293b: #1e293b;
+  --k-surface-334155: #334155;
+  --k-text-475569: #475569;
+  --k-text-64748b: #64748b;
+  --k-text-7dd3fc: #7dd3fc;
+  --k-text-94a3b8: #94a3b8;
+  --k-text-a5f3fc: #a5f3fc;
+  --k-text-cbd5e1: #cbd5e1;
+  --k-text-e2e8f0: #e2e8f0;
+  --k-text-f8fafc: #f8fafc;
+  --k-text-fff: #fff;
+}
+
+:root[data-theme="light"] {
+  --k-line-1e293b: #dde3ea;
+  --k-line-334155: #cbd5e1;
+  --k-line-475569: #cbd5e1;
+  --k-line-94a3b8: #cbd5e1;
+  --k-line-fff: #cbd5e1;
+  --k-surface-020617: #eef2f6;
+  --k-surface-0b1220: #ffffff;
+  --k-surface-0f172a: #ffffff;
+  --k-surface-1e293b: #f1f5f9;
+  --k-surface-334155: #e2e8f0;
+  --k-text-475569: #8a94a3;
+  --k-text-64748b: #6b7686;
+  --k-text-7dd3fc: #0e7490;
+  --k-text-94a3b8: #5b6675;
+  --k-text-a5f3fc: #0e7490;
+  --k-text-cbd5e1: #334155;
+  --k-text-e2e8f0: #1e293b;
+  --k-text-f8fafc: #0f172a;
+  --k-text-fff: #0f172a;
+}
+
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap');
 
 body {
   font-family: 'Outfit', sans-serif;
   margin: 0;
   overflow: hidden; 
-  background-color: #020617;
-  color: #f8fafc;
+  background-color: var(--k-surface-020617);
+  color: var(--k-text-f8fafc);
 }
 
 .appShell {
@@ -51,13 +105,132 @@ body {
   gap: 10px;
 }
 
+.accountCard {
+  max-width: 460px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.acctWho {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--k-line-1e293b);
+}
+
+.acctEmail {
+  font-size: 13px;
+  color: var(--k-text-cbd5e1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acctHeading {
+  margin: 20px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--k-text-64748b);
+}
+
+.acctHeading.danger { color: #f87171; }
+
+.acctNote {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--k-text-94a3b8);
+}
+
+.acctGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.acctGrid.two { grid-template-columns: repeat(2, 1fr); }
+
+.acctBuy {
+  display: grid;
+  gap: 1px;
+  padding: 12px 8px;
+  text-align: center;
+  text-decoration: none;
+  border: 1px solid var(--k-line-1e293b);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.15s ease;
+}
+
+.acctBuy:hover {
+  border-color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.acctBuy.best { border-color: #334155; background: rgba(125, 211, 252, 0.05); }
+
+.acctBuyTop {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--k-text-e2e8f0);
+}
+
+.acctBuyLabel { font-size: 11px; color: #64748b; }
+
+.acctBuyPrice {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--k-text-7dd3fc);
+  min-height: 16px;
+}
+
+.acctFlag {
+  margin-top: 14px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--k-text-cbd5e1);
+  background: rgba(125, 211, 252, 0.08);
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 9px;
+  word-break: break-word;
+}
+
+.acctRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--k-text-cbd5e1);
+}
+
+.acctSeg { flex: 0 0 auto; }
+.acctSeg .segment { padding: 5px 14px; font-size: 12px; }
+
+.btn.danger {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
 .balance {
   margin-left: auto;
   padding: 2px 9px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #7dd3fc;
+  color: var(--k-text-7dd3fc);
   background: rgba(125, 211, 252, 0.12);
   border: 1px solid rgba(125, 211, 252, 0.3);
   border-radius: 100px;
@@ -82,7 +255,7 @@ body {
   align-items: center;
   gap: 12px;
   margin: 14px 0;
-  color: #64748b;
+  color: var(--k-text-64748b);
   font-size: 12px;
 }
 
@@ -91,7 +264,7 @@ body {
   content: "";
   flex: 1;
   height: 1px;
-  background: #1e293b;
+  background: var(--k-surface-1e293b);
 }
 
 .accountError {
@@ -117,8 +290,8 @@ body {
   width: 340px;
   min-width: 340px;
   height: 100%;
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: var(--k-surface-0f172a);
+  border: 1px solid var(--k-line-1e293b);
   border-radius: 16px;
   padding: 16px;
   overflow-y: auto;
@@ -162,8 +335,8 @@ body {
   height: 16px;
   font-size: 11px;
   font-weight: bold;
-  color: #64748b;
-  border: 1px solid #334155;
+  color: var(--k-text-64748b);
+  border: 1px solid var(--k-line-334155);
   border-radius: 50%;
   cursor: help;
   transition: all 0.2s;
@@ -171,7 +344,7 @@ body {
 }
 
 .info-icon:hover {
-  color: #a5f3fc;
+  color: var(--k-text-a5f3fc);
   border-color: #a5f3fc;
   background: rgba(165, 243, 252, 0.1);
 }
@@ -179,8 +352,8 @@ body {
 .tooltip-content {
   visibility: hidden;
   width: 200px;
-  background-color: #1e293b;
-  color: #cbd5e1;
+  background-color: var(--k-surface-1e293b);
+  color: var(--k-text-cbd5e1);
   text-align: center;
   border-radius: 6px;
   padding: 8px;
@@ -192,7 +365,7 @@ body {
   transition: opacity 0.2s;
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid #334155;
+  border: 1px solid var(--k-line-334155);
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   pointer-events: none;
 }
@@ -205,7 +378,7 @@ body {
   margin-left: -5px;
   border-width: 5px;
   border-style: solid;
-  border-color: #334155 transparent transparent transparent;
+  border-color: var(--k-line-334155) transparent transparent transparent;
 }
 
 .info-icon-wrapper:hover .tooltip-content {
@@ -228,7 +401,7 @@ body {
 .viewTab {
   background: transparent;
   border: 1px solid transparent;
-  color: #64748b;
+  color: var(--k-text-64748b);
   font-family: inherit;
   font-size: 0.85rem;
   font-weight: 600;
@@ -241,8 +414,8 @@ body {
 .viewTab:hover { color: #cbd5e1; }
 
 .viewTab.active {
-  color: #a5f3fc;
-  border-color: #1e293b;
+  color: var(--k-text-a5f3fc);
+  border-color: var(--k-line-1e293b);
   background: rgba(165, 243, 252, 0.08);
 }
 
@@ -251,7 +424,7 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--k-text-64748b);
   cursor: pointer;
   user-select: none;
 }
@@ -292,7 +465,7 @@ body {
   justify-content: center;
   text-align: center;
   padding: 24px;
-  color: #475569;
+  color: var(--k-text-475569);
   font-size: 0.85rem;
   pointer-events: none;
 }
@@ -300,8 +473,8 @@ body {
 .segmented {
   display: flex;
   gap: 4px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: var(--k-surface-0f172a);
+  border: 1px solid var(--k-line-1e293b);
   border-radius: 8px;
   padding: 3px;
 }
@@ -310,7 +483,7 @@ body {
   flex: 1;
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--k-text-64748b);
   font-family: inherit;
   font-size: 0.85rem;
   font-weight: 600;
@@ -342,8 +515,8 @@ body {
 .modalCard {
   width: 100%;
   max-width: 420px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: var(--k-surface-0f172a);
+  border: 1px solid var(--k-line-1e293b);
   border-radius: 14px;
   padding: 22px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
@@ -352,7 +525,7 @@ body {
 .modalTitle {
   font-size: 1.05rem;
   font-weight: 800;
-  color: #f8fafc;
+  color: var(--k-text-f8fafc);
   margin-bottom: 10px;
 }
 
@@ -360,7 +533,7 @@ body {
   margin: 0 0 18px;
   font-size: 0.85rem;
   line-height: 1.55;
-  color: #94a3b8;
+  color: var(--k-text-94a3b8);
 }
 
 .modalActions {
@@ -374,7 +547,7 @@ body {
   margin-top: 14px;
   background: none;
   border: none;
-  color: #475569;
+  color: var(--k-text-475569);
   font-family: inherit;
   font-size: 0.75rem;
   cursor: pointer;
@@ -387,9 +560,9 @@ body {
   width: 34px;
   height: 30px;
   padding: 2px;
-  border: 1px solid #334155;
+  border: 1px solid var(--k-line-334155);
   border-radius: 6px;
-  background: #1e293b;
+  background: var(--k-surface-1e293b);
   cursor: pointer;
   flex: none;
 }
@@ -403,10 +576,10 @@ body {
   position: relative;
   width: 100%;
   height: 240px;
-  border: 1px solid #334155;
+  border: 1px solid var(--k-line-334155);
   border-radius: 10px;
   overflow: hidden;
-  background: #0b1220;
+  background: var(--k-surface-0b1220);
 }
 
 .bandSeg {
@@ -456,7 +629,7 @@ body {
   width: 26px;
   height: 22px;
   padding: 0;
-  border: 1px solid #334155;
+  border: 1px solid var(--k-line-334155);
   border-radius: 5px;
   background: transparent;
   cursor: pointer;
@@ -495,14 +668,14 @@ body {
   padding: 4px 8px;
   font-size: 11px;
   min-width: 0;
-  color: #94a3b8;
+  color: var(--k-text-94a3b8);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 7px;
 }
 
 .toolBtn:hover {
-  color: #cbd5e1;
+  color: var(--k-text-cbd5e1);
   background: rgba(255, 255, 255, 0.09);
   border-color: rgba(255, 255, 255, 0.2);
 }
@@ -519,7 +692,7 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #cbd5e1;
+  color: var(--k-text-cbd5e1);
 }
 
 .paintSet:has(input:disabled),
@@ -584,7 +757,7 @@ body {
   padding: 4px 8px;
   font-size: 13px;
   line-height: 1;
-  color: #fff;
+  color: var(--k-text-fff);
   background: #ffffff12;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
@@ -630,7 +803,7 @@ body {
   width: 190px;
   padding: 5px 8px;
   font-size: 12px;
-  color: #fff;
+  color: var(--k-text-fff);
   background: #00000040;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -664,7 +837,7 @@ body {
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 10px;
-  background: #0b1220;
+  background: var(--k-surface-0b1220);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
 }
 
@@ -697,7 +870,7 @@ body {
   width: 11px;
   height: 11px;
   margin: -6px 0 0 -6px;
-  border: 2px solid #fff;
+  border: 2px solid var(--k-line-fff);
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
   pointer-events: none;
@@ -716,7 +889,7 @@ body {
   appearance: none;
   width: 12px;
   height: 16px;
-  border: 2px solid #fff;
+  border: 2px solid var(--k-line-fff);
   border-radius: 3px;
   background: transparent;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
@@ -727,7 +900,7 @@ body {
   width: 100%;
   padding: 5px 8px;
   font-size: 12px;
-  color: #fff;
+  color: var(--k-text-fff);
   background: #00000040;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -820,9 +993,9 @@ body {
   position: relative;
   padding: 2px 7px;
   border-radius: 999px;
-  border: 1px solid #475569;
+  border: 1px solid var(--k-line-475569);
   background: rgba(2, 6, 23, 0.9);
-  color: #e2e8f0;
+  color: var(--k-text-e2e8f0);
   font-size: 0.62rem;
   font-weight: 600;
   white-space: nowrap;
@@ -834,10 +1007,10 @@ body {
   width: 18px;
   height: 18px;
   padding: 0;
-  border: 1px solid #475569;
+  border: 1px solid var(--k-line-475569);
   border-radius: 50%;
   background: rgba(2, 6, 23, 0.9);
-  color: #cbd5e1;
+  color: var(--k-text-cbd5e1);
   font-family: inherit;
   font-size: 0.7rem;
   line-height: 1;
@@ -925,9 +1098,9 @@ body {
 .autoBtn {
   padding: 2px 9px;
   border-radius: 999px;
-  border: 1px solid #334155;
+  border: 1px solid var(--k-line-334155);
   background: rgba(255, 255, 255, 0.02);
-  color: #94a3b8;
+  color: var(--k-text-94a3b8);
   font-family: inherit;
   font-size: 0.66rem;
   font-weight: 700;
@@ -937,7 +1110,7 @@ body {
 }
 
 .autoBtn:hover:not(:disabled) {
-  color: #a5f3fc;
+  color: var(--k-text-a5f3fc);
   border-color: #a5f3fc;
   background: rgba(165, 243, 252, 0.1);
 }
@@ -946,7 +1119,7 @@ body {
 
 .bandEnd {
   font-size: 0.66rem;
-  color: #475569;
+  color: var(--k-text-475569);
   margin: 4px 2px 0;
 }
 
@@ -958,13 +1131,13 @@ body {
 .bandHint {
   margin-top: 6px;
   font-size: 0.7rem;
-  color: #475569;
+  color: var(--k-text-475569);
 }
 
 .build-tag {
   font-size: 0.65rem;
   font-weight: 500;
-  color: #64748b;
+  color: var(--k-text-64748b);
   letter-spacing: 0.02em;
   margin-top: 2px;
   user-select: all;
@@ -976,7 +1149,7 @@ body {
 
 .dynamic-footer {
   padding-top: 20px;
-  color: #64748b;
+  color: var(--k-text-64748b);
   font-size: 0.7rem;
   text-align: center;
   opacity: 0.6;
@@ -993,10 +1166,10 @@ body {
   height: 44px;
   padding: 0 12px;
   cursor: pointer;
-  background-color: #1e293b;
-  border: 1px dashed #475569;
+  background-color: var(--k-surface-1e293b);
+  border: 1px dashed var(--k-line-475569);
   border-radius: 8px;
-  color: #cbd5e1;
+  color: var(--k-text-cbd5e1);
   font-size: 0.9rem;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -1005,15 +1178,15 @@ body {
 }
 
 .custom-file-upload:hover {
-  background-color: #334155;
-  border-color: #94a3b8;
-  color: #fff;
+  background-color: var(--k-surface-334155);
+  border-color: var(--k-line-94a3b8);
+  color: var(--k-text-fff);
 }
 
 .custom-file-upload.drag-active {
   background-color: rgba(6, 182, 212, 0.15);
   border-color: #06b6d4;
-  color: #fff;
+  color: var(--k-text-fff);
 }
 
 .primaryBtn {
@@ -1033,8 +1206,7 @@ body {
 }
 
 .status-error { color: #ef4444; }
-.status-success { color: #10b981; }
-`;
+.status-success { color: #10b981; }`;
 
 const InfoIcon = ({ text }: { text: string }) => (
   <div className="info-icon-wrapper">
@@ -1252,6 +1424,31 @@ export default function App() {
   const [accountPass, setAccountPass] = useState("");
   const [accountBusy, setAccountBusy] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountPanel, setAccountPanel] = useState(false);
+
+  /**
+   * Dark or light, remembered.
+   *
+   * Read once when the app starts rather than in an effect, so the first paint
+   * is already the right way round — a flash of the wrong one is the thing a
+   * theme setting most needs to avoid.
+   */
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    try {
+      return localStorage.getItem("litogen.theme") === "light" ? "light" : "dark";
+    } catch {
+      return "dark";
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("litogen.theme", theme);
+    } catch {
+      // A private window, or site data blocked. It still applies for this visit.
+    }
+  }, [theme]);
 
   const googleSlot = useRef<HTMLDivElement>(null);
 
@@ -2076,20 +2273,29 @@ export default function App() {
               </span>
             )}
             {account ? (
-              <button
-                className="autoBtn"
-                title={
-                  unlimited(account)
-                    ? `${account.email} · unlimited until ${account.planUntil}`
-                    : `${account.email} · ${account.tokens} tokens`
-                }
-                onClick={async () => {
-                  await signOut();
-                  setAccount(null);
-                }}
-              >
-                Sign out
-              </button>
+              <>
+                <button
+                  className="autoBtn"
+                  title="Tokens, subscription and settings"
+                  onClick={() => setAccountPanel(true)}
+                >
+                  Account
+                </button>
+                <button
+                  className="autoBtn"
+                  title={
+                    unlimited(account)
+                      ? `${account.email} · unlimited until ${account.planUntil}`
+                      : `${account.email} · ${account.tokens} tokens`
+                  }
+                  onClick={async () => {
+                    await signOut();
+                    setAccount(null);
+                  }}
+                >
+                  Sign out
+                </button>
+              </>
             ) : (
               <button
                 className="autoBtn"
@@ -3239,6 +3445,19 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {accountPanel && account && (
+        <AccountPanel
+          account={account}
+          theme={theme}
+          onTheme={setTheme}
+          onClose={() => setAccountPanel(false)}
+          onClosedAccount={() => {
+            setAccount(null);
+            setAccountPanel(false);
+          }}
+        />
+      )}
 
       {accountOpen && (
         <div className="modalBackdrop" onClick={() => setAccountOpen(false)}>

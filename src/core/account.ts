@@ -85,6 +85,11 @@ export async function signOut(): Promise<void> {
   await call("logout.php", {});
 }
 
+/** Closes the account for good. The address is typed back to confirm. */
+export async function closeAccount(email: string): Promise<void> {
+  await call("close.php", { email });
+}
+
 /** Raised when the balance is empty, so the caller can say so properly. */
 export class OutOfTokens extends Error {}
 
