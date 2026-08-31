@@ -26,6 +26,51 @@ import { drawGoogleButton, signInOutcome } from "./core/google";
  * BRAND FONT & STYLES
  * ------------------------------------------------------------- */
 const BRAND_STYLE = `
+:root {
+  --k-brand-ink: linear-gradient(135deg, #fff 0%, #a5f3fc 100%);
+}
+
+:root[data-theme="light"] {
+  --k-brand-ink: linear-gradient(135deg, #0f172a 0%, #0e7490 100%);
+}
+:root {
+  --k-line-255255255-005: rgba(255,255,255,0.05);
+  --k-line-255255255-009: rgba(255, 255, 255, 0.09);
+  --k-line-255255255-01: rgba(255, 255, 255, 0.1);
+  --k-line-255255255-014: rgba(255, 255, 255, 0.14);
+  --k-line-255255255-016: rgba(255, 255, 255, 0.16);
+  --k-line-255255255-018: rgba(255, 255, 255, 0.18);
+  --k-line-255255255-02: rgba(255, 255, 255, 0.2);
+  --k-line-255255255-022: rgba(255, 255, 255, 0.22);
+  --k-line-255255255-085: rgba(255, 255, 255, 0.85);
+  --k-surface-00000040: #00000040;
+  --k-surface-255255255-002: rgba(255, 255, 255, 0.02);
+  --k-surface-255255255-004: rgba(255, 255, 255, 0.04);
+  --k-surface-255255255-009: rgba(255, 255, 255, 0.09);
+  --k-surface-255255255-016: rgba(255, 255, 255, 0.16);
+  --k-surface-2623-072: rgba(2, 6, 23, 0.72);
+  --k-surface-2623-09: rgba(2, 6, 23, 0.9);
+}
+
+:root[data-theme="light"] {
+  --k-line-255255255-005: rgba(15, 23, 42, 0.110);
+  --k-line-255255255-009: rgba(15, 23, 42, 0.198);
+  --k-line-255255255-01: rgba(15, 23, 42, 0.220);
+  --k-line-255255255-014: rgba(15, 23, 42, 0.220);
+  --k-line-255255255-016: rgba(15, 23, 42, 0.220);
+  --k-line-255255255-018: rgba(15, 23, 42, 0.220);
+  --k-line-255255255-02: rgba(15, 23, 42, 0.220);
+  --k-line-255255255-022: rgba(15, 23, 42, 0.220);
+  --k-line-255255255-085: rgba(15, 23, 42, 0.220);
+  --k-surface-00000040: #0f172a0d;
+  --k-surface-255255255-002: rgba(15, 23, 42, 0.032);
+  --k-surface-255255255-004: rgba(15, 23, 42, 0.064);
+  --k-surface-255255255-009: rgba(15, 23, 42, 0.100);
+  --k-surface-255255255-016: rgba(15, 23, 42, 0.100);
+  --k-surface-2623-072: rgba(255, 255, 255, 0.72);
+  --k-surface-2623-09: rgba(255, 255, 255, 0.9);
+}
+
 /*
  * The two grounds.
  *
@@ -161,7 +206,7 @@ body {
   text-decoration: none;
   border: 1px solid var(--k-line-1e293b);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-surface-255255255-002);
   transition: all 0.15s ease;
 }
 
@@ -281,9 +326,12 @@ body {
   font-family: 'Outfit', sans-serif;
   font-weight: 800;
   font-size: 24px;
-  background: linear-gradient(135deg, #fff 0%, #a5f3fc 100%);
+  /* Clipped to the glyphs, so this gradient IS the lettering — white into pale
+     cyan disappears entirely on a light ground, which is why it has two. */
+  background: var(--k-brand-ink);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .leftPanel {
@@ -311,7 +359,7 @@ body {
 
 .section {
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid var(--k-line-255255255-005);
 }
 
 .label-row {
@@ -340,7 +388,7 @@ body {
   border-radius: 50%;
   cursor: help;
   transition: all 0.2s;
-  background: rgba(255,255,255,0.02);
+  background: var(--k-surface-255255255-002);
 }
 
 .info-icon:hover {
@@ -508,7 +556,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(2, 6, 23, 0.72);
+  background: var(--k-surface-2623-072);
   backdrop-filter: blur(2px);
 }
 
@@ -609,7 +657,7 @@ body {
   width: 100%;
   height: 30px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--k-line-255255255-018);
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
@@ -647,7 +695,7 @@ body {
   gap: 7px;
   padding: 8px 10px;
   margin-bottom: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--k-line-255255255-01);
   border-radius: 10px;
   background: #ffffff08;
 }
@@ -669,15 +717,15 @@ body {
   font-size: 11px;
   min-width: 0;
   color: var(--k-text-94a3b8);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: var(--k-surface-255255255-004);
+  border: 1px solid var(--k-line-255255255-009);
   border-radius: 7px;
 }
 
 .toolBtn:hover {
   color: var(--k-text-cbd5e1);
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--k-surface-255255255-009);
+  border-color: var(--k-line-255255255-02);
 }
 
 .toolBtn.active {
@@ -734,7 +782,7 @@ body {
      is an outline, which sits outside the layout. */
   padding: 0;
   border: none;
-  outline: 1px dashed rgba(255, 255, 255, 0.85);
+  outline: 1px dashed var(--k-line-255255255-085);
   background: rgba(0, 0, 0, 0.22);
   border-radius: 0;
   resize: both;
@@ -759,7 +807,7 @@ body {
   line-height: 1;
   color: var(--k-text-fff);
   background: #ffffff12;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--k-line-255255255-016);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -804,8 +852,8 @@ body {
   padding: 5px 8px;
   font-size: 12px;
   color: var(--k-text-fff);
-  background: #00000040;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--k-surface-00000040);
+  border: 1px solid var(--k-line-255255255-014);
   border-radius: 8px;
   outline: none;
 }
@@ -822,7 +870,7 @@ body {
   align-self: stretch;
   min-height: 22px;
   margin: 0 2px;
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--k-surface-255255255-016);
 }
 
 .colorField {
@@ -835,7 +883,7 @@ body {
   z-index: 60;
   width: 208px;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--k-line-255255255-016);
   border-radius: 10px;
   background: var(--k-surface-0b1220);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
@@ -901,8 +949,8 @@ body {
   padding: 5px 8px;
   font-size: 12px;
   color: var(--k-text-fff);
-  background: #00000040;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--k-surface-00000040);
+  border: 1px solid var(--k-line-255255255-014);
   border-radius: 8px;
   outline: none;
 }
@@ -917,7 +965,7 @@ body {
 .colorPreset {
   height: 18px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid var(--k-line-255255255-022);
   border-radius: 4px;
   cursor: pointer;
 }
@@ -994,7 +1042,7 @@ body {
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid var(--k-line-475569);
-  background: rgba(2, 6, 23, 0.9);
+  background: var(--k-surface-2623-09);
   color: var(--k-text-e2e8f0);
   font-size: 0.62rem;
   font-weight: 600;
@@ -1009,7 +1057,7 @@ body {
   padding: 0;
   border: 1px solid var(--k-line-475569);
   border-radius: 50%;
-  background: rgba(2, 6, 23, 0.9);
+  background: var(--k-surface-2623-09);
   color: var(--k-text-cbd5e1);
   font-family: inherit;
   font-size: 0.7rem;
@@ -1067,7 +1115,7 @@ body {
   padding: 1px 6px;
   border-radius: 999px;
   border: 1px solid rgba(251, 191, 36, 0.55);
-  background: rgba(2, 6, 23, 0.9);
+  background: var(--k-surface-2623-09);
   color: #fde68a;
   font-size: 0.6rem;
   font-weight: 600;
@@ -1099,7 +1147,7 @@ body {
   padding: 2px 9px;
   border-radius: 999px;
   border: 1px solid var(--k-line-334155);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-surface-255255255-002);
   color: var(--k-text-94a3b8);
   font-family: inherit;
   font-size: 0.66rem;
