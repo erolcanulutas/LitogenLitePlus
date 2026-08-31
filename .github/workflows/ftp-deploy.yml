@@ -1,0 +1,91 @@
+name: Deploy to litogen.app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, and let a running one finish: two curl loops writing
+# into the same folder would interleave and leave a half-old build.
+concurrency:
+  group: ftp-litogen
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # No BASE_PATH: the site is served from the root of its own domain, which
+      # is what vite.config.ts falls back to.
+      - name: Build
+        run: npm run build
+
+      - name: Upload
+        env:
+          HOST: ${{ secrets.FTP_HOST }}
+          USER: ${{ secrets.FTP_USER }}
+          PASS: ${{ secrets.FTP_PASS }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HOST:-}" ] || [ -z "${USER:-}" ] || [ -z "${PASS:-}" ]; then
+            echo "::error::FTP_HOST, FTP_USER and FTP_PASS are not set. Add them under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          # Explicit TLS, so the password is not sent in the clear. The
+          # certificate is the server's own rather than the domain's, which is
+          # ordinary on shared hosting and is why it is not verified — the
+          # encryption is the point here, not the identity.
+          FTP="curl --silent --show-error --fail --ssl-reqd --insecure --user $USER:$PASS"
+
+          echo "== the app =="
+          ( cd dist && find . -type f ) | while read -r f; do
+            path="${f#./}"
+            echo "  $path"
+            $FTP --ftp-create-dirs -T "dist/$path" "ftp://$HOST/public_html/$path"
+          done
+
+          echo "== the api =="
+          for f in server/api/*.php server/api/.htaccess; do
+            echo "  $(basename "$f")"
+            $FTP --ftp-create-dirs -T "$f" "ftp://$HOST/public_html/api/$(basename "$f")"
+          done
+
+          # Asset names carry a hash of their contents, so an old build's files
+          # are never asked for again and only take up room. The page and the
+          # API keep their names and are simply overwritten above.
+          echo "== clearing out old assets =="
+          $FTP --list-only "ftp://$HOST/public_html/assets/" | sed 's/\r$//' | grep -v '^\.\{1,2\}$' | sort > remote.txt
+          ( cd dist/assets && ls ) | sort > local.txt
+          comm -23 remote.txt local.txt | while read -r old; do
+            [ -n "$old" ] || continue
+            echo "  $old"
+            $FTP -Q "DELE /public_html/assets/$old" "ftp://$HOST/" -o /dev/null
+          done
+
+          echo "== done =="
+
+      - name: Check it answers
+        run: |
+          set -e
+          code=$(curl -s -o /dev/null -w '%{http_code}' https://litogen.app/)
+          echo "site: HTTP $code"
+          [ "$code" = "200" ]
+          curl -s https://litogen.app/api/me.php | grep -q '"ok":true'
+          echo "api: answering"
+
+# public_html/.htaccess is deliberately not deployed. cPanel writes its own
+# blocks into that file — the PHP version handler among them — so a copy from
+# the repository would quietly undo a version change made in the panel. It is
+# set once, by hand, and the Litogen rules live at the end of it.
