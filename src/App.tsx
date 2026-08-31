@@ -2011,7 +2011,7 @@ export default function App() {
       <aside className="leftPanel">
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
           <div className="brandRow">
-            <div className="brand-title">Litogen Lite+</div>
+            <div className="brand-title">Litogen</div>
             {account ? (
               <button
                 className="autoBtn"
