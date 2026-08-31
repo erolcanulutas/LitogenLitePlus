@@ -20,9 +20,6 @@ concurrency:
   group: ftp-litogen
   cancel-in-progress: false
 
-run-name: >-
-  Deploy ${{ github.ref_name }}${{ inputs.note && format(' — {0}', inputs.note) || '' }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
