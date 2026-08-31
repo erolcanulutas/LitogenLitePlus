@@ -37,6 +37,10 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Pages serves out of a folder named after the repository; the app's
+          # own domain serves it from the root, which is the default.
+          BASE_PATH: /LitogenLitePlus/
 
       # enablement defaults to false, which makes this step fail with a 404 on a
       # repo where Pages was never turned on. Let the workflow enable it.

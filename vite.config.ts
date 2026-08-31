@@ -3,14 +3,17 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// GitHub Pages serves this project from https://<user>.github.io/LitogenLitePlus/
-// so production assets need that prefix. The dev server stays at the root.
+// Where the built assets will be asked for from.
+//
+// At its own domain that is the root, which is the default. GitHub Pages serves
+// the project out of a folder named after the repository, so its workflow sets
+// BASE_PATH to that instead.
 //
 // Keyed on the mode rather than the command, because `vite preview` serves the
 // built files under command "serve": keying on the command handed it base "/"
-// while the HTML it was serving asked for /LitogenLitePlus/, so every asset
-// 404'd and `npm run preview` never rendered anything.
-const REPO_BASE = "/LitogenLitePlus/";
+// while the HTML it was serving asked for a prefix, so every asset 404'd and
+// `npm run preview` never rendered anything.
+const BASE_PATH = process.env.BASE_PATH || "/";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf8")) as {
   version: string;
@@ -32,7 +35,7 @@ function buildSha(): string {
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  base: mode === "production" ? REPO_BASE : "/",
+  base: mode === "production" ? BASE_PATH : "/",
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_SHA__: JSON.stringify(buildSha()),

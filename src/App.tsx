@@ -15,6 +15,7 @@ import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
+import { signIn, signOut, signUp, whoAmI, type Account } from "./core/account";
 
 /* -------------------------------------------------------------
  * BRAND FONT & STYLES
@@ -37,6 +38,23 @@ body {
   padding: 16px;
   gap: 16px;
   box-sizing: border-box;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.accountError {
+  margin-top: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #fecaca;
+  background: rgba(190, 18, 60, 0.18);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 8px;
 }
 
 .brand-title {
@@ -1173,6 +1191,49 @@ function edgeColorOf(img: HTMLImageElement): string | null {
 }
 
 export default function App() {
+  /**
+   * Who is signed in, if anyone.
+   *
+   * Asked once on load and kept from then on. Nothing is gated on it yet — it
+   * is the account the paid shapes will eventually be attached to — so a
+   * server that cannot be reached costs nothing but a signed-out header.
+   */
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountMode, setAccountMode] = useState<"in" | "up">("in");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accountPass, setAccountPass] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    whoAmI().then((a) => {
+      if (live) setAccount(a);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function submitAccount() {
+    setAccountBusy(true);
+    setAccountError(null);
+    try {
+      const who =
+        accountMode === "in"
+          ? await signIn(accountEmail, accountPass)
+          : await signUp(accountEmail, accountPass);
+      setAccount(who);
+      setAccountOpen(false);
+      setAccountPass("");
+    } catch (e) {
+      setAccountError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
   const [shapeId, setShapeId] = useState<ShapeId>("rectangle");
 
   const shape = useMemo(() => SHAPES.find((s) => s.id === shapeId)!, [shapeId]);
@@ -1907,9 +1968,35 @@ export default function App() {
 
       <aside className="leftPanel">
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
-          <div className="brand-title">Litogen Lite+</div>
+          <div className="brandRow">
+            <div className="brand-title">Litogen Lite+</div>
+            {account ? (
+              <button
+                className="autoBtn"
+                title={`Signed in as ${account.email} · ${account.plan}`}
+                onClick={async () => {
+                  await signOut();
+                  setAccount(null);
+                }}
+              >
+                Sign out
+              </button>
+            ) : (
+              <button
+                className="autoBtn"
+                title="Sign in, or make an account"
+                onClick={() => {
+                  setAccountError(null);
+                  setAccountOpen(true);
+                }}
+              >
+                Sign in
+              </button>
+            )}
+          </div>
           <div className="build-tag" title="Bug bildirirken bu satırı da yaz">
             v{__APP_VERSION__} · {__BUILD_SHA__} · {__BUILD_DATE__}
+            {account ? ` · ${account.email}` : ""}
           </div>
         </div>
 
@@ -3043,6 +3130,63 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {accountOpen && (
+        <div className="modalBackdrop" onClick={() => setAccountOpen(false)}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div className="modalTitle">
+              {accountMode === "in" ? "Sign in" : "Make an account"}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!accountBusy) submitAccount();
+              }}
+            >
+              <input
+                className="spinInput"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={accountEmail}
+                onChange={(e) => setAccountEmail(e.target.value)}
+                style={{ marginBottom: 8 }}
+              />
+              <input
+                className="spinInput"
+                type="password"
+                autoComplete={accountMode === "in" ? "current-password" : "new-password"}
+                placeholder={accountMode === "in" ? "Password" : "Password, eight or more"}
+                value={accountPass}
+                onChange={(e) => setAccountPass(e.target.value)}
+              />
+
+              {accountError && <div className="accountError">{accountError}</div>}
+
+              <div className="modalActions" style={{ marginTop: 14 }}>
+                <button className="btn" type="submit" disabled={accountBusy}>
+                  {accountBusy
+                    ? "…"
+                    : accountMode === "in"
+                      ? "Sign in"
+                      : "Create"}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    setAccountMode(accountMode === "in" ? "up" : "in");
+                    setAccountError(null);
+                  }}
+                >
+                  {accountMode === "in" ? "I need an account" : "I have one"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {flatHintOpen && (
         <div className="modalBackdrop" onClick={() => setFlatHintOpen(false)}>

@@ -1,0 +1,41 @@
+
+# ---------------------------------------------------------------------------
+# Litogen
+# ---------------------------------------------------------------------------
+
+# Everything over HTTPS. The session cookie is marked Secure, so on plain HTTP
+# it would never be sent and nobody could stay signed in.
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# One page, many addresses: anything that is not a real file is the app, which
+# reads the address itself. The API is left alone.
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ /index.html [L]
+
+# The asset names carry a hash of their contents, so a given name can never
+# mean anything else and may be kept for as long as the browser likes. The page
+# that points at them must not be, or a new build would never be found.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|woff2?|png|jpg|svg|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(html|php)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+# Nothing here is a directory anyone should be able to read.
+Options -Indexes
