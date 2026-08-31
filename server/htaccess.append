@@ -17,12 +17,18 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ /index.html [L]
 
-# The asset names carry a hash of their contents, so a given name can never
-# mean anything else and may be kept for as long as the browser likes. The page
-# that points at them must not be, or a new build would never be found.
+# Only the files under /assets/ carry a hash of their contents in their name,
+# so only those can never mean anything else and may be kept for as long as the
+# browser likes. Everything else keeps its name from one build to the next —
+# favicon.ico above all — and a year of immutable on one of those is a year of
+# not being able to change it.
+# The long cache lives in assets/.htaccess rather than here: a rule that has to
+# recognise the folder from the request path depends on the server setting an
+# environment variable for it, and this one does not. A file in the folder
+# needs no such agreement.
 <IfModule mod_headers.c>
-  <FilesMatch "\.(js|css|woff2?|png|jpg|svg|ico)$">
-    Header set Cache-Control "public, max-age=31536000, immutable"
+  <FilesMatch "\.(ico|png|jpe?g|svg|webp|woff2?)$">
+    Header set Cache-Control "public, max-age=3600"
   </FilesMatch>
   <FilesMatch "\.(html|php)$">
     Header set Cache-Control "no-cache"

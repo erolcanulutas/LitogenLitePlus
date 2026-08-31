@@ -80,6 +80,13 @@ jobs:
             args+=(-T "$f" "ftp://$HOST/public_html/api/$(basename "$f")")
           done
 
+          # The long cache for hashed names. It sits in the folder rather than
+          # in the root rules because recognising the folder from the request
+          # path needs the server to set an environment variable for it, and
+          # this one does not.
+          echo "  assets/.htaccess"
+          args+=(-T "server/assets.htaccess" "ftp://$HOST/public_html/assets/.htaccess")
+
           echo "== uploading =="
           $FTP --ftp-create-dirs "${args[@]}"
 

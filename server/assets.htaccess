@@ -1,0 +1,6 @@
+# Every name in here carries a hash of the file's contents, so a given name can
+# never mean anything else: keep it as long as you like. A new build writes new
+# names, which is how a change is noticed at all.
+<IfModule mod_headers.c>
+  Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>
