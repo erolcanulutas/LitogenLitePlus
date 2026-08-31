@@ -255,6 +255,13 @@ body {
 }
 
 .acctSeg { flex: 0 0 auto; }
+
+.acctOut {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 6px 16px;
+  font-size: 12px;
+}
 .acctSeg .segment { padding: 5px 14px; font-size: 12px; }
 
 .btn.danger {
@@ -2321,29 +2328,17 @@ export default function App() {
               </span>
             )}
             {account ? (
-              <>
-                <button
-                  className="autoBtn"
-                  title="Tokens, subscription and settings"
-                  onClick={() => setAccountPanel(true)}
-                >
-                  Account
-                </button>
-                <button
-                  className="autoBtn"
-                  title={
-                    unlimited(account)
-                      ? `${account.email} · unlimited until ${account.planUntil}`
-                      : `${account.email} · ${account.tokens} tokens`
-                  }
-                  onClick={async () => {
-                    await signOut();
-                    setAccount(null);
-                  }}
-                >
-                  Sign out
-                </button>
-              </>
+              <button
+                className="autoBtn"
+                title={
+                  unlimited(account)
+                    ? `${account.email} · unlimited · tokens, settings and sign out`
+                    : `${account.email} · ${account.tokens} tokens · tokens, settings and sign out`
+                }
+                onClick={() => setAccountPanel(true)}
+              >
+                Account
+              </button>
             ) : (
               <button
                 className="autoBtn"
@@ -3500,6 +3495,11 @@ export default function App() {
           theme={theme}
           onTheme={setTheme}
           onClose={() => setAccountPanel(false)}
+          onSignOut={async () => {
+            await signOut();
+            setAccount(null);
+            setAccountPanel(false);
+          }}
           onClosedAccount={() => {
             setAccount(null);
             setAccountPanel(false);

@@ -16,6 +16,7 @@ type Props = {
   theme: "dark" | "light";
   onTheme: (t: "dark" | "light") => void;
   onClose: () => void;
+  onSignOut: () => void;
   onClosedAccount: () => void;
 };
 
@@ -35,6 +36,7 @@ export default function AccountPanel({
   theme,
   onTheme,
   onClose,
+  onSignOut,
   onClosedAccount,
 }: Props) {
   const [closing, setClosing] = useState(false);
@@ -127,6 +129,13 @@ export default function AccountPanel({
               Light
             </button>
           </div>
+        </div>
+
+        <div className="acctRow" style={{ marginTop: 14 }}>
+          <span>Signed in on this device</span>
+          <button className="btn acctOut" onClick={onSignOut}>
+            Sign out
+          </button>
         </div>
 
         <h3 className="acctHeading danger">Close account</h3>
