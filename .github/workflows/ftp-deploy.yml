@@ -20,6 +20,12 @@ concurrency:
   group: ftp-litogen
   cancel-in-progress: false
 
+# Only the github context here. An expression in run-name is evaluated before
+# the run exists, and one that cannot be evaluated does not fail the run — it
+# stops the run being created at all, while the API that asked for it still
+# answers 204. Reading `inputs` here cost an hour of looking in the wrong place.
+run-name: Deploy ${{ github.ref_name }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
