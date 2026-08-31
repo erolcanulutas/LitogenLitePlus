@@ -118,8 +118,30 @@ error_log('payhip: accepted, signature style ' . $matched);
 
 $type = (string) ($data['type'] ?? $data['event'] ?? '');
 $email = strtolower(trim((string) ($data['email'] ?? $data['customer_email'] ?? '')));
-$item = (string) ($data['product_key'] ?? $data['product_id'] ?? $data['product_name'] ?? '');
 $reference = (string) ($data['id'] ?? $data['transaction_id'] ?? $data['sale_id'] ?? '');
+
+/**
+ * Which of the things on sale this was.
+ *
+ * Payhip names the product in one of several fields depending on the event,
+ * and which one is not documented anywhere readable — so every field that
+ * could carry it is looked up rather than picking one and hoping. A link is
+ * reduced to its last part, since that is the key the catalogue is written in.
+ */
+$item = '';
+$looked = [];
+foreach (['product_key', 'product_id', 'product_link', 'product_name', 'item_name'] as $field) {
+    $value = trim((string) ($data[$field] ?? ''));
+    if ($value === '') {
+        continue;
+    }
+    foreach ([$value, basename(rtrim($value, '/'))] as $try) {
+        $looked[] = $try;
+        if ($item === '' && isset(catalogue()[$try])) {
+            $item = $try;
+        }
+    }
+}
 
 if ($email === '' || $reference === '') {
     error_log('payhip: nothing to act on. body=' . substr($raw, 0, 2000));
@@ -139,9 +161,12 @@ if ($type !== 'paid' && $type !== 'subscription.created') {
     exit;
 }
 
-$worth = catalogue()[$item] ?? null;
+$worth = $item === '' ? null : catalogue()[$item];
 if ($worth === null) {
-    error_log("payhip: nothing in the catalogue for '$item' — sale to $email not credited");
+    error_log(
+        'payhip: nothing in the catalogue matched. tried=' . json_encode($looked)
+        . ' — sale to ' . $email . ' not credited'
+    );
     http_response_code(202);
     exit;
 }
