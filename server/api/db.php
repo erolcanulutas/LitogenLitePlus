@@ -101,6 +101,35 @@ function db(): PDO
     );
     $pdo->exec('CREATE INDEX IF NOT EXISTS miss_ip_at ON login_misses (ip, at)');
 
+    // Columns added after the first accounts existed. CREATE TABLE IF NOT
+    // EXISTS does nothing to a table that is already there, so these are asked
+    // for separately and the complaint of already having them is the expected
+    // answer rather than a failure.
+    foreach ([
+        'ALTER TABLE users ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0',
+        'ALTER TABLE users ADD COLUMN plan_until DATETIME NULL',
+    ] as $add) {
+        try {
+            $pdo->exec($add);
+        } catch (PDOException) {
+            // Already there.
+        }
+    }
+
+    // Every token in and every token out, with a reason. A balance on its own
+    // is a number nobody can check; this is what makes it answerable when
+    // somebody says they were charged for something they did not get.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS token_ledger (
+            id $auto,
+            user_id INTEGER NOT NULL,
+            delta INTEGER NOT NULL,
+            reason VARCHAR(64) NOT NULL,
+            created_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec('CREATE INDEX IF NOT EXISTS ledger_user ON token_ledger (user_id, created_at)');
+
     // Ways of proving you are a given account, beside its password. One row per
     // provider per person, so the same account can be reached through Google
     // and through a password, and so adding Apple later is another row rather
@@ -147,4 +176,41 @@ function note_miss(PDO $db): void
     $q->execute([client_ip(), gmdate('Y-m-d H:i:s')]);
     // Nothing else clears these out, so each write takes the old ones with it.
     $db->prepare('DELETE FROM login_misses WHERE at < ?')->execute([ago(60 * 24)]);
+}
+
+
+/** What a new account starts with. */
+const SIGNUP_TOKENS = 50;
+
+/** Records a change in someone's balance, with a note of why. */
+function note_tokens(PDO $db, int $userId, int $delta, string $reason): void
+{
+    $q = $db->prepare(
+        'INSERT INTO token_ledger (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)'
+    );
+    $q->execute([$userId, $delta, $reason, gmdate('Y-m-d H:i:s')]);
+}
+
+/**
+ * Whether a subscription is running, and so whether anything need be spent.
+ *
+ * Compared as text in UTC, which is the form both drivers store and the only
+ * form they agree on.
+ */
+function subscribed(array $user): bool
+{
+    return ($user['plan'] ?? 'free') === 'sub'
+        && !empty($user['plan_until'])
+        && strcmp((string) $user['plan_until'], gmdate('Y-m-d H:i:s')) > 0;
+}
+
+/** The account as the app is told about it. */
+function account_shape(array $user): array
+{
+    return [
+        'email' => $user['email'],
+        'plan' => subscribed($user) ? 'sub' : 'free',
+        'tokens' => (int) ($user['tokens'] ?? 0),
+        'planUntil' => subscribed($user) ? $user['plan_until'] : null,
+    ];
 }

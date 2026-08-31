@@ -21,9 +21,16 @@ $db = db();
 
 // The time is bound rather than asked of the database: NOW() is MySQL's, and
 // SQLite has no such function.
-$q = $db->prepare('INSERT INTO users (email, pass_hash, created_at) VALUES (?, ?, ?)');
+$q = $db->prepare(
+    'INSERT INTO users (email, pass_hash, created_at, tokens) VALUES (?, ?, ?, ?)'
+);
 try {
-    $q->execute([$email, password_hash($pass, PASSWORD_DEFAULT), gmdate('Y-m-d H:i:s')]);
+    $q->execute([
+        $email,
+        password_hash($pass, PASSWORD_DEFAULT),
+        gmdate('Y-m-d H:i:s'),
+        SIGNUP_TOKENS,
+    ]);
 } catch (PDOException $e) {
     // 23000 is the unique index saying the address is taken.
     if ($e->getCode() === '23000') {
@@ -32,8 +39,14 @@ try {
     fail('Could not create the account', 500);
 }
 
+$userId = (int) $db->lastInsertId();
+note_tokens($db, $userId, SIGNUP_TOKENS, 'welcome');
+
 begin_session();
 session_regenerate_id(true);
-$_SESSION['uid'] = (int) $db->lastInsertId();
+$_SESSION['uid'] = $userId;
 
-reply(['ok' => true, 'user' => ['email' => $email, 'plan' => 'free']]);
+reply([
+    'ok' => true,
+    'user' => ['email' => $email, 'plan' => 'free', 'tokens' => SIGNUP_TOKENS, 'planUntil' => null],
+]);

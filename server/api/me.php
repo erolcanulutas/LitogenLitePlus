@@ -8,5 +8,5 @@ $user = current_user(db());
 
 reply([
     'ok' => true,
-    'user' => $user ? ['email' => $user['email'], 'plan' => $user['plan']] : null,
+    'user' => $user ? account_shape($user) : null,
 ]);

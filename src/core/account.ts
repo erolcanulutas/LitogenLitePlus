@@ -9,9 +9,18 @@
 
 export type Account = {
   email: string;
-  /** What they are entitled to. Everyone starts on "free". */
+  /** "sub" while a subscription is running, otherwise "free". */
   plan: string;
+  /** Exports left to spend. Ignored while subscribed. */
+  tokens: number;
+  /** When the subscription runs out, if there is one. */
+  planUntil: string | null;
 };
+
+/** Whether this account may export without spending anything. */
+export function unlimited(a: Account | null): boolean {
+  return a?.plan === "sub";
+}
 
 /**
  * A header no cross-site form can set.
@@ -74,4 +83,36 @@ export async function signUp(email: string, password: string): Promise<Account> 
 
 export async function signOut(): Promise<void> {
   await call("logout.php", {});
+}
+
+/** Raised when the balance is empty, so the caller can say so properly. */
+export class OutOfTokens extends Error {}
+
+/**
+ * Pays for one export.
+ *
+ * Called after the model is built and before the file is handed over: looking
+ * costs nothing, keeping costs a token. The server decides — the balance shown
+ * here is only what it last said.
+ */
+export async function spendForExport(): Promise<Account> {
+  let res: Response;
+  try {
+    res = await fetch("/api/spend.php", {
+      method: "POST",
+      headers: HEADERS,
+      body: "{}",
+      credentials: "same-origin",
+    });
+  } catch {
+    throw new Error("Could not reach the server");
+  }
+
+  const data: { ok?: boolean; error?: string; user?: Account | null } =
+    await res.json().catch(() => ({}));
+
+  if (res.status === 402) throw new OutOfTokens(data.error || "No tokens left");
+  if (!data.ok || !data.user) throw new Error(data.error || "Could not export");
+
+  return data.user;
 }

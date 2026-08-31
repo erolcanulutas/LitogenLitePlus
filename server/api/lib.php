@@ -95,7 +95,9 @@ function current_user(PDO $db): ?array
         return null;
     }
 
-    $q = $db->prepare('SELECT id, email, plan, created_at FROM users WHERE id = ?');
+    $q = $db->prepare(
+        'SELECT id, email, plan, tokens, plan_until, created_at FROM users WHERE id = ?'
+    );
     $q->execute([$id]);
     $row = $q->fetch();
     return $row ?: null;

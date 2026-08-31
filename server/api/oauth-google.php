@@ -62,9 +62,12 @@ if ($userId === false) {
     if ($userId === false) {
         // A new account. There is no password: sign-in is by Google until they
         // set one, and password_verify against this can never succeed.
-        $q = $db->prepare('INSERT INTO users (email, pass_hash, created_at) VALUES (?, ?, ?)');
-        $q->execute([$email, '', gmdate('Y-m-d H:i:s')]);
+        $q = $db->prepare(
+            'INSERT INTO users (email, pass_hash, created_at, tokens) VALUES (?, ?, ?, ?)'
+        );
+        $q->execute([$email, '', gmdate('Y-m-d H:i:s'), SIGNUP_TOKENS]);
         $userId = (int) $db->lastInsertId();
+        note_tokens($db, $userId, SIGNUP_TOKENS, 'welcome');
     }
 
     $q = $db->prepare(

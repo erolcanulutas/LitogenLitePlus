@@ -15,7 +15,10 @@ import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
-import { signIn, signOut, signUp, whoAmI, type Account } from "./core/account";
+import {
+  OutOfTokens, signIn, signOut, signUp, spendForExport, unlimited, whoAmI,
+  type Account,
+} from "./core/account";
 import { drawGoogleButton, signInOutcome } from "./core/google";
 
 /* -------------------------------------------------------------
@@ -46,6 +49,25 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.balance {
+  margin-left: auto;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 100px;
+  white-space: nowrap;
+}
+
+.balance.unlimited {
+  color: #86efac;
+  background: rgba(134, 239, 172, 0.12);
+  border-color: rgba(134, 239, 172, 0.3);
 }
 
 .googleSlot {
@@ -1908,6 +1930,24 @@ export default function App() {
   async function generate(download = true) {
     if (!imgData || isGenerating) return;
 
+    // Only exporting costs anything, so only exporting is stopped here. Both
+    // checks are a courtesy — the server decides — but they save building a
+    // model that cannot be handed over.
+    if (download) {
+      if (!account) {
+        setAccountError("Sign in to export. New accounts get 50 tokens.");
+        setAccountOpen(true);
+        return;
+      }
+      if (!unlimited(account) && account.tokens < 1) {
+        setStatusMsg({
+          type: "error",
+          text: "Out of tokens. Top up, or subscribe for unlimited exports.",
+        });
+        return;
+      }
+    }
+
     setIsGenerating(true);
     setStatusMsg(null);
 
@@ -1983,6 +2023,24 @@ export default function App() {
         setView("preview");
 
         if (download) {
+          // Paid for after it is built and before it is handed over. Charging
+          // first would take a token for a file that then failed to appear;
+          // handing it over first would give one away.
+          try {
+            setAccount(await spendForExport());
+          } catch (e) {
+            setStatusMsg({
+              type: "error",
+              text:
+                e instanceof OutOfTokens
+                  ? "Out of tokens. Top up, or subscribe for unlimited exports."
+                  : e instanceof Error
+                    ? e.message
+                    : "Could not export",
+            });
+            return;
+          }
+
           const baseName = file?.name.replace(/\.[^/.]+$/, "") || "image";
           downloadArrayBuffer(
             result.file,
@@ -2012,10 +2070,19 @@ export default function App() {
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
           <div className="brandRow">
             <div className="brand-title">Litogen</div>
+            {account && (
+              <span className={`balance ${unlimited(account) ? "unlimited" : ""}`}>
+                {unlimited(account) ? "Unlimited" : `${account.tokens} tokens`}
+              </span>
+            )}
             {account ? (
               <button
                 className="autoBtn"
-                title={`Signed in as ${account.email} · ${account.plan}`}
+                title={
+                  unlimited(account)
+                    ? `${account.email} · unlimited until ${account.planUntil}`
+                    : `${account.email} · ${account.tokens} tokens`
+                }
                 onClick={async () => {
                   await signOut();
                   setAccount(null);
@@ -2800,7 +2867,7 @@ export default function App() {
             onClick={() => generate(true)}
             disabled={isGenerating}
           >
-            {isGenerating ? "Processing..." : "Generate STL"}
+            {isGenerating ? "Processing..." : "Generate STL/3MF"}
           </button>
 
           <button

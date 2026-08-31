@@ -16,7 +16,9 @@ if (recent_misses($db) >= 10) {
     fail('Too many attempts. Try again in a few minutes.', 429);
 }
 
-$q = $db->prepare('SELECT id, email, pass_hash, plan FROM users WHERE email = ?');
+$q = $db->prepare(
+    'SELECT id, email, pass_hash, plan, tokens, plan_until FROM users WHERE email = ?'
+);
 $q->execute([$email]);
 $user = $q->fetch();
 
@@ -36,4 +38,4 @@ begin_session();
 session_regenerate_id(true);
 $_SESSION['uid'] = (int) $user['id'];
 
-reply(['ok' => true, 'user' => ['email' => $user['email'], 'plan' => $user['plan']]]);
+reply(['ok' => true, 'user' => account_shape($user)]);
