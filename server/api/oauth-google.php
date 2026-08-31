@@ -76,6 +76,8 @@ if ($userId === false) {
     $q->execute(['google', $subject, $userId, gmdate('Y-m-d H:i:s')]);
 }
 
+claim_pending($db, (int) $userId, $email);
+
 begin_session();
 session_regenerate_id(true);
 $_SESSION['uid'] = (int) $userId;

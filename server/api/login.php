@@ -34,8 +34,11 @@ if (password_needs_rehash($user['pass_hash'], PASSWORD_DEFAULT)) {
        ->execute([password_hash($pass, PASSWORD_DEFAULT), $user['id']]);
 }
 
+claim_pending($db, (int) $user['id'], (string) $user['email']);
+
 begin_session();
 session_regenerate_id(true);
 $_SESSION['uid'] = (int) $user['id'];
 
-reply(['ok' => true, 'user' => account_shape($user)]);
+$fresh = current_user($db);
+reply(['ok' => true, 'user' => $fresh ? account_shape($fresh) : null]);

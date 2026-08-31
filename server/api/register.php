@@ -41,12 +41,11 @@ try {
 
 $userId = (int) $db->lastInsertId();
 note_tokens($db, $userId, SIGNUP_TOKENS, 'welcome');
+claim_pending($db, $userId, $email);
 
 begin_session();
 session_regenerate_id(true);
 $_SESSION['uid'] = $userId;
 
-reply([
-    'ok' => true,
-    'user' => ['email' => $email, 'plan' => 'free', 'tokens' => SIGNUP_TOKENS, 'planUntil' => null],
-]);
+$fresh = current_user($db);
+reply(['ok' => true, 'user' => $fresh ? account_shape($fresh) : null]);

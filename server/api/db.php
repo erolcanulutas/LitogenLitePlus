@@ -130,6 +130,40 @@ function db(): PDO
     );
     $pdo->exec('CREATE INDEX IF NOT EXISTS ledger_user ON token_ledger (user_id, created_at)');
 
+    // A purchase we have already acted on. Webhooks are delivered more than
+    // once by design — a provider that gets no answer tries again — so the
+    // second delivery of a sale must not hand out the tokens twice.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS payments (
+            id $auto,
+            provider VARCHAR(32) NOT NULL,
+            reference VARCHAR(190) NOT NULL,
+            email VARCHAR(190) NOT NULL,
+            item VARCHAR(190) NOT NULL,
+            tokens INTEGER NOT NULL DEFAULT 0,
+            months INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS payment_once ON payments (provider, reference)'
+    );
+
+    // Bought before signing up, or bought with a different address. The credit
+    // waits here rather than being lost, and is handed over the moment an
+    // account with that address exists.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS pending_credits (
+            id $auto,
+            email VARCHAR(190) NOT NULL,
+            tokens INTEGER NOT NULL DEFAULT 0,
+            months INTEGER NOT NULL DEFAULT 0,
+            reason VARCHAR(64) NOT NULL,
+            created_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec('CREATE INDEX IF NOT EXISTS pending_email ON pending_credits (email)');
+
     // Ways of proving you are a given account, beside its password. One row per
     // provider per person, so the same account can be reached through Google
     // and through a password, and so adding Apple later is another row rather
@@ -202,6 +236,51 @@ function subscribed(array $user): bool
     return ($user['plan'] ?? 'free') === 'sub'
         && !empty($user['plan_until'])
         && strcmp((string) $user['plan_until'], gmdate('Y-m-d H:i:s')) > 0;
+}
+
+/** Adds tokens, or extends a subscription, and writes it down. */
+function grant(PDO $db, int $userId, int $tokens, int $months, string $reason): void
+{
+    if ($tokens > 0) {
+        $db->prepare('UPDATE users SET tokens = tokens + ? WHERE id = ?')
+           ->execute([$tokens, $userId]);
+        note_tokens($db, $userId, $tokens, $reason);
+    }
+
+    if ($months > 0) {
+        // Extends from whenever the current one runs out, not from today, so
+        // buying a second year before the first has ended does not throw the
+        // remainder away.
+        $q = $db->prepare('SELECT plan_until FROM users WHERE id = ?');
+        $q->execute([$userId]);
+        $until = (string) ($q->fetchColumn() ?: '');
+
+        $from = ($until !== '' && strcmp($until, gmdate('Y-m-d H:i:s')) > 0)
+            ? strtotime($until . ' UTC')
+            : time();
+
+        $db->prepare('UPDATE users SET plan = ?, plan_until = ? WHERE id = ?')
+           ->execute(['sub', gmdate('Y-m-d H:i:s', $from + $months * 2592000), $userId]);
+    }
+}
+
+/**
+ * Hands over anything bought before this account existed.
+ *
+ * Called whenever somebody proves an address is theirs — signing up, signing
+ * in, or arriving through Google. Somebody who pays and then registers gets
+ * what they paid for without anyone having to notice.
+ */
+function claim_pending(PDO $db, int $userId, string $email): void
+{
+    $q = $db->prepare('SELECT id, tokens, months, reason FROM pending_credits WHERE email = ?');
+    $q->execute([strtolower($email)]);
+    $rows = $q->fetchAll();
+
+    foreach ($rows as $row) {
+        grant($db, $userId, (int) $row['tokens'], (int) $row['months'], (string) $row['reason']);
+        $db->prepare('DELETE FROM pending_credits WHERE id = ?')->execute([$row['id']]);
+    }
 }
 
 /** The account as the app is told about it. */
