@@ -1,15 +1,27 @@
 name: Deploy to litogen.app
 
+# By hand, never on a push.
+#
+# Pushing already publishes to GitHub Pages, which is where a change gets
+# looked at. This is the other end of that: the live site moves when someone
+# decides it should, not because a commit landed. Run it from the Actions tab —
+# the branch or tag picker there chooses what goes out.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      note:
+        description: "What is going out (shows up in the run's title)"
+        required: false
+        default: ""
 
 # One deploy at a time, and let a running one finish: two curl loops writing
 # into the same folder would interleave and leave a half-old build.
 concurrency:
   group: ftp-litogen
   cancel-in-progress: false
+
+run-name: >-
+  Deploy ${{ github.ref_name }}${{ inputs.note && format(' — {0}', inputs.note) || '' }}
 
 jobs:
   deploy:
@@ -84,6 +96,13 @@ jobs:
           [ "$code" = "200" ]
           curl -s https://litogen.app/api/me.php | grep -q '"ok":true'
           echo "api: answering"
+
+          {
+            echo "### Live"
+            echo
+            echo "- **https://litogen.app** is serving \`${GITHUB_SHA:0:7}\` from \`${GITHUB_REF_NAME}\`"
+            echo "- the API answered"
+          } >> "$GITHUB_STEP_SUMMARY"
 
 # public_html/.htaccess is deliberately not deployed. cPanel writes its own
 # blocks into that file — the PHP version handler among them — so a copy from
