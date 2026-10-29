@@ -65,6 +65,9 @@ export const MASK_PX_PER_MM = 6;
 /** How far past the frame an icon may be taken, on every side, in mm. */
 export const OVERHANG_MM = 40;
 
+/** How far a raised shape sinks into the face it stands on, so the two overlap, in mm. */
+const EMBED_MM = 0.3;
+
 /** Steps a colour-following relief is made of. */
 export const RELIEF_STEPS = 3;
 
@@ -145,7 +148,7 @@ export function buildRelief(
   // On the frame the shapes stand on its face; with nothing under them they
   // start back in the front layer, so that they are joined to the frame.
   const layers: [Uint8Array, number][] = [
-    [mask.onFrame, frontZ],
+    [mask.onFrame, frontZ - EMBED_MM],
     [mask.beyond, frontZ - rootDepth],
   ];
 
