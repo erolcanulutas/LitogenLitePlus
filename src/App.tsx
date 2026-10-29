@@ -16,7 +16,7 @@ import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
-import { clusterColors, suggestColourLevels } from "./core/palette";
+import { DEFAULT_GAP, clusterColors, suggestColourLevels } from "./core/palette";
 import { buildHolder, holderForPrinting } from "./core/holder";
 import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
@@ -1733,6 +1733,8 @@ export default function App() {
   const [pictureLayers, setPictureLayers] = useState(4);
 
   const [toneLevels, setToneLevels] = useState(2);
+  /** How far apart two colours must be to be told apart as tones, an inlay's only. */
+  const [colorGap, setColorGap] = useState<number>(DEFAULT_GAP);
   const levels = graphic || inlayMode ? toneLevels : 0;
 
   /**
@@ -1740,8 +1742,8 @@ export default function App() {
    * so the tone the worker calls third is the one the panel shows third.
    */
   const toneCentres = useMemo(
-    () => (inlayMode && imgData ? clusterColors(imgData, toneLevels).lab : undefined),
-    [inlayMode, imgData, toneLevels],
+    () => (inlayMode && imgData ? clusterColors(imgData, toneLevels, colorGap).lab : undefined),
+    [inlayMode, imgData, toneLevels, colorGap],
   );
 
   /**
@@ -2063,7 +2065,7 @@ export default function App() {
     // An inlay's tones are colours of the picture, so a fresh count starts out
     // as those colours rather than as whatever the stock palette had there.
     if (imgData) {
-      const found = clusterColors(imgData, count);
+      const found = clusterColors(imgData, count, colorGap);
       setColors([found.colors[found.dominant], ...found.colors]);
       return;
     }
@@ -2084,13 +2086,13 @@ export default function App() {
    * with. Finding it by hand means trying numbers until the preview stops
    * changing, which is what this does in one pass over the histogram.
    */
-  function autoToneLevels() {
+  function autoToneLevels(gap = colorGap) {
     if (!imgData) return;
 
     if (inlayMode) {
       // Tones of an inlay are colours, found in colour, so two colours of the
       // same brightness are still two tones.
-      const hue = suggestColourLevels(imgData);
+      const hue = suggestColourLevels(imgData, gap);
       setToneLevels(hue.levels);
       setToneCuts([]);
       setColors([hue.colors[hue.dominant], ...hue.colors]);
@@ -2923,7 +2925,7 @@ export default function App() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <button
                     className="autoBtn"
-                    onClick={autoToneLevels}
+                    onClick={() => autoToneLevels()}
                     disabled={!imgData}
                     title={
                       imgData
@@ -2985,6 +2987,29 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </>
+          )}
+
+          {inlayMode && levels > 0 && (
+            <>
+              <div className="label-row">
+                <label className="miniLabel">Colour gap: {colorGap}</label>
+                <InfoIcon text="How different two colours have to be to count as two tones. Raise it and similar colours — three shades of one red — merge into one; lower it and the shades are kept apart. It is a colour distance (CIE Lab), where about 2 is the smallest difference an eye can see and 30 is clearly another colour. Moving it finds the tones again." />
+              </div>
+              <input
+                className="range"
+                type="range"
+                min={10}
+                max={60}
+                step={5}
+                value={colorGap}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setColorGap(v);
+                  autoToneLevels(v);
+                }}
+                disabled={!imgData}
+              />
             </>
           )}
 

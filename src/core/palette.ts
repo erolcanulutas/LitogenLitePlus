@@ -40,6 +40,13 @@ const FLAT_LIMIT = 8;
 /** What a photograph gets when there is nothing flat to measure. */
 const PHOTO_LEVELS = 5;
 
+/**
+ * Colours closer than this (CIE76 distance) are one colour for printing by
+ * default. Three reds that differ only in how the light fell on them are a
+ * filament apiece for nothing.
+ */
+export const DEFAULT_GAP = 30;
+
 const LIN = new Float64Array(256);
 for (let i = 0; i < 256; i++) {
   const c = i / 255;
@@ -131,7 +138,7 @@ function binsOf(img: ImageData): Bins {
  * same picture and count always give the same answer, which the worker relies
  * on to agree with the panel about which tone is which.
  */
-function fit(bins: Bins, k: number): { centres: Lab[]; inertia: number } {
+function fit(bins: Bins, k: number, gap = 0): { centres: Lab[]; inertia: number } {
   const centres: Lab[] = [];
 
   let first = 0;
@@ -141,16 +148,26 @@ function fit(bins: Bins, k: number): { centres: Lab[]; inertia: number } {
   const near = new Float64Array(bins.n);
   for (let j = 0; j < bins.n; j++) near[j] = d2(bins.lab[j], centres[0]);
 
-  while (centres.length < k) {
+  // Colours at least `gap` from every centre so far come first. When none are
+  // left the picture has no more distinct colours than that, and the rest of
+  // the count — if it was asked for — is filled from whatever is furthest.
+  const pickFrom = (floor: number) => {
     let pick = -1;
     let best = 0;
     for (let j = 0; j < bins.n; j++) {
+      if (near[j] < floor) continue;
       const score = bins.count[j] * near[j];
       if (score > best) {
         best = score;
         pick = j;
       }
     }
+    return pick;
+  };
+
+  while (centres.length < k) {
+    let pick = pickFrom(gap * gap);
+    if (pick < 0 && gap > 0) pick = pickFrom(0);
     if (pick < 0) break;
     const c = [...bins.lab[pick]] as Lab;
     centres.push(c);
@@ -245,15 +262,50 @@ function describe(bins: Bins, centres: Lab[]): ColourTones {
   return { lab: centres, colors, dominant, covered: bins.total === 0 ? 0 : flat / bins.total };
 }
 
-/** The colours a picture is made of, at a given count, darkest first. */
-export function clusterColors(img: ImageData, levels: number): ColourTones {
+/**
+ * How many colours at least `gap` apart the picture holds, up to `most`.
+ *
+ * Counted by the same greedy choice the fit starts from — the biggest area of
+ * colour not yet represented, then the next — so it agrees with what a fit at
+ * that count will actually find.
+ */
+function distinctColours(bins: Bins, gap: number, most: number): number {
+  const taken: Lab[] = [];
+  const near = new Float64Array(bins.n).fill(Infinity);
+
+  while (taken.length < most) {
+    let pick = -1;
+    let best = 0;
+    for (let j = 0; j < bins.n; j++) {
+      if (taken.length > 0 && near[j] < gap * gap) continue;
+      const score = bins.count[j] * (taken.length === 0 ? 1 : near[j]);
+      if (score > best) {
+        best = score;
+        pick = j;
+      }
+    }
+    if (pick < 0) break;
+    taken.push(bins.lab[pick]);
+    for (let j = 0; j < bins.n; j++) near[j] = Math.min(near[j], d2(bins.lab[j], bins.lab[pick]));
+  }
+
+  return taken.length;
+}
+
+/**
+ * The colours a picture is made of, at a given count, darkest first.
+ *
+ * @param gap  Colours closer than this are not told apart unless the count
+ *             cannot be reached otherwise — see DEFAULT_GAP.
+ */
+export function clusterColors(img: ImageData, levels: number, gap = 0): ColourTones {
   const k = Math.round(Math.min(MAX_LEVELS, Math.max(MIN_LEVELS, levels)));
   const bins = binsOf(img);
   if (bins.n === 0) {
     const grey: Lab = [50, 0, 0];
     return { lab: Array.from({ length: k }, () => grey), colors: Array(k).fill("#808080"), dominant: 0, covered: 0 };
   }
-  return describe(bins, ordered(fit(bins, k).centres));
+  return describe(bins, ordered(fit(bins, k, gap).centres));
 }
 
 /**
@@ -263,16 +315,41 @@ export function clusterColors(img: ImageData, levels: number): ColourTones {
  * the artwork was drawn with. A photograph never gets there — it keeps
  * improving with every extra colour — so it is given a fixed count instead.
  */
-export function suggestColourLevels(img: ImageData): ColourTones & { levels: number; smooth: boolean } {
+export function suggestColourLevels(
+  img: ImageData,
+  gap = DEFAULT_GAP,
+): ColourTones & { levels: number; smooth: boolean } {
   const bins = binsOf(img);
-  if (bins.n === 0) return { ...clusterColors(img, PHOTO_LEVELS), levels: PHOTO_LEVELS, smooth: true };
+  if (bins.n === 0) {
+    return { ...clusterColors(img, PHOTO_LEVELS, gap), levels: PHOTO_LEVELS, smooth: true };
+  }
 
-  for (let k = MIN_LEVELS; k <= FLAT_LIMIT; k++) {
-    const found = describe(bins, ordered(fit(bins, k).centres));
+  // No point asking for more colours than the picture has that are `gap` apart.
+  const most = Math.max(MIN_LEVELS, distinctColours(bins, gap, FLAT_LIMIT));
+
+  // The fit moves its centres to the middle of what they hold, which can bring
+  // two that started far apart closer than `gap`. The count is only good if
+  // the colours it ends up with are still told apart.
+  const fitAt = (k: number) => ordered(fit(bins, k, gap).centres);
+  const apart = (centres: Lab[]) => {
+    for (let i = 0; i < centres.length; i++) {
+      for (let j = i + 1; j < centres.length; j++) {
+        if (d2(centres[i], centres[j]) < gap * gap) return false;
+      }
+    }
+    return true;
+  };
+
+  for (let k = MIN_LEVELS; k <= most; k++) {
+    const centres = fitAt(k);
+    if (!apart(centres)) break;
+    const found = describe(bins, centres);
     if (found.covered >= TARGET) return { ...found, levels: k, smooth: false };
   }
 
-  return { ...describe(bins, ordered(fit(bins, PHOTO_LEVELS).centres)), levels: PHOTO_LEVELS, smooth: true };
+  let k = Math.min(PHOTO_LEVELS, most);
+  while (k > MIN_LEVELS && !apart(fitAt(k))) k--;
+  return { ...describe(bins, fitAt(k)), levels: k, smooth: true };
 }
 
 /**
