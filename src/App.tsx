@@ -1948,6 +1948,10 @@ export default function App() {
   }
   function patchSelectedDecor(change: Partial<Decoration>) {
     if (decorSelected === null) return;
+    // Choosing a colour for text only means something when decorations are
+    // printed in their own colours, so choosing one turns that on rather than
+    // leaving the choice with no effect.
+    if (change.color !== undefined && iconColours === 0) setIconColours(4);
     setDecorations(decorations.map((d, i) => (i === decorSelected ? { ...d, ...change } : d)));
   }
   function duplicateSelectedDecor() {
@@ -4338,6 +4342,7 @@ export default function App() {
                                 onPatch={patchSelectedDecor}
                                 onDuplicate={duplicateSelectedDecor}
                                 onRemove={removeSelectedDecor}
+                                snapsToFilaments={activeFilaments.length > 0}
                               />
                             ) : (
                               <div style={{ fontSize: 12, opacity: 0.75 }}>

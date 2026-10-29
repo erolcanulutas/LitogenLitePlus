@@ -5,6 +5,8 @@ type Props = {
   onPatch: (change: Partial<Decoration>) => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  /** Ticked filaments are in use, so a colour is printed in the nearest of them. */
+  snapsToFilaments?: boolean;
 };
 
 /**
@@ -12,7 +14,13 @@ type Props = {
  * raised or cut, its words and face if it is text, and the two ways out of it.
  * Size and turn are done on the decoration itself.
  */
-export default function DecorProps({ decoration: d, onPatch, onDuplicate, onRemove }: Props) {
+export default function DecorProps({
+  decoration: d,
+  onPatch,
+  onDuplicate,
+  onRemove,
+  snapsToFilaments = false,
+}: Props) {
   return (
     <div
       style={{
@@ -98,6 +106,12 @@ export default function DecorProps({ decoration: d, onPatch, onDuplicate, onRemo
               style={{ width: 36, height: 30, padding: 0 }}
             />
           </div>
+          {snapsToFilaments && (
+            <div style={{ fontSize: 11, opacity: 0.7 }}>
+              Your ticked filaments are in use, so this is printed in the nearest of them and a
+              small change may not show. Untick them under Colours to print it exactly.
+            </div>
+          )}
         </div>
       )}
 
