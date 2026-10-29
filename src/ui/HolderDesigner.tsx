@@ -18,7 +18,12 @@ type Props = {
   onChange: (next: Decoration[]) => void;
   selected: number | null;
   onSelect: (index: number | null) => void;
+  /** Lines a decoration being dragged catches on, in mm: x for vertical, y for horizontal. */
+  guides?: { x: number[]; y: number[] };
 };
+
+/** How near a guide a decoration has to come to catch on it, in mm. */
+const SNAP_MM = 1.1;
 
 /** The frame is drawn with this much around it when the view is reset. */
 const REST_MARGIN_MM = 14;
@@ -63,11 +68,14 @@ export default function HolderDesigner({
   onChange,
   selected,
   onSelect,
+  guides = { x: [], y: [] },
 }: Props) {
   const M = OVERHANG_MM;
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<Drag | null>(null);
+  /** The guides the dragged decoration is caught on just now, to draw. */
+  const [caught, setCaught] = useState<{ x?: number; y?: number }>({});
   const [size, setSize] = useState({ w: 480, h: 420 });
 
   // What is on screen while a drag is going on. Only this component is redrawn
@@ -203,6 +211,24 @@ export default function HolderDesigner({
         ctx.restore();
       });
 
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = "rgba(34,211,238,0.85)";
+      ctx.lineWidth = 1;
+      if (caught.x !== undefined) {
+        ctx.beginPath();
+        ctx.moveTo(toX(caught.x), 0);
+        ctx.lineTo(toX(caught.x), viewH);
+        ctx.stroke();
+      }
+      if (caught.y !== undefined) {
+        ctx.beginPath();
+        ctx.moveTo(0, toY(caught.y));
+        ctx.lineTo(viewW, toY(caught.y));
+        ctx.stroke();
+      }
+      ctx.restore();
+
       if (selected !== null && decorations[selected]) {
         const d = decorations[selected];
         const box = decorationBox(d);
@@ -246,7 +272,7 @@ export default function HolderDesigner({
     return () => {
       live = false;
     };
-  }, [decorations, selected, width, height, corner, rail, win, pocket, view, viewW, viewH]);
+  }, [decorations, selected, width, height, corner, rail, win, pocket, view, viewW, viewH, caught]);
 
   // The wheel has to be a native listener: React's is passive, and a passive
   // one cannot stop the page scrolling under the pointer.
@@ -373,10 +399,17 @@ export default function HolderDesigner({
 
     if (d.kind === "move") {
       const m = mm(p);
-      patch(() => ({
-        x: Math.max(-M, Math.min(width + M, m.x + d.dx)),
-        y: Math.max(-M, Math.min(height + M, m.y + d.dy)),
-      }));
+      let x = Math.max(-M, Math.min(width + M, m.x + d.dx));
+      let y = Math.max(-M, Math.min(height + M, m.y + d.dy));
+
+      // Catch on a guide when close to one; Alt holds it off, for fine placing.
+      const found: { x?: number; y?: number } = {};
+      if (!e.altKey) {
+        for (const g of guides.x) if (Math.abs(x - g) <= SNAP_MM) { x = g; found.x = g; break; }
+        for (const g of guides.y) if (Math.abs(y - g) <= SNAP_MM) { y = g; found.y = g; break; }
+      }
+      setCaught((prev) => (prev.x === found.x && prev.y === found.y ? prev : found));
+      patch(() => ({ x, y }));
     } else if (d.kind === "size") {
       // Scaled by how much further from the middle the handle is than it was
       // when it was taken, which is the same for an icon and for text.
@@ -398,6 +431,7 @@ export default function HolderDesigner({
 
   function up() {
     drag.current = null;
+    setCaught({});
     if (draft) flush(draft);
   }
 
@@ -431,7 +465,7 @@ export default function HolderDesigner({
           pointerEvents: "none",
         }}
       >
-        <span>Wheel zooms · drag the background to move the view</span>
+        <span>Wheel zooms · drag the background to move the view · Alt while dragging skips the guides</span>
         <button
           className="btn"
           style={{ padding: "1px 10px", fontSize: 11, pointerEvents: "auto" }}

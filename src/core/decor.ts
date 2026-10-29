@@ -32,6 +32,8 @@ export type Decoration = {
   bold?: boolean;
   /** The colour text is printed in, as #rrggbb. */
   color?: string;
+  /** An icon drawn as a silhouette in this colour, as #rrggbb, instead of its own colours. */
+  tint?: string;
   /** Centre of the icon, mm from the holder's left edge. */
   x: number;
   /** Centre of the icon, mm up from the holder's bottom edge. */
@@ -136,6 +138,8 @@ export type DecorMask = {
   flush: Uint8Array;
   /** The same pixels, which is what fills it: traced once with it, so the two fit. */
   flushBody: Uint8Array;
+  /** Where a recess may reach: the face, but not the window or the edge. */
+  sinkable: Uint8Array;
   /** Which body each raised pixel belongs to: a height step, or one of the icons' colours. */
   group: Uint8Array;
   /** How high each body stands, as a share of the full relief height. */
@@ -161,7 +165,7 @@ type Regions = ReturnType<typeof vectorise>["regions"];
  * makes them fit: the recess is the outline of all the regions together, taken
  * from the very vertices the regions are made of.
  */
-export function traceFlush(mask: DecorMask): Regions | null {
+export function traceFlush(mask: DecorMask, growPx = 0): Regions | null {
   const count = mask.groupFrac.length;
   let any = false;
   for (let i = 0; i < mask.flushBody.length; i++) {
@@ -173,10 +177,43 @@ export function traceFlush(mask: DecorMask): Regions | null {
   if (!any || count === 0) return null;
 
   const { w, h } = mask;
+  let body = mask.flushBody;
+  let group = mask.group;
+  if (growPx > 0) {
+    // Room for a fit: the same shapes grown by whole pixels, within where a
+    // recess may go. Traced afresh, so the pocket is clean however thin the
+    // letters are, and wider than the fill that goes in it.
+    body = new Uint8Array(mask.flushBody);
+    group = new Uint8Array(mask.group);
+    const r2 = growPx * growPx + 0.5;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (mask.flushBody[i] || !mask.sinkable[i]) continue;
+        let found = -1;
+        for (let dy = -growPx; dy <= growPx && found < 0; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= h) continue;
+          for (let dx = -growPx; dx <= growPx; dx++) {
+            const xx = x + dx;
+            if (xx < 0 || xx >= w || dx * dx + dy * dy > r2) continue;
+            if (mask.flushBody[yy * w + xx]) {
+              found = yy * w + xx;
+              break;
+            }
+          }
+        }
+        if (found >= 0) {
+          body[i] = 1;
+          group[i] = mask.group[found];
+        }
+      }
+    }
+  }
   const floorPx = (MIN_FEATURE_MM * MASK_PX_PER_MM) ** 2;
   return vectorise(
-    new Float64Array(w * h), w, h, mask.groupFrac.map((_, k) => k), 1.2, mask.flushBody, floorPx,
-    undefined, 2, mask.group,
+    new Float64Array(w * h), w, h, mask.groupFrac.map((_, k) => k), 1.2, body, floorPx,
+    undefined, 2, group,
   ).regions;
 }
 

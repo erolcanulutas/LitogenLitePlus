@@ -36,6 +36,7 @@ import IconPalette from "./ui/IconPalette";
 import DecorProps from "./ui/DecorProps";
 import FilamentEditor from "./ui/FilamentEditor";
 import { activeColours, parseFilaments, type Filament } from "./core/filaments";
+import { TEMPLATES } from "./core/templates";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
@@ -1429,6 +1430,7 @@ type SavedDesign = {
   tealight: number;
   relief: number;
   reliefMode?: ReliefMode;
+  flushClearance?: number;
   iconColours?: number;
   frameColour?: string;
   pose: "face" | "standing";
@@ -1845,6 +1847,8 @@ export default function App() {
   const [decorations, setDecorations] = useState<Decoration[]>([]);
   const [decorSelected, setDecorSelected] = useState<number | null>(null);
   const [reliefMm, setReliefMm] = useState(1);
+  /** Room left round a flush decoration in its recess, in mm. */
+  const [flushClearance, setFlushClearance] = useState(0);
   const [reliefMode, setReliefMode] = useState<ReliefMode>("flat");
   /** Print the icons in their own colours, up to this many; 0 prints them all in one. */
   const [iconColours, setIconColours] = useState(0);
@@ -1916,10 +1920,87 @@ export default function App() {
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
   const holderUsable = shapeId === "rectangle" && !curved;
 
+  /**
+   * Every change to the decorations goes through here, so each can be undone.
+   * Changes that follow one another on the same thing, such as the letters of a
+   * word being typed, are one step rather than one each.
+   */
+  const history = useRef<{ past: Decoration[][]; future: Decoration[][]; last: string; at: number }>({
+    past: [],
+    future: [],
+    last: "",
+    at: 0,
+  });
+  function commitDecorations(next: Decoration[], merge = "") {
+    const h = history.current;
+    const now = Date.now();
+    if (!(merge !== "" && merge === h.last && now - h.at < 1000)) {
+      h.past.push(decorations);
+      if (h.past.length > 80) h.past.shift();
+    }
+    h.future = [];
+    h.last = merge;
+    h.at = now;
+    setDecorations(next);
+  }
+  function undoDecorations() {
+    const h = history.current;
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future.push(decorations);
+    h.last = "";
+    setDecorations(prev);
+    setDecorSelected(null);
+  }
+  function redoDecorations() {
+    const h = history.current;
+    const next = h.future.pop();
+    if (!next) return;
+    h.past.push(decorations);
+    h.last = "";
+    setDecorations(next);
+    setDecorSelected(null);
+  }
+
+  // Keys, while decorating: undo and redo, the arrows to nudge, Delete to remove.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (view !== "holder" || holderSub !== "decorate") return;
+      const el = e.target as HTMLElement | null;
+      if (el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (mod && k === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redoDecorations();
+        else undoDecorations();
+      } else if (mod && k === "y") {
+        e.preventDefault();
+        redoDecorations();
+      } else if (decorSelected !== null && decorations[decorSelected]) {
+        const step = e.shiftKey ? 2 : 0.5;
+        const move: Record<string, [number, number]> = {
+          arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, step], arrowdown: [0, -step],
+        };
+        if (move[k]) {
+          e.preventDefault();
+          const d = decorations[decorSelected];
+          patchSelectedDecor({ x: +(d.x + move[k][0]).toFixed(2), y: +(d.y + move[k][1]).toFixed(2) });
+        } else if (k === "delete" || k === "backspace") {
+          e.preventDefault();
+          removeSelectedDecor();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   /** Puts something on the frame, selected, ready to be dragged. */
   function addDecoration(d: Decoration) {
     if (decorations.length === 0) setHolderPose("standing");
-    setDecorations([...decorations, d]);
+    commitDecorations([...decorations, d]);
     setDecorSelected(decorations.length);
   }
   function addIcon(icon: string) {
@@ -1951,18 +2032,52 @@ export default function App() {
     // Choosing a colour for text only means something when decorations are
     // printed in their own colours, so choosing one turns that on rather than
     // leaving the choice with no effect.
-    if (change.color !== undefined && iconColours === 0) setIconColours(4);
-    setDecorations(decorations.map((d, i) => (i === decorSelected ? { ...d, ...change } : d)));
+    if ((change.color !== undefined || change.tint !== undefined) && iconColours === 0) setIconColours(4);
+    commitDecorations(
+      decorations.map((d, i) => (i === decorSelected ? { ...d, ...change } : d)),
+      `${decorSelected}:${Object.keys(change).join(",")}`,
+    );
+  }
+  function alignSelectedDecor(to: "centreX" | "centreY" | "top" | "bottom") {
+    if (decorSelected === null) return;
+    const at =
+      to === "centreX" ? { x: holderGeom.W / 2 }
+      : to === "centreY" ? { y: holderGeom.H / 2 }
+      : to === "top" ? { y: (holderGeom.window.y1 + holderGeom.H) / 2 }
+      : { y: holderGeom.rail / 2 + 0.5 };
+    patchSelectedDecor(at);
+  }
+  /** Moves the selected decoration one step in front of or behind its neighbour. */
+  function orderSelectedDecor(by: 1 | -1) {
+    if (decorSelected === null) return;
+    const to = decorSelected + by;
+    if (to < 0 || to >= decorations.length) return;
+    const next = decorations.slice();
+    [next[decorSelected], next[to]] = [next[to], next[decorSelected]];
+    commitDecorations(next);
+    setDecorSelected(to);
+  }
+  function applyTemplate(id: string) {
+    const t = TEMPLATES.find((x) => x.id === id);
+    if (!t) return;
+    commitDecorations(
+      t.build(
+        { W: holderGeom.W, H: holderGeom.H, window: holderGeom.window, rail: holderGeom.rail },
+        (greeting) => greeting,
+      ),
+    );
+    setHolderPose("standing");
+    setDecorSelected(null);
   }
   function duplicateSelectedDecor() {
     const d = decorSelected !== null ? decorations[decorSelected] : undefined;
     if (!d) return;
-    setDecorations([...decorations, { ...d, x: d.x + 5, y: d.y - 5 }]);
+    commitDecorations([...decorations, { ...d, x: d.x + 5, y: d.y - 5 }]);
     setDecorSelected(decorations.length);
   }
   function removeSelectedDecor() {
     if (decorSelected === null) return;
-    setDecorations(decorations.filter((_, i) => i !== decorSelected));
+    commitDecorations(decorations.filter((_, i) => i !== decorSelected));
     setDecorSelected(null);
   }
 
@@ -1991,7 +2106,7 @@ export default function App() {
     let live = true;
     if (decorations.length === 0) return;
     const timer = setTimeout(() => {
-      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours, palette: activeFilaments })
+      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours, palette: activeFilaments }, flushClearance)
         .then((d) => live && setDecor(d))
         .catch(() => live && setDecor(null));
     }, 300);
@@ -1999,7 +2114,7 @@ export default function App() {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, activeFilaments]);
+  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, activeFilaments, flushClearance]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
@@ -2615,7 +2730,7 @@ export default function App() {
         mode: reliefMode,
         colours: iconColours,
         palette: activeFilaments,
-      });
+      }, flushClearance);
       const plate = buildHolder(holderParams, made.cuts, made.recess);
       whole = joinMeshes(plate, made.relief.mesh);
       bodies = made.relief.groups.map((g) => ({
@@ -2738,6 +2853,7 @@ export default function App() {
       tealight: tealightMm,
       relief: reliefMm,
       reliefMode,
+      flushClearance,
       iconColours,
       frameColour,
       pose: holderPose,
@@ -2765,9 +2881,10 @@ export default function App() {
     setReliefMm(d.relief);
     setReliefMode(d.reliefMode ?? "flat");
     setIconColours(d.iconColours ?? 0);
+    setFlushClearance(d.flushClearance ?? 0);
     setFrameColour(d.frameColour ?? "#e2c28b");
     setHolderPose(d.pose);
-    setDecorations(d.decorations);
+    commitDecorations(d.decorations);
     setDecorSelected(null);
   }
 
@@ -4199,10 +4316,18 @@ export default function App() {
                         decorations={decorations}
                         onChange={(next) => {
                           if (next.length > 0 && decorations.length === 0) setHolderPose("standing");
-                          setDecorations(next);
+                          commitDecorations(next);
                         }}
                         selected={decorSelected}
                         onSelect={setDecorSelected}
+                        guides={{
+                          x: [holderGeom.W / 2],
+                          y: [
+                            holderGeom.H / 2,
+                            (holderGeom.window.y1 + holderGeom.H) / 2,
+                            holderGeom.rail / 2 + 0.5,
+                          ],
+                        }}
                       />
                     </div>
                   )}
@@ -4345,6 +4470,47 @@ export default function App() {
                               <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the frame's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the frame standing up." />
                             </div>
 
+                            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                              <button
+                                className="btn"
+                                style={{ flex: 1, justifyContent: "center" }}
+                                disabled={history.current.past.length === 0}
+                                title="Undo (Ctrl+Z)"
+                                onClick={undoDecorations}
+                              >
+                                ↶ Undo
+                              </button>
+                              <button
+                                className="btn"
+                                style={{ flex: 1, justifyContent: "center" }}
+                                disabled={history.current.future.length === 0}
+                                title="Redo (Ctrl+Y)"
+                                onClick={redoDecorations}
+                              >
+                                ↷ Redo
+                              </button>
+                            </div>
+
+                            <div className="label-row">
+                              <label className="miniLabel">Start from a template</label>
+                              <InfoIcon text="A ready-made set of decorations along the borders, to start from and change. Choosing one replaces what is on the frame now; Undo brings it back." />
+                            </div>
+                            <select
+                              className="spinInput"
+                              value=""
+                              style={{ marginBottom: 12 }}
+                              onChange={(e) => {
+                                if (e.target.value) applyTemplate(e.target.value);
+                              }}
+                            >
+                              <option value="">Choose…</option>
+                              {TEMPLATES.map((tpl) => (
+                                <option key={tpl.id} value={tpl.id}>
+                                  {tpl.label}
+                                </option>
+                              ))}
+                            </select>
+
                             {decorSelected !== null && decorations[decorSelected] ? (
                               <DecorProps
                                 decoration={decorations[decorSelected]}
@@ -4352,6 +4518,10 @@ export default function App() {
                                 onDuplicate={duplicateSelectedDecor}
                                 onRemove={removeSelectedDecor}
                                 snapsToFilaments={activeFilaments.length > 0}
+                                onAlign={alignSelectedDecor}
+                                onOrder={orderSelectedDecor}
+                                canForward={decorSelected < decorations.length - 1}
+                                canBack={decorSelected > 0}
                               />
                             ) : (
                               <div style={{ fontSize: 12, opacity: 0.75 }}>
@@ -4392,6 +4562,16 @@ export default function App() {
                                   value={reliefMm}
                                   onChange={(e) => setReliefMm(Number(e.target.value))}
                                 />
+
+                                {decorations.some((d) => d.flush && !d.cut) && (
+                                  <>
+                                    <div className="label-row" style={{ marginTop: 12 }}>
+                                      <label className="miniLabel">Flush clearance (mm)</label>
+                                      <InfoIcon text="Room left round a flush decoration in its recess. 0 makes the fill exactly the shape of the pocket; a tenth or two of a millimetre (up to 0.2) lets it go in if printed parts come out a little large. The pocket grows by about this much all round, in steps of the mask resolution, and a gap shows as a hairline." />
+                                    </div>
+                                    <NumField value={flushClearance} min={0} max={0.2} step={0.05} onChange={setFlushClearance} />
+                                  </>
+                                )}
 
                             <label className="shadeToggle" style={{ marginTop: 14, display: "flex" }}>
                               <input

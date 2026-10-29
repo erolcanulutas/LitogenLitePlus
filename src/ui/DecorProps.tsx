@@ -7,6 +7,10 @@ type Props = {
   onRemove: () => void;
   /** Ticked filaments are in use, so a colour is printed in the nearest of them. */
   snapsToFilaments?: boolean;
+  onAlign: (to: "centreX" | "centreY" | "top" | "bottom") => void;
+  onOrder: (by: 1 | -1) => void;
+  canForward: boolean;
+  canBack: boolean;
 };
 
 /**
@@ -20,6 +24,10 @@ export default function DecorProps({
   onDuplicate,
   onRemove,
   snapsToFilaments = false,
+  onAlign,
+  onOrder,
+  canForward,
+  canBack,
 }: Props) {
   return (
     <div
@@ -68,6 +76,24 @@ export default function DecorProps({
         </label>
       )}
 
+      {!isText(d) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
+          <span style={{ flex: 1 }}>{d.tint ? "One colour" : "Its own colours"}</span>
+          <input
+            type="color"
+            value={d.tint ?? "#444444"}
+            title="Print the icon as a silhouette in one colour"
+            onChange={(e) => onPatch({ tint: e.target.value })}
+            style={{ width: 36, height: 30, padding: 0 }}
+          />
+          {d.tint && (
+            <button className="btn" style={{ padding: "2px 8px" }} onClick={() => onPatch({ tint: undefined })}>
+              Original
+            </button>
+          )}
+        </div>
+      )}
+
       {isText(d) && (
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           <input
@@ -114,6 +140,48 @@ export default function DecorProps({
           )}
         </div>
       )}
+
+      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 12 }}>Place</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4, marginTop: 4 }}>
+        {(
+          [
+            ["centreX", "Centre ↔", "Centre across the frame"],
+            ["centreY", "Centre ↕", "Centre up and down the frame"],
+            ["top", "Top strip", "On the middle of the top border"],
+            ["bottom", "Bottom strip", "On the middle of the bottom border"],
+          ] as const
+        ).map(([id, label, hint]) => (
+          <button
+            key={id}
+            className="btn"
+            style={{ padding: "3px 2px", fontSize: 11, justifyContent: "center" }}
+            title={hint}
+            onClick={() => onAlign(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        <button
+          className="btn"
+          style={{ flex: 1, justifyContent: "center", fontSize: 12 }}
+          disabled={!canForward}
+          title="In front of the one above it"
+          onClick={() => onOrder(1)}
+        >
+          Bring forward
+        </button>
+        <button
+          className="btn"
+          style={{ flex: 1, justifyContent: "center", fontSize: 12 }}
+          disabled={!canBack}
+          title="Behind the one below it"
+          onClick={() => onOrder(-1)}
+        >
+          Send back
+        </button>
+      </div>
 
       <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
         <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={onDuplicate}>

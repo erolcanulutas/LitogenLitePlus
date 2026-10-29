@@ -100,7 +100,23 @@ export function drawDecoration(
     ctx.fillText(d.text || "", 0, 0);
   } else if (img) {
     const px = d.size * scale;
-    ctx.drawImage(img, -px / 2, -px / 2, px, px);
+    if (d.tint) {
+      // A silhouette: the icon's shape filled with one colour.
+      const side = Math.max(1, Math.ceil(px));
+      const tmp = document.createElement("canvas");
+      tmp.width = side;
+      tmp.height = side;
+      const t = tmp.getContext("2d");
+      if (t) {
+        t.drawImage(img, 0, 0, side, side);
+        t.globalCompositeOperation = "source-in";
+        t.fillStyle = d.tint;
+        t.fillRect(0, 0, side, side);
+        ctx.drawImage(tmp, -px / 2, -px / 2, px, px);
+      }
+    } else {
+      ctx.drawImage(img, -px / 2, -px / 2, px, px);
+    }
   }
   ctx.restore();
 }
@@ -192,6 +208,7 @@ export async function renderMask(
   const beyond = new Uint8Array(w * h);
   const cutOut = new Uint8Array(w * h);
   const flush = new Uint8Array(w * h);
+  const sinkableMask = new Uint8Array(w * h);
   /** The frame's border: on the frame and not over the pocket. */
   const border = new Uint8Array(w * h);
 
@@ -218,6 +235,7 @@ export async function renderMask(
         !inRect(pocket, mx, my, CUT_MARGIN_MM) &&
         my >= rail + CUT_MARGIN_MM;
       const sinkable = inside(mx, my, CUT_MARGIN_MM) && !inRect(window, mx, my, CUT_MARGIN_MM);
+      if (sinkable) sinkableMask[i] = 1;
       if (fd && fd[i * 4 + 3] >= 128) {
         if (sinkable) {
           flush[i] = 1;
@@ -267,6 +285,7 @@ export async function renderMask(
     cutOut,
     flush,
     flushBody,
+    sinkable: sinkableMask,
     group,
     groupFrac,
     groupColors,
@@ -520,10 +539,13 @@ export async function makeDecor(
   geom: DecorGeom,
   height: number,
   look: ReliefLook,
+  clearance = 0,
 ): Promise<{ relief: Relief; cuts: [number, number][][]; recess: Recess | null }> {
   const mask = await renderMask(decorations, geom, look);
   const flushRegions = traceFlush(mask);
-  const sunk = recessLoops(mask, flushRegions);
+  // Room for the fill: the pocket is traced from the shapes grown a pixel or two.
+  const growPx = clearance > 0 ? Math.max(1, Math.round(clearance * MASK_PX_PER_MM)) : 0;
+  const sunk = recessLoops(mask, growPx > 0 ? traceFlush(mask, growPx) : flushRegions);
   return {
     relief: buildRelief(mask, geom.frontZ, height, geom.lip, flushRegions),
     cuts: cutLoops(mask),
