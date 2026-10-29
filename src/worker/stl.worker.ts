@@ -12,6 +12,7 @@ import { groupByBody } from "../core/inlay";
 import { buildVectorInlay } from "../core/vector_inlay";
 import { buildVectorGraphic } from "../core/vector_graphic";
 import { fitTonesFor } from "../core/tones";
+import { labelByColor, type Lab } from "../core/palette";
 import type { EmbossSide } from "../core/types";
 import { getShape } from "../shapes";
 import type { Quality } from "../core/quality";
@@ -44,6 +45,12 @@ type JobRequest = {
    */
   inlayBaseLayers?: number;
   inlayTopLayers?: number;
+  /**
+   * Where each of an inlay's tones sits in colour (Lab, darkest first). When
+   * present, and one per tone, the picture is divided by colour rather than by
+   * brightness, so two colours of the same brightness stay two tones.
+   */
+  toneCentres?: Lab[];
   /**
    * Trace each tone out of the picture as a closed outline and give it its own
    * solid, rather than deciding tones by thresholds on brightness. Applies to
@@ -131,7 +138,14 @@ async function tracePicture(
   src: ImageData,
   levels: number,
   floor: number,
-): Promise<{ lum: Float64Array; w: number; h: number; tones: number[] } | null> {
+  centres?: readonly Lab[],
+): Promise<{
+  lum: Float64Array;
+  w: number;
+  h: number;
+  tones: number[];
+  labels?: Uint8Array;
+} | null> {
   const aspect = src.width / src.height;
   const long = Math.max(floor, Math.min(TRACE_MAX, Math.max(src.width, src.height)));
   const w = Math.max(8, Math.round(aspect >= 1 ? long : long * aspect));
@@ -155,6 +169,14 @@ async function tracePicture(
     const o = i * 4;
     lum[i] =
       (0.2126 * img.data[o] + 0.7152 * img.data[o + 1] + 0.0722 * img.data[o + 2]) / 255;
+  }
+
+  if (centres && centres.length === levels) {
+    return {
+      lum, w, h,
+      tones: centres.map((_, i) => i),
+      labels: labelByColor(img, centres),
+    };
   }
 
   return { lum, w, h, tones: fitTonesFor(img, levels) };
@@ -273,7 +295,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
     // terrace a surface that is about to be thrown away.
     const wantsRegions =
       buildParams.vector && levels >= 2 && (inlay !== null || (msg.toneHeightsMm?.length ?? 0) > 0);
-    const pic = wantsRegions ? await tracePicture(msg.image, levels, hmRaw.w) : null;
+    const pic = wantsRegions ? await tracePicture(msg.image, levels, hmRaw.w, inlay ? msg.toneCentres : undefined) : null;
 
     const shape = getShape(msg.shapeId);
     let mesh = shape.build(
@@ -283,7 +305,7 @@ self.onmessage = async (ev: MessageEvent<JobRequest>) => {
 
     if (pic) {
       if (inlay) {
-        mesh = buildVectorInlay(mesh, pic.lum, pic.w, pic.h, pic.tones, inlay);
+        mesh = buildVectorInlay(mesh, pic.lum, pic.w, pic.h, pic.tones, inlay, pic.labels);
       } else {
         const range = msg.maxT - msg.minT;
         const even = (band: number) => {

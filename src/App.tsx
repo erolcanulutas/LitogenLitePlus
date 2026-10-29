@@ -16,6 +16,7 @@ import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
+import { clusterColors, suggestColourLevels } from "./core/palette";
 import {
   OutOfTokens, signIn, signOut, signUp, spendForExport, unlimited, whoAmI,
   type Account,
@@ -1719,6 +1720,15 @@ export default function App() {
   const levels = graphic || inlayMode ? toneLevels : 0;
 
   /**
+   * Where an inlay's tones sit in colour. The same fit that colours the panel,
+   * so the tone the worker calls third is the one the panel shows third.
+   */
+  const toneCentres = useMemo(
+    () => (inlayMode && imgData ? clusterColors(imgData, toneLevels).lab : undefined),
+    [inlayMode, imgData, toneLevels],
+  );
+
+  /**
    * Where a given number of tones would sit, in layers, thickest first.
    *
    * Taken for a count rather than read off the current one, because placing
@@ -2034,6 +2044,13 @@ export default function App() {
    * apply — only the length of the colour list does.
    */
   function applyInlayColors(count: number) {
+    // An inlay's tones are colours of the picture, so a fresh count starts out
+    // as those colours rather than as whatever the stock palette had there.
+    if (imgData) {
+      const found = clusterColors(imgData, count);
+      setColors([found.colors[found.dominant], ...found.colors]);
+      return;
+    }
     setColors((prev) => {
       const out = prev.slice(0, count + 1);
       while (out.length < count + 1) {
@@ -2053,6 +2070,22 @@ export default function App() {
    */
   function autoToneLevels() {
     if (!imgData) return;
+
+    if (inlayMode) {
+      // Tones of an inlay are colours, found in colour, so two colours of the
+      // same brightness are still two tones.
+      const hue = suggestColourLevels(imgData);
+      setToneLevels(hue.levels);
+      setToneCuts([]);
+      setColors([hue.colors[hue.dominant], ...hue.colors]);
+      setToneOverride(null);
+      setAutoNote(
+        hue.smooth
+          ? `No flat colours in this picture — ${hue.levels} is a starting point, not a reading.`
+          : `${hue.levels} flat colours, holding ${Math.round(hue.covered * 100)}% of the picture.`,
+      );
+      return;
+    }
 
     const found = suggestToneLevels(imgData);
     setToneLevels(found.levels);
@@ -2253,6 +2286,7 @@ export default function App() {
           toneCuts: levels > 0 ? toneCuts : [],
           inlayBaseLayers: inlayMode ? baseLayers : 0,
           inlayTopLayers: inlayMode ? pictureLayers : 0,
+          toneCentres: inlayMode ? toneCentres : undefined,
           vector,
           colors,
           layerHeight,

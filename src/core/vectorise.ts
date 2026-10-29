@@ -504,6 +504,9 @@ function makeRing(px: number[], py: number[], w: number, h: number): Ring {
  *                   then stops.
  * @param mask       Zero where the shape does not reach, so no tone is traced
  *                   there and the outermost ring follows the shape's own edge.
+ * @param given      One label per pixel, decided by the caller. When present
+ *                   it replaces the quantising of `lum` against `tones`;
+ *                   `tones` then only says how many labels there are.
  * @param stamp      A label to lay over the tones wherever it says, traced
  *                   alongside them so the boundary they share is one curve.
  * @param minAreaPx  Smallest region worth keeping, in square pixels. The
@@ -521,8 +524,17 @@ export function vectorise(
   minAreaPx = 3,
   stamp?: Stamp,
   cleanPasses = 2,
+  given?: Uint8Array,
 ): Vectorised {
-  const raw = quantise(lum, w, h, tones, mask);
+  // Labels already decided elsewhere — by colour, say — stand in for the
+  // brightness quantising, and only the shape's edge is applied to them.
+  let raw: Uint8Array;
+  if (given) {
+    raw = new Uint8Array(given);
+    if (mask) for (let i = 0; i < raw.length; i++) if (mask[i] === 0) raw[i] = OUTSIDE;
+  } else {
+    raw = quantise(lum, w, h, tones, mask);
+  }
 
   // A stamped label is not a tone read off the picture — a frame band, say —
   // but it has to be traced with the tones rather than beside them. Two traces

@@ -51,6 +51,7 @@ export function buildVectorInlay(
   h: number,
   tones: readonly number[],
   span: InlaySpan,
+  labels?: Uint8Array,
 ): Mesh {
   const box = boxOf(base, BASE_BODY);
   if (!box) return base;
@@ -58,7 +59,7 @@ export function buildVectorInlay(
   const cover = coverOf(base, box, w, h, BASE_BODY);
   const perPx = (box.maxX - box.minX) / w;
   const floorPx = (MIN_FEATURE_MM / perPx) ** 2;
-  const vec = vectorise(lum, w, h, tones, SMOOTH_PX, cover, floorPx);
+  const vec = vectorise(lum, w, h, tones, SMOOTH_PX, cover, floorPx, undefined, 2, labels);
 
   const { positions: p, triangleCount: count, tags } = base;
   const mb = new MeshBuilder(count + 1);
