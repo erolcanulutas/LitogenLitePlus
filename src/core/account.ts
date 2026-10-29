@@ -106,26 +106,41 @@ export class OutOfTokens extends Error {}
  * costs nothing, keeping costs a token. The server decides — the balance shown
  * here is only what it last said.
  */
-export async function spendForExport(): Promise<Account> {
+export async function spendForExport(ref?: string): Promise<Account> {
+  return (await spend(ref)).account;
+}
+
+/**
+ * Pays for a holder, once per design.
+ *
+ * `ref` is a fingerprint of the design. The server remembers the ones an
+ * account has paid for, so downloading the same holder again costs nothing, and
+ * says so with `again`.
+ */
+export async function spendForHolder(ref: string): Promise<{ account: Account; again: boolean }> {
+  return spend(ref);
+}
+
+async function spend(ref?: string): Promise<{ account: Account; again: boolean }> {
   let res: Response;
   try {
     res = await fetch("/api/spend.php", {
       method: "POST",
       headers: HEADERS,
-      body: "{}",
+      body: JSON.stringify(ref ? { ref } : {}),
       credentials: "same-origin",
     });
   } catch {
     throw new Error("Could not reach the server");
   }
 
-  const data: { ok?: boolean; error?: string; user?: Account | null } =
+  const data: { ok?: boolean; error?: string; again?: boolean; user?: Account | null } =
     await res.json().catch(() => ({}));
 
   if (res.status === 402) throw new OutOfTokens(data.error || "No tokens left");
   if (!data.ok || !data.user) throw new Error(data.error || "Could not export");
 
-  return data.user;
+  return { account: data.user, again: data.again === true };
 }
 
 /** The designs this account has kept. */

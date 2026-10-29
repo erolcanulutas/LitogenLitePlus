@@ -36,7 +36,7 @@ import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
   OutOfTokens, deleteDesignRemote, listDesigns, saveDesignRemote, signIn, signOut,
-  signUp, spendForExport, unlimited, whoAmI,
+  signUp, spendForExport, spendForHolder, unlimited, whoAmI,
   type Account,
 } from "./core/account";
 import { drawGoogleButton, signInOutcome } from "./core/google";
@@ -1478,6 +1478,23 @@ function joinMeshes(a: Mesh, b: Mesh): Mesh {
   return { positions, triangleCount: a.triangleCount + b.triangleCount };
 }
 
+/**
+ * A short fingerprint of a design: what it is made of, not how it was asked for.
+ * The same holder always gives the same one, which is how a second download is
+ * known for the same holder.
+ */
+async function designFingerprint(positions: Float32Array, extra: string): Promise<string> {
+  const tail = new TextEncoder().encode(extra);
+  const head = new Uint8Array(positions.buffer, positions.byteOffset, positions.byteLength);
+  const all = new Uint8Array(head.length + tail.length);
+  all.set(head, 0);
+  all.set(tail, head.length);
+  const digest = await crypto.subtle.digest("SHA-256", all);
+  return Array.from(new Uint8Array(digest).slice(0, 16))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
   const blob = new Blob([buf], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
@@ -2522,6 +2539,13 @@ export default function App() {
         ? holderStanding(whole, holderParams.tiltDeg)
         : holderForPrinting(whole);
 
+    // Which design this is, apart from how it will be laid on the bed: the same
+    // holder in another pose is not another design.
+    const ref = await designFingerprint(
+      whole.positions.subarray(0, whole.triangleCount * 9),
+      `${iconColours > 0 && bodies.length > 0 ? "3mf" : "stl"}|${frameColour}|${bodies.map((b) => b.color).join(",")}`,
+    );
+
     // Icons in their own colours need a file that can say so: the frame and
     // each colour are separate bodies of one 3MF. The turning above keeps the
     // triangles in the order they were built, so the runs are still the runs.
@@ -2534,20 +2558,25 @@ export default function App() {
         },
         [frameColour, ...bodies.map((b) => b.color)],
       );
-      if (await payForHolder()) {
+      if (await payForHolder(ref)) {
         downloadArrayBuffer(file, `litogen-holder-${holderAngle}deg.3mf`);
       }
       return;
     }
-    if (await payForHolder()) {
+    if (await payForHolder(ref)) {
       downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
     }
   }
 
-  /** Spends the token for a holder; false, with the reason shown, if it could not. */
-  async function payForHolder(): Promise<boolean> {
+  /**
+   * Spends the token for a holder, unless this design has been paid for before;
+   * false, with the reason shown, if it could not.
+   */
+  async function payForHolder(ref: string): Promise<boolean> {
     try {
-      setAccount(await spendForExport());
+      const paid = await spendForHolder(ref);
+      setAccount(paid.account);
+      if (paid.again) setHolderNote("You have downloaded this design before, so this one is free.");
       return true;
     } catch (e) {
       setHolderNote(
@@ -4319,6 +4348,9 @@ export default function App() {
               >
                 Download stand (STL) · free
               </button>
+              <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
+                Downloading the same holder design again is free.
+              </div>
               {holderNote && (
                 <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>
               )}

@@ -196,6 +196,21 @@ function db(): PDO
         'CREATE UNIQUE INDEX IF NOT EXISTS design_name ON holder_designs (user_id, name)'
     );
 
+    // Holders an account has paid for, by a fingerprint of the design: a
+    // second download of the same one is free. The fingerprint says nothing
+    // about what the design is.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS export_receipts (
+            id $auto,
+            user_id INTEGER NOT NULL,
+            ref VARCHAR(64) NOT NULL,
+            created_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS receipt_once ON export_receipts (user_id, ref)'
+    );
+
     return $pdo;
 }
 
