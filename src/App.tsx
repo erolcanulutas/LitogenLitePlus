@@ -4157,13 +4157,32 @@ export default function App() {
                 {/* Where it is seen: the front of the frame, large, to place things on,
                     and the whole thing in 3D. Placing is the only time the first is wanted. */}
                 <div style={{ flex: 1, minWidth: 0, display: "flex" }}>
+                  <div
+                    style={{
+                      flex: holderSub === "decorate" && holderUsable ? "1 1 64%" : "1 1 100%",
+                      minWidth: 0,
+                      position: "relative",
+                    }}
+                  >
+                    <React.Suspense
+                      fallback={<div className="preview-empty">Loading viewer…</div>}
+                    >
+                      <MeshPreview
+                        mesh={holderMesh}
+                        overlay={holderPicture}
+                        flatShading={flatShading}
+                        lightBackground={lightBackground}
+                        showGrid={showGrid}
+                      />
+                    </React.Suspense>
+                  </div>
                   {holderSub === "decorate" && holderUsable && (
                     <div
                       style={{
-                        flex: "1 1 58%",
+                        flex: "1 1 36%",
                         minWidth: 0,
                         position: "relative",
-                        borderRight: "1px solid rgba(148,163,184,0.25)",
+                        borderLeft: "1px solid rgba(148,163,184,0.25)",
                       }}
                     >
                       <HolderDesigner
@@ -4183,25 +4202,6 @@ export default function App() {
                       />
                     </div>
                   )}
-                  <div
-                    style={{
-                      flex: holderSub === "decorate" && holderUsable ? "1 1 42%" : "1 1 100%",
-                      minWidth: 0,
-                      position: "relative",
-                    }}
-                  >
-                    <React.Suspense
-                      fallback={<div className="preview-empty">Loading viewer…</div>}
-                    >
-                      <MeshPreview
-                        mesh={holderMesh}
-                        overlay={holderPicture}
-                        flatShading={flatShading}
-                        lightBackground={lightBackground}
-                        showGrid={showGrid}
-                      />
-                    </React.Suspense>
-                  </div>
                 </div>
 
                 <div style={{ width: 390, display: "flex", flexDirection: "column", minHeight: 0 }}>
