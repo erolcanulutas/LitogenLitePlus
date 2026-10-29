@@ -4551,6 +4551,8 @@ export default function App() {
           account={account}
           theme={theme}
           onTheme={setTheme}
+          filaments={filaments}
+          onFilaments={setFilaments}
           onClose={() => setAccountPanel(false)}
           onSignOut={async () => {
             await signOut();

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { closeAccount, unlimited, type Account } from "../core/account";
+import FilamentEditor from "./FilamentEditor";
 
 /**
  * The account: what is left, what can be bought, and how to leave.
@@ -15,6 +16,9 @@ type Props = {
   account: Account;
   theme: "dark" | "light";
   onTheme: (t: "dark" | "light") => void;
+  /** The colours of filament this person owns, kept in the account. */
+  filaments: string[];
+  onFilaments: (next: string[]) => void;
   onClose: () => void;
   onSignOut: () => void;
   onClosedAccount: () => void;
@@ -35,6 +39,8 @@ export default function AccountPanel({
   account,
   theme,
   onTheme,
+  filaments,
+  onFilaments,
   onClose,
   onSignOut,
   onClosedAccount,
@@ -110,6 +116,15 @@ export default function AccountPanel({
           this account. A different address is not lost: sign in with it and
           whatever it bought comes across.
         </div>
+
+        <h3 className="acctHeading">My filaments</h3>
+        <p className="acctNote">
+          The colours of filament you have. An Inlay is divided into these
+          colours, Layered colours are moved to the nearest of them, and
+          decorations on a holder are printed in them. They are kept in your
+          account, so they follow you to another device.
+        </p>
+        <FilamentEditor value={filaments} onChange={onFilaments} />
 
         <h3 className="acctHeading">Settings</h3>
 
