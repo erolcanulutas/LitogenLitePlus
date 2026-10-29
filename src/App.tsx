@@ -6,7 +6,7 @@ import ImageControls from "./ui/ImageControls";
 import BandSlider from "./ui/BandSlider";
 import ColorField from "./ui/ColorField";
 import AccountPanel from "./ui/AccountPanel";
-import type { PreviewMesh } from "./ui/MeshPreview";
+import type { PreviewMesh, PreviewOverlay } from "./ui/MeshPreview";
 
 // three.js is most of the bundle, and plenty of sessions never open the 3D
 // tab, so it is fetched on first use rather than on page load.
@@ -16,7 +16,7 @@ import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
-import { DEFAULT_GAP, clusterColors, suggestColourLevels } from "./core/palette";
+import { DEFAULT_GAP, clusterColors, suggestColourLevels, type Lab } from "./core/palette";
 import {
   buildHolder,
   holderForPrinting,
@@ -26,7 +26,7 @@ import {
 } from "./core/holder";
 import type { Decoration, ReliefMode } from "./core/decor";
 import type { Mesh } from "./core/mesh";
-import { pictureInPocket } from "./core/pocket";
+import { pictureMatrix } from "./core/pocket";
 import HolderDesigner from "./ui/HolderDesigner";
 import NumField from "./ui/NumField";
 import { makeRelief } from "./ui/decorIcons";
@@ -1806,6 +1806,8 @@ export default function App() {
   const [toneLevels, setToneLevels] = useState(2);
   /** How far apart two colours must be to be told apart as tones, an inlay's only. */
   const [colorGap, setColorGap] = useState<number>(DEFAULT_GAP);
+  /** Tone centres once one has been taken away by hand, for this picture. */
+  const [centresKept, setCentresKept] = useState<{ img: ImageData; lab: Lab[] } | null>(null);
   const levels = graphic || inlayMode ? toneLevels : 0;
 
   const holderParams = useMemo(() => {
@@ -1824,22 +1826,29 @@ export default function App() {
 
   // The raised shapes need icons loaded and drawn, which takes a moment; a
   // newer request makes an older one that is still working irrelevant.
+  //
+  // Tracing the icons takes a good fraction of a second, so it waits until the
+  // settings have been still for a moment: a slider dragged across its range is
+  // one rebuild at the end, not a hundred along the way.
   useEffect(() => {
     let live = true;
     if (decorations.length === 0) return;
-    makeRelief(
-      decorations,
-      holderGeom.W,
-      holderGeom.H,
-      holderGeom.window,
-      holderGeom.T,
-      reliefMm,
-      reliefMode,
-    )
-      .then((m) => live && setReliefMesh(m))
-      .catch(() => live && setReliefMesh(null));
+    const timer = setTimeout(() => {
+      makeRelief(
+        decorations,
+        holderGeom.W,
+        holderGeom.H,
+        holderGeom.window,
+        holderGeom.T,
+        reliefMm,
+        reliefMode,
+      )
+        .then((m) => live && setReliefMesh(m))
+        .catch(() => live && setReliefMesh(null));
+    }, 300);
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [decorations, holderGeom, reliefMm, reliefMode]);
 
@@ -1849,60 +1858,54 @@ export default function App() {
     const relief = decorations.length > 0 ? reliefMesh : null;
     const frame = relief && relief.triangleCount > 0 ? joinMeshes(plate, relief) : plate;
 
-    // The finished picture, when there is one, rides in the pocket with the
-    // plate and leans with it, so it is turned along with everything else.
-    const pic =
-      showPicture && previewMesh
-        ? pictureInPocket(
-            previewMesh,
-            {
-              x: holderGeom.W / 2,
-              y: (holderGeom.pocket.y0 + holderGeom.pocket.y1) / 2,
-            },
-            holderGeom.pocketDepth - 0.3,
-          )
-        : null;
-
-    const whole = pic ? joinMeshes(frame, pic) : frame;
-    const placed = holderInPlace(whole, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
+    const placed = holderInPlace(frame, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
     const stand = buildStand({ tealight: tealightMm });
     const positions = new Float32Array(placed.positions.length + stand.positions.length);
     positions.set(placed.positions, 0);
     positions.set(stand.positions, placed.positions.length);
 
-    const frameTris = frame.triangleCount;
-    const bandStarts = [0];
-    const colors = ["#e2c28b"];
-    if (pic) {
-      for (let b = 0; b < pic.bandStarts.length; b++) {
-        bandStarts.push(frameTris + pic.bandStarts[b]);
-        colors.push(pic.colors[b] ?? "#d8dee9");
-      }
-    }
-    bandStarts.push(placed.triangleCount);
-    colors.push("#9fb4c8");
-
     const tilt = (holderParams.tiltDeg * Math.PI) / 180;
     return {
       positions,
       triangleCount: placed.triangleCount + stand.triangleCount,
-      bandStarts,
-      colors,
+      bandStarts: [0, placed.triangleCount],
+      colors: ["#e2c28b", "#9fb4c8"],
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
-  }, [
-    shapeId, curved, holderParams, holderGeom, reliefMesh, decorations.length,
-    tealightMm, showPicture, previewMesh,
-  ]);
+  }, [shapeId, curved, holderParams, holderGeom, reliefMesh, decorations.length, tealightMm]);
+
+  // The finished picture is its own model, which can have millions of
+  // triangles. It is placed in the pocket by a matrix, so changing the angle or
+  // dragging a decoration never copies it.
+  const holderPicture = useMemo<PreviewOverlay | null>(() => {
+    if (shapeId !== "rectangle" || curved || !showPicture || !previewMesh) return null;
+    return {
+      mesh: previewMesh,
+      matrix: pictureMatrix(
+        previewMesh,
+        { x: holderGeom.W / 2, y: (holderGeom.pocket.y0 + holderGeom.pocket.y1) / 2 },
+        holderGeom.pocketDepth - 0.3,
+        holderParams.tiltDeg,
+        holderGeom.socketDepth,
+        holderGeom.W / 2,
+      ),
+    };
+  }, [shapeId, curved, showPicture, previewMesh, holderGeom, holderParams.tiltDeg]);
 
   /**
    * Where an inlay's tones sit in colour. The same fit that colours the panel,
    * so the tone the worker calls third is the one the panel shows third.
    */
-  const toneCentres = useMemo(
-    () => (inlayMode && imgData ? clusterColors(imgData, toneLevels, colorGap).lab : undefined),
-    [inlayMode, imgData, toneLevels, colorGap],
-  );
+  const toneCentres = useMemo(() => {
+    if (!inlayMode || !imgData) return undefined;
+    // A tone taken away by hand leaves the centres the picture is divided by
+    // as they were, minus that one; it holds only while the picture and the
+    // count are the ones it was made for.
+    if (centresKept && centresKept.img === imgData && centresKept.lab.length === toneLevels) {
+      return centresKept.lab;
+    }
+    return clusterColors(imgData, toneLevels, colorGap).lab;
+  }, [inlayMode, imgData, toneLevels, colorGap, centresKept]);
 
   /**
    * Where a given number of tones would sit, in layers, thickest first.
@@ -2218,7 +2221,26 @@ export default function App() {
    * through the thickness at all, so the band slider's bookkeeping does not
    * apply — only the length of the colour list does.
    */
+  /**
+   * Takes one tone out of an inlay and gives its part of the picture to the
+   * colour nearest to it.
+   *
+   * Nothing has to be filled in by hand: the picture is divided by which centre
+   * each pixel is nearest, so with a centre gone its pixels belong to whichever
+   * of the others is closest to them.
+   */
+  function removeTone(tone: number) {
+    if (!imgData || !toneCentres || toneLevels <= 2) return;
+    const lab = toneCentres.filter((_, i) => i !== tone);
+    setCentresKept({ img: imgData, lab });
+    setToneLevels(lab.length);
+    setToneCuts([]);
+    setColors((prev) => prev.filter((_, i) => i !== tone + 1));
+    setAutoNote(null);
+  }
+
   function applyInlayColors(count: number) {
+    setCentresKept(null);
     // An inlay's tones are colours of the picture, so a fresh count starts out
     // as those colours rather than as whatever the stock palette had there.
     if (imgData) {
@@ -2250,6 +2272,7 @@ export default function App() {
       // Tones of an inlay are colours, found in colour, so two colours of the
       // same brightness are still two tones.
       const hue = suggestColourLevels(imgData, gap);
+      setCentresKept(null);
       setToneLevels(hue.levels);
       setToneCuts([]);
       setColors([hue.colors[hue.dominant], ...hue.colors]);
@@ -3229,13 +3252,41 @@ export default function App() {
 
               <div className="inlayColors">
                 {Array.from({ length: levels + 1 }, (_, b) => (
-                  <label className="inlayColor" key={`ic${b}`}>
+                  <label className="inlayColor" key={`ic${b}`} style={{ position: "relative" }}>
                     <input
                       type="color"
                       value={colors[b] ?? "#cccccc"}
                       onChange={(e) => setBandColor(b, e.target.value)}
                     />
                     <span>{b === 0 ? "Base" : `Tone ${b}`}</span>
+                    {b > 0 && levels > 2 && (
+                      <button
+                        type="button"
+                        title="Remove this colour: its part of the picture goes to the nearest other colour"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          removeTone(b - 1);
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: -6,
+                          right: -6,
+                          width: 18,
+                          height: 18,
+                          lineHeight: "16px",
+                          padding: 0,
+                          borderRadius: 9,
+                          border: "1px solid rgba(255,255,255,0.35)",
+                          background: "rgba(15,23,42,0.92)",
+                          color: "#e2e8f0",
+                          fontSize: 11,
+                          cursor: "pointer",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </label>
                 ))}
               </div>
@@ -3784,6 +3835,7 @@ export default function App() {
                   >
                     <MeshPreview
                       mesh={holderMesh}
+                      overlay={holderPicture}
                       flatShading={flatShading}
                       lightBackground={lightBackground}
                       showGrid={showGrid}

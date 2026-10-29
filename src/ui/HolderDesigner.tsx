@@ -51,7 +51,7 @@ export default function HolderDesigner({
   height,
   window: win,
   pocket,
-  decorations,
+  decorations: committed,
   onChange,
   selected,
   onSelect,
@@ -60,6 +60,26 @@ export default function HolderDesigner({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<Drag | null>(null);
   const [category, setCategory] = useState(CATEGORIES[0].id);
+
+  // What is on screen while a drag or a slider is going on. Only this component
+  // is redrawn as it changes; the rest of the page hears of it when it settles,
+  // because redrawing the whole page for every pixel of a drag is what made
+  // this feel stuck.
+  const [draft, setDraft] = useState<Decoration[] | null>(null);
+  const decorations = draft ?? committed;
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const flush = (next: Decoration[]) => {
+    clearTimeout(timer.current);
+    onChange(next);
+    setDraft(null);
+  };
+  const preview = (next: Decoration[]) => {
+    setDraft(next);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => flush(next), 300);
+  };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   const base = VIEW_PX / (width + 2 * M);
   const viewH = Math.round((height + 2 * M) * base);
@@ -277,7 +297,7 @@ export default function HolderDesigner({
     }
 
     const patch = (change: (it: Decoration) => Partial<Decoration>) =>
-      onChange(decorations.map((it, i) => (i === d.index ? { ...it, ...change(it) } : it)));
+      preview(decorations.map((it, i) => (i === d.index ? { ...it, ...change(it) } : it)));
 
     if (d.kind === "move") {
       const m = mm(p);
@@ -304,6 +324,7 @@ export default function HolderDesigner({
 
   function up() {
     drag.current = null;
+    if (draft) flush(draft);
   }
 
   function add(icon: string) {
@@ -316,13 +337,13 @@ export default function HolderDesigner({
       size: Math.max(8, Math.min(20, (height - win.y1) * 1.6)),
       rotation: 0,
     };
-    onChange([...decorations, next]);
+    flush([...decorations, next]);
     onSelect(decorations.length);
   }
 
   function patchSelected(change: Partial<Decoration>) {
     if (selected === null) return;
-    onChange(decorations.map((d, i) => (i === selected ? { ...d, ...change } : d)));
+    preview(decorations.map((d, i) => (i === selected ? { ...d, ...change } : d)));
   }
 
   const current = selected !== null ? decorations[selected] : undefined;
@@ -385,7 +406,7 @@ export default function HolderDesigner({
             className="btn"
             style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
             onClick={() => {
-              onChange(decorations.filter((_, i) => i !== selected));
+              flush(decorations.filter((_, i) => i !== selected));
               onSelect(null);
             }}
           >
@@ -438,7 +459,7 @@ export default function HolderDesigner({
           className="btn"
           style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
           onClick={() => {
-            onChange([]);
+            flush([]);
             onSelect(null);
           }}
         >

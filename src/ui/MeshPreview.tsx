@@ -23,8 +23,17 @@ export type PreviewMesh = {
   faceAxis?: [number, number, number];
 };
 
+/** A second model drawn with the first, placed by a matrix rather than copied. */
+export type PreviewOverlay = {
+  mesh: PreviewMesh;
+  /** Column-major 4x4 taking the overlay's own coordinates into the scene's. */
+  matrix: number[];
+};
+
 type Props = {
   mesh: PreviewMesh | null;
+  /** Another model shown in the same scene, such as the picture in its frame. */
+  overlay?: PreviewOverlay | null;
   /** Flat shading shows every facet, which is how a slicer draws it. */
   flatShading: boolean;
   /** Pale backdrop, so dark filament colours stay readable. */
@@ -62,6 +71,7 @@ function reliefAxis(box: THREE.Box3): THREE.Vector3 {
  */
 export default function MeshPreview({
   mesh,
+  overlay = null,
   flatShading,
   lightBackground,
   showGrid,
@@ -72,6 +82,13 @@ export default function MeshPreview({
   const fitRef = useRef<(() => void) | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+  const overlayRef = useRef<THREE.Mesh | null>(null);
+  const overlayMatsRef = useRef<THREE.Material[]>([]);
+  const presetRef = useRef<((name: "front" | "side" | "top" | "fit") => void) | null>(null);
+  // How big the model was when the camera was last put to it. The camera is
+  // left where the person put it while the model changes, and only brought
+  // back when the model has become a different size altogether.
+  const framedRadius = useRef(0);
 
   // The scene is built once and the geometry swapped into it, so framing runs
   // long after this render's props are gone. Kept in a ref so it reads the mesh
@@ -145,6 +162,12 @@ export default function MeshPreview({
     );
     scene.add(mesh3d);
 
+    const over3d = new THREE.Mesh(new THREE.BufferGeometry(), [] as THREE.Material[]);
+    over3d.matrixAutoUpdate = false;
+    over3d.frustumCulled = false;
+    scene.add(over3d);
+    overlayRef.current = over3d;
+
     // Frames the model regardless of its size, and sizes the grid to match.
     const fit = () => {
       const geo = geometryRef.current;
@@ -181,6 +204,35 @@ export default function MeshPreview({
       controls.update();
     };
     fitRef.current = fit;
+
+    // Straight-on views, for checking an angle without trusting a hand-turned
+    // camera: the trackball keeps whatever roll the drag left in it.
+    presetRef.current = (name) => {
+      if (name === "fit") {
+        fit();
+        return;
+      }
+      const geo = geometryRef.current;
+      const sphere = geo?.boundingSphere;
+      if (!sphere) return;
+
+      const dist = camera.position.distanceTo(controls.target) || sphere.radius * 3;
+      const dir =
+        name === "side"
+          ? new THREE.Vector3(1, 0, 0)
+          : name === "top"
+            ? new THREE.Vector3(0, 0, 1)
+            : meshRef.current?.faceAxis
+              ? new THREE.Vector3(...meshRef.current.faceAxis).normalize()
+              : new THREE.Vector3(0, -1, 0);
+      // Up is +z, unless the view is along it.
+      if (Math.abs(dir.z) > 0.99) camera.up.set(0, 1, 0);
+      else camera.up.set(0, 0, 1);
+
+      camera.position.copy(sphere.center).addScaledVector(dir, dist);
+      controls.target.copy(sphere.center);
+      controls.update();
+    };
 
     const resize = () => {
       const w = host.clientWidth;
@@ -226,6 +278,8 @@ export default function MeshPreview({
       controls.dispose();
       mesh3d.geometry.dispose();
       for (const m of materialsRef.current) m.dispose();
+      over3d.geometry.dispose();
+      for (const m of overlayMatsRef.current) m.dispose();
 
       if (gridRef.current) {
         gridRef.current.geometry.dispose();
@@ -287,10 +341,70 @@ export default function MeshPreview({
 
     geometryRef.current = geo;
     host.__swap(geo, mats);
-    fitRef.current?.();
+
+    // Frame the model the first time, and again only if it has changed size
+    // by a good deal. Every setting that rebuilds the mesh used to throw the
+    // camera back to the start, which made turning the model to look at
+    // something while adjusting it impossible.
+    geo.computeBoundingSphere();
+    const radius = geo.boundingSphere?.radius ?? 0;
+    if (radius > 0) {
+      const was = framedRadius.current;
+      if (was === 0 || radius > was * 1.5 || radius < was / 1.5) {
+        fitRef.current?.();
+        framedRadius.current = radius;
+      }
+    }
     // Toggling flat shading rebuilds the materials here rather than mutating
     // them in a second effect; it is a manual switch, not a per-frame cost.
   }, [mesh, flatShading]);
+
+  // The overlay's geometry is its own, built when it changes and not when its
+  // placement does: moving it is a matrix, which costs nothing however large
+  // the model is.
+  const overlayMesh = overlay?.mesh ?? null;
+  useEffect(() => {
+    const obj = overlayRef.current;
+    if (!obj) return;
+
+    obj.geometry.dispose();
+    for (const m of overlayMatsRef.current) m.dispose();
+    overlayMatsRef.current = [];
+
+    const geo = new THREE.BufferGeometry();
+    const mats: THREE.Material[] = [];
+    if (overlayMesh && overlayMesh.triangleCount > 0) {
+      geo.setAttribute("position", new THREE.BufferAttribute(overlayMesh.positions, 3));
+      geo.computeVertexNormals();
+      const starts = overlayMesh.bandStarts.length > 0 ? overlayMesh.bandStarts : [0];
+      for (let b = 0; b < starts.length; b++) {
+        const from = starts[b];
+        const to = b + 1 < starts.length ? starts[b + 1] : overlayMesh.triangleCount;
+        geo.addGroup(from * 3, (to - from) * 3, b);
+        mats.push(
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color(overlayMesh.colors[b] ?? "#d8dee9"),
+            roughness: 0.72,
+            metalness: 0.02,
+            side: THREE.DoubleSide,
+            flatShading,
+          }),
+        );
+      }
+    }
+    obj.geometry = geo;
+    obj.material = mats;
+    overlayMatsRef.current = mats;
+  }, [overlayMesh, flatShading]);
+
+  const overlayMatrix = overlay?.matrix ?? null;
+  useEffect(() => {
+    const obj = overlayRef.current;
+    if (!obj) return;
+    if (overlayMatrix) obj.matrix.fromArray(overlayMatrix);
+    else obj.matrix.identity();
+    obj.matrixWorldNeedsUpdate = true;
+  }, [overlayMatrix, overlayMesh]);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -347,6 +461,34 @@ export default function MeshPreview({
         overflow: "hidden",
       }}
     >
+      {mesh && (
+        <div
+          style={{
+            position: "absolute",
+            left: 10,
+            bottom: 10,
+            display: "flex",
+            gap: 4,
+            zIndex: 2,
+          }}
+        >
+          {(["front", "side", "top", "fit"] as const).map((v) => (
+            <button
+              key={v}
+              className="btn"
+              style={{ padding: "2px 9px", fontSize: 12 }}
+              title={
+                v === "fit"
+                  ? "Frame the whole model"
+                  : `Look at it straight from the ${v}`
+              }
+              onClick={() => presetRef.current?.(v)}
+            >
+              {v === "fit" ? "Fit" : v[0].toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       {!mesh && (
         <div className="preview-empty">
           Generate a model to see it here. Drag to orbit, scroll to zoom.
