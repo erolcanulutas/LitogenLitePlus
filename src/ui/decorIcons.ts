@@ -207,30 +207,26 @@ export async function renderMask(
         else beyond[i] = 1;
       }
 
-      // Flush and cut decorations stay clear of the edge and the pocket, and
-      // above the rail the legs stand on; what is outside that is simply not
-      // there, since there is no frame to sink them into.
+      // A cut goes clean through, so it stays clear of the edge and the pocket,
+      // and above the rail the legs stand on. A recess is only 1 mm deep, from
+      // the front, and leaves the lip over the pocket and the rail's back as
+      // they were, so it may be anywhere on the face but the window and the
+      // edge; what is outside that is raised instead, so nothing goes missing.
       const roomy =
         inside(mx, my, CUT_MARGIN_MM) &&
         !inRect(pocket, mx, my, CUT_MARGIN_MM) &&
         my >= rail + CUT_MARGIN_MM;
+      const sinkable = inside(mx, my, CUT_MARGIN_MM) && !inRect(window, mx, my, CUT_MARGIN_MM);
       if (fd && fd[i * 4 + 3] >= 128) {
-        if (roomy) {
+        if (sinkable) {
           flush[i] = 1;
         } else if (my >= 0) {
-          // Nowhere to sink it — over the window, past the edge, in the rail's
-          // strip: it is raised there instead, so nothing of it goes missing.
           if (onFace && !inRect(window, mx, my)) onFrame[i] = 1;
           else beyond[i] = 1;
         }
       }
 
-      if (
-        cd && cd[i * 4 + 3] >= 128 &&
-        inside(mx, my, CUT_MARGIN_MM) &&
-        !inRect(pocket, mx, my, CUT_MARGIN_MM) &&
-        my >= rail + CUT_MARGIN_MM
-      ) {
+      if (cd && cd[i * 4 + 3] >= 128 && roomy) {
         cutOut[i] = 1;
       }
     }

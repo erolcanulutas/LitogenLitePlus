@@ -49,7 +49,7 @@ export default function DecorProps({ decoration: d, onPatch, onDuplicate, onRemo
         <label
           className="shadeToggle"
           style={{ display: "flex", marginTop: 10 }}
-          title="Instead of standing out, the decoration is set into the frame so its top is level with the face: the frame is recessed 1 mm to its shape and filled, which gives a colour in the surface when printed in colours. Any part with no frame to sink into — over the window, past the edge, on the bottom rail — is raised instead."
+          title="Instead of standing out, the decoration is set into the frame so its top is level with the face: the frame is recessed 1 mm to its shape and filled, which gives a colour in the surface when printed in colours. Any part with no frame to sink into — over the window or past the frame's edge — is raised instead."
         >
           <input
             type="checkbox"

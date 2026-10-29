@@ -309,7 +309,21 @@ function clean(loop: [number, number][]): [number, number][] {
     if (next.length === pts.length) break;
     pts = next;
   }
-  return pts;
+  return pts.map(([x, y]) => [x + wobble(x, y) * 4e-4, y + wobble(y, x) * 4e-4] as [number, number]);
+}
+
+/**
+ * A fixed, tiny offset for a point, from where it is.
+ *
+ * Letters in a line share a baseline, so many loops have vertices at exactly the
+ * same height, and a triangulator that joins one loop to another along such a
+ * line passes through vertices of a third. A few ten-thousandths of a millimetre
+ * of difference, the same every time for the same point, is nothing to a printer
+ * and keeps any three of them from lying on one line.
+ */
+function wobble(a: number, b: number): number {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return v - Math.floor(v) - 0.5;
 }
 
 /**
