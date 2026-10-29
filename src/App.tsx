@@ -17,7 +17,7 @@ import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
 import { DEFAULT_GAP, clusterColors, suggestColourLevels } from "./core/palette";
-import { buildHolder, holderForPrinting } from "./core/holder";
+import { buildHolder, holderForPrinting, holderInPlace } from "./core/holder";
 import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
@@ -1737,6 +1737,35 @@ export default function App() {
   const [colorGap, setColorGap] = useState<number>(DEFAULT_GAP);
   const levels = graphic || inlayMode ? toneLevels : 0;
 
+  const holderMesh = useMemo<PreviewMesh | null>(() => {
+    if (shapeId !== "rectangle" || curved) return null;
+    const preset = HOLDER_PRESETS[holderPreset];
+    const holder = holderInPlace(
+      buildHolder({
+        pictureW: widthMm,
+        pictureH: heightMm,
+        pictureT: maxT,
+        border: preset.border,
+        lip: preset.lip,
+        fit: holderFit,
+        tiltDeg: 90 - holderAngle,
+      }),
+      90 - holderAngle,
+    );
+    const stand = buildStand({ tealight: tealightMm });
+    const positions = new Float32Array(holder.positions.length + stand.positions.length);
+    positions.set(holder.positions, 0);
+    positions.set(stand.positions, holder.positions.length);
+    const tilt = ((90 - holderAngle) * Math.PI) / 180;
+    return {
+      positions,
+      triangleCount: holder.triangleCount + stand.triangleCount,
+      bandStarts: [0, holder.triangleCount],
+      colors: ["#e2c28b", "#9fb4c8"],
+      faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
+    };
+  }, [shapeId, curved, holderPreset, widthMm, heightMm, maxT, holderFit, holderAngle, tealightMm]);
+
   /**
    * Where an inlay's tones sit in colour. The same fit that colours the panel,
    * so the tone the worker calls third is the one the panel shows third.
@@ -1862,7 +1891,7 @@ export default function App() {
     orientation,
   ]);
   const previewStale = previewMesh !== null && previewKey !== settingsKey;
-  const [view, setView] = useState<"editor" | "preview">("editor");
+  const [view, setView] = useState<"editor" | "preview" | "holder">("editor");
   const [flatShading, setFlatShading] = useState(true);
   const [lightBackground, setLightBackground] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
@@ -3210,105 +3239,6 @@ export default function App() {
 
         </div>
 
-        <div className="section">
-          <div className="label-row">
-            <div className="sectionTitle">Holder &amp; Stand</div>
-            <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The holder is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the holder prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
-          </div>
-
-          {shapeId !== "rectangle" || curved ? (
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              The holder is made for flat, rectangular pictures. Pick the
-              rectangle shape and turn the curve off to use it.
-            </div>
-          ) : (
-            <>
-              <div className="label-row">
-                <label className="miniLabel">Panel angle: {holderAngle}°</label>
-                <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand's prongs stay upright, so the holder's sockets lean with the panel and its underside is cut to rest flat on the table; the rail under the picture grows to carry the legs when it leans." />
-              </div>
-              <input
-                className="range"
-                type="range"
-                min={45}
-                max={90}
-                step={5}
-                value={holderAngle}
-                onChange={(e) => setHolderAngle(Number(e.target.value))}
-              />
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Frame</label>
-                <InfoIcon text="How wide the frame is round the picture. Slim shows more of it, Wide is sturdier." />
-              </div>
-              <select
-                className="spinInput"
-                value={holderPreset}
-                onChange={(e) => setHolderPreset(e.target.value as keyof typeof HOLDER_PRESETS)}
-              >
-                {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
-                  <option key={id} value={id}>
-                    {v.label} ({v.border} mm)
-                  </option>
-                ))}
-              </select>
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Fit (mm)</label>
-                <InfoIcon text="The gap between each prong and its socket. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
-              </div>
-              <input
-                className="spinInput"
-                type="number"
-                min={0}
-                max={0.6}
-                step={0.05}
-                value={holderFit}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!Number.isNaN(v)) setHolderFit(Math.max(0, Math.min(0.6, v)));
-                }}
-              />
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Tealight diameter (mm)</label>
-                <InfoIcon text="The cup in the stand is this wide plus a few millimetres of room. A standard tealight is 38 mm." />
-              </div>
-              <input
-                className="spinInput"
-                type="number"
-                min={30}
-                max={60}
-                step={1}
-                value={tealightMm}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!Number.isNaN(v)) setTealightMm(Math.max(30, Math.min(60, v)));
-                }}
-              />
-
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
-                Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
-              </div>
-
-              <button
-                className="btn"
-                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-                onClick={() => downloadHolderPart("holder")}
-              >
-                Download holder (STL)
-              </button>
-              <button
-                className="btn"
-                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-                onClick={() => downloadHolderPart("stand")}
-              >
-                Download stand (STL)
-              </button>
-            </>
-          )}
-        </div>
-
         <div style={{ padding: "10px 0" }}>
           <button
             className="primaryBtn"
@@ -3368,6 +3298,12 @@ export default function App() {
               >
                 3D Preview
               </button>
+              <button
+                className={`viewTab ${view === "holder" ? "active" : ""}`}
+                onClick={() => setView("holder")}
+              >
+                Holder &amp; Stand
+              </button>
             </div>
 
             {view === "editor" && (
@@ -3406,9 +3342,9 @@ export default function App() {
               </div>
             )}
 
-            {view === "preview" && (
+            {view !== "editor" && (
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {previewStale && <span className="staleChip">out of date</span>}
+                {view === "preview" && previewStale && <span className="staleChip">out of date</span>}
                 <label
                   className="shadeToggle"
                   title="Draw every triangle in one tone, the way a slicer does, so the mesh's real facets are visible. Off smooths the normals."
@@ -3667,6 +3603,124 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {view === "holder" && (
+              <div style={{ position: "absolute", inset: 0, display: "flex" }}>
+                <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+                  <React.Suspense
+                    fallback={<div className="preview-empty">Loading viewer…</div>}
+                  >
+                    <MeshPreview
+                      mesh={holderMesh}
+                      flatShading={flatShading}
+                      lightBackground={lightBackground}
+                      showGrid={showGrid}
+                    />
+                  </React.Suspense>
+                </div>
+                <div style={{ width: 300, overflowY: "auto", padding: "0 14px" }}>
+        <div className="section">
+          <div className="label-row">
+            <div className="sectionTitle">Settings</div>
+            <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The holder is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the holder prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
+          </div>
+
+          {shapeId !== "rectangle" || curved ? (
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              The holder is made for flat, rectangular pictures. Pick the
+              rectangle shape and turn the curve off to use it.
+            </div>
+          ) : (
+            <>
+              <div className="label-row">
+                <label className="miniLabel">Panel angle: {holderAngle}°</label>
+                <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand's prongs stay upright, so the holder's sockets lean with the panel and its underside is cut to rest flat on the table; the rail under the picture grows to carry the legs when it leans." />
+              </div>
+              <input
+                className="range"
+                type="range"
+                min={45}
+                max={90}
+                step={5}
+                value={holderAngle}
+                onChange={(e) => setHolderAngle(Number(e.target.value))}
+              />
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Frame</label>
+                <InfoIcon text="How wide the frame is round the picture. Slim shows more of it, Wide is sturdier." />
+              </div>
+              <select
+                className="spinInput"
+                value={holderPreset}
+                onChange={(e) => setHolderPreset(e.target.value as keyof typeof HOLDER_PRESETS)}
+              >
+                {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
+                  <option key={id} value={id}>
+                    {v.label} ({v.border} mm)
+                  </option>
+                ))}
+              </select>
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Fit (mm)</label>
+                <InfoIcon text="The gap between each prong and its socket. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
+              </div>
+              <input
+                className="spinInput"
+                type="number"
+                min={0}
+                max={0.6}
+                step={0.05}
+                value={holderFit}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setHolderFit(Math.max(0, Math.min(0.6, v)));
+                }}
+              />
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Tealight diameter (mm)</label>
+                <InfoIcon text="The cup in the stand is this wide plus a few millimetres of room. A standard tealight is 38 mm." />
+              </div>
+              <input
+                className="spinInput"
+                type="number"
+                min={30}
+                max={60}
+                step={1}
+                value={tealightMm}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setTealightMm(Math.max(30, Math.min(60, v)));
+                }}
+              />
+
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
+                Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
+              </div>
+
+              <button
+                className="btn"
+                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                onClick={() => downloadHolderPart("holder")}
+              >
+                Download holder (STL)
+              </button>
+              <button
+                className="btn"
+                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                onClick={() => downloadHolderPart("stand")}
+              >
+                Download stand (STL)
+              </button>
+            </>
+          )}
+        </div>
+
+                </div>
+              </div>
+            )}
           </div>
 
           {view === "editor" && (

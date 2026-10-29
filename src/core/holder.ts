@@ -1,6 +1,7 @@
 import { MeshBuilder, type Mesh } from "./mesh";
 import { atY, atZ, cap, clip, rect, wall, type V3 } from "./solids";
 import { PRONG, armAngle } from "./prong";
+import { STAND_DEFAULTS } from "./stand";
 
 /**
  * The frame a lithophane is slid into, and the two legs the stand plugs into.
@@ -239,6 +240,39 @@ export function holderForPrinting(mesh: Mesh): Mesh {
   for (let i = 0; i < out.length; i += 3) {
     out[i] -= minX;
     out[i + 2] -= minZ;
+  }
+  return { positions: out, triangleCount: mesh.triangleCount };
+}
+
+/**
+ * The holder where it stands on the stand, in the stand's own coordinates.
+ *
+ * Only for showing the two together: the stand lies flat with its cup at the
+ * origin, the prongs point up, and the holder is set on them leaning back by
+ * `tiltDeg`. The inverse of how the sockets were placed on the plate.
+ */
+export function holderInPlace(mesh: Mesh, tiltDeg: number): Mesh {
+  const t = (Math.min(45, Math.max(0, tiltDeg)) * Math.PI) / 180;
+  const st = Math.sin(t);
+  const ct = Math.cos(t);
+  const src = mesh.positions;
+  const out = new Float32Array(mesh.triangleCount * 9);
+
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < out.length; i += 3) {
+    lo = Math.min(lo, src[i]);
+    hi = Math.max(hi, src[i]);
+  }
+  const mid = (lo + hi) / 2;
+
+  const edge = PRONG.reach + HOLDER_DEFAULTS.socketDepth;
+  for (let i = 0; i < out.length; i += 3) {
+    const y = src[i + 1];
+    const z = src[i + 2];
+    out[i] = src[i] - mid;
+    out[i + 1] = z * ct - y * st + edge;
+    out[i + 2] = y * ct + z * st + STAND_DEFAULTS.armHeight;
   }
   return { positions: out, triangleCount: mesh.triangleCount };
 }
