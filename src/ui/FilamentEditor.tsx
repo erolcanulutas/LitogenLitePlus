@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { MAX_FILAMENTS, type Filament } from "../core/filaments";
 
 type Props = {
@@ -37,7 +38,7 @@ export default function FilamentEditor({ value, onChange, addAs = "#cccccc" }: P
             <input
               type="checkbox"
               checked={f.on}
-              title={f.on ? "Printing with this one" : "Tick to print with this one"}
+              title={f.on ? t("Printing with this one") : t("Tick to print with this one")}
               onChange={(e) => onChange(value.map((g, j) => (j === i ? { ...g, on: e.target.checked } : g)))}
             />
             <input
@@ -48,7 +49,7 @@ export default function FilamentEditor({ value, onChange, addAs = "#cccccc" }: P
             />
             <button
               type="button"
-              title="Delete this filament from my list"
+              title={t("Delete this filament from my list")}
               onClick={() => onChange(value.filter((_, j) => j !== i))}
               style={{
                 width: 16,
@@ -80,9 +81,9 @@ export default function FilamentEditor({ value, onChange, addAs = "#cccccc" }: P
       </div>
       <div style={{ fontSize: 11, opacity: 0.65, marginTop: 6 }}>
         {value.length === 0
-          ? "Add the filaments you have, then tick the ones to print with."
+          ? t("Add the filaments you have, then tick the ones to print with.")
           : used === 0
-            ? "None ticked, so prints use their own colours. Tick the ones to print with; unticked ones stay in your list."
+            ? t("None ticked, so prints use their own colours. Tick the ones to print with; unticked ones stay in your list.")
             : `${used} ticked. Unticked ones stay in your list but are not used.`}
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useState } from "react";
 import { closeAccount, unlimited, type Account } from "../core/account";
 import type { Filament } from "../core/filaments";
@@ -56,26 +57,23 @@ export default function AccountPanel({
   return (
     <div className="modalBackdrop" onClick={onClose}>
       <div className="modalCard accountCard" onClick={(e) => e.stopPropagation()}>
-        <div className="modalTitle">Account</div>
+        <div className="modalTitle">{t("Account")}</div>
 
         <div className="acctWho">
           <span className="acctEmail">{account.email}</span>
           <span className={`balance ${sub ? "unlimited" : ""}`}>
-            {sub ? "Unlimited" : `${account.tokens} tokens`}
+            {sub ? t("Unlimited") : t("{n} tokens", { n: account.tokens })}
           </span>
         </div>
 
         {sub && account.planUntil && (
           <p className="acctNote">
-            Unlimited exports until {account.planUntil.slice(0, 10)}.
+            {t("Unlimited exports until {d}.", { d: account.planUntil.slice(0, 10) })}
           </p>
         )}
 
-        <h3 className="acctHeading">Tokens</h3>
-        <p className="acctNote">
-          One token for each model you export. Looking at a model in 3D is free
-          and always will be.
-        </p>
+        <h3 className="acctHeading">{t("Tokens")}</h3>
+        <p className="acctNote">{t("One token for each model you export. Looking at a model in 3D is free and always will be.")}</p>
 
         <div className="acctGrid">
           {PACKS.map((p) => (
@@ -87,14 +85,14 @@ export default function AccountPanel({
               rel="noopener noreferrer"
             >
               <span className="acctBuyTop">{p.tokens}</span>
-              <span className="acctBuyLabel">tokens</span>
+              <span className="acctBuyLabel">{t("tokens")}</span>
               <span className="acctBuyPrice">{p.price}</span>
             </a>
           ))}
         </div>
 
-        <h3 className="acctHeading">Unlimited</h3>
-        <p className="acctNote">Export as much as you like, no tokens spent.</p>
+        <h3 className="acctHeading">{t("Unlimited")}</h3>
+        <p className="acctNote">{t("Export as much as you like, no tokens spent.")}</p>
 
         <div className="acctGrid two">
           {PLANS.map((p) => (
@@ -112,66 +110,43 @@ export default function AccountPanel({
           ))}
         </div>
 
-        <div className="acctFlag">
-          Buy with <strong>{account.email}</strong> — that is how a purchase finds
-          this account. A different address is not lost: sign in with it and
-          whatever it bought comes across.
-        </div>
+        <div className="acctFlag">{t("Buy with")}{" "}<strong>{account.email}</strong>{" "}{t("— that is how a purchase finds this account. A different address is not lost: sign in with it and whatever it bought comes across.")}</div>
 
-        <h3 className="acctHeading">My filaments</h3>
-        <p className="acctNote">
-          The colours of filament you have. Tick the ones to print with: an Inlay
-          is divided into the ticked colours, Layered colours are moved to the
-          nearest of them, and decorations on a frame are printed in them.
-          Nothing is used unless it is ticked. The list is kept in your account,
-          so it follows you to another device.
-        </p>
+        <h3 className="acctHeading">{t("My filaments")}</h3>
+        <p className="acctNote">{t("The colours of filament you have. Tick the ones to print with: an Inlay is divided into the ticked colours, Layered colours are moved to the nearest of them, and decorations on a frame are printed in them. Nothing is used unless it is ticked. The list is kept in your account, so it follows you to another device.")}</p>
         <FilamentEditor value={filaments} onChange={onFilaments} />
 
-        <h3 className="acctHeading">Settings</h3>
+        <h3 className="acctHeading">{t("Settings")}</h3>
 
         <div className="acctRow">
-          <span>Appearance</span>
+          <span>{t("Appearance")}</span>
           <div className="segmented acctSeg">
             <button
               className={`segment ${theme === "dark" ? "active" : ""}`}
               onClick={() => onTheme("dark")}
-            >
-              Dark
-            </button>
+            >{t("Dark")}</button>
             <button
               className={`segment ${theme === "light" ? "active" : ""}`}
               onClick={() => onTheme("light")}
-            >
-              Light
-            </button>
+            >{t("Light")}</button>
           </div>
         </div>
 
         <div className="acctRow" style={{ marginTop: 14 }}>
-          <span>Signed in on this device</span>
-          <button className="btn acctOut" onClick={onSignOut}>
-            Sign out
-          </button>
+          <span>{t("Signed in on this device")}</span>
+          <button className="btn acctOut" onClick={onSignOut}>{t("Sign out")}</button>
         </div>
 
-        <h3 className="acctHeading danger">Close account</h3>
+        <h3 className="acctHeading danger">{t("Close account")}</h3>
 
         {!closing ? (
           <>
-            <p className="acctNote">
-              Removes the account and everything on it, tokens included. There is
-              no way back.
-            </p>
-            <button className="btn" onClick={() => setClosing(true)}>
-              Close my account
-            </button>
+            <p className="acctNote">{t("Removes the account and everything on it, tokens included. There is no way back.")}</p>
+            <button className="btn" onClick={() => setClosing(true)}>{t("Close my account")}</button>
           </>
         ) : (
           <>
-            <p className="acctNote">
-              Type <strong>{account.email}</strong> to confirm.
-            </p>
+            <p className="acctNote">{t("Type")}{" "}<strong>{account.email}</strong>{" "}{t("to confirm.")}</p>
             <input
               className="spinInput"
               value={typed}
@@ -190,24 +165,20 @@ export default function AccountPanel({
                     await closeAccount(typed.trim());
                     onClosedAccount();
                   } catch (e) {
-                    setError(e instanceof Error ? e.message : "Could not close it");
+                    setError(e instanceof Error ? e.message : t("Could not close it"));
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                {busy ? "…" : "Close it for good"}
+                {busy ? "…" : t("Close it for good")}
               </button>
-              <button className="btn" onClick={() => setClosing(false)}>
-                Keep it
-              </button>
+              <button className="btn" onClick={() => setClosing(false)}>{t("Keep it")}</button>
             </div>
           </>
         )}
 
-        <button className="linkBtn" onClick={onClose}>
-          Done
-        </button>
+        <button className="linkBtn" onClick={onClose}>{t("Done")}</button>
       </div>
     </div>
   );

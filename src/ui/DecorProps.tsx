@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { FONTS, isText, type Decoration } from "../core/decor";
 
 type Props = {
@@ -47,49 +48,41 @@ export default function DecorProps({
           className={`segment ${!d.cut ? "active" : ""}`}
           style={{ flex: 1 }}
           onClick={() => onPatch({ cut: false })}
-          title="Stand out from the frame's front face"
-        >
-          Raised
-        </button>
+          title={t("Stand out from the frame's front face")}
+        >{t("Raised")}</button>
         <button
           className={`segment ${d.cut ? "active" : ""}`}
           style={{ flex: 1 }}
           onClick={() => onPatch({ cut: true })}
-          title="Cut clean through the frame, so light shows through"
-        >
-          Cut out
-        </button>
+          title={t("Cut clean through the frame, so light shows through")}
+        >{t("Cut out")}</button>
       </div>
 
       {!d.cut && (
         <label
           className="shadeToggle"
           style={{ display: "flex", marginTop: 10 }}
-          title="Instead of standing out, the decoration is set into the frame so its top is level with the face: the frame is recessed 1 mm to its shape and filled, which gives a colour in the surface when printed in colours. Any part with no frame to sink into — over the window or past the frame's edge — is raised instead."
+          title={t("Instead of standing out, the decoration is set into the frame so its top is level with the face: the frame is recessed 1 mm to its shape and filled, which gives a colour in the surface when printed in colours. Any part with no frame to sink into — over the window or past the frame's edge — is raised instead.")}
         >
           <input
             type="checkbox"
             checked={d.flush === true}
             onChange={(e) => onPatch({ flush: e.target.checked })}
-          />
-          Flush with the frame
-        </label>
+          />{t("Flush with the frame")}</label>
       )}
 
       {!isText(d) && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
-          <span style={{ flex: 1 }}>{d.tint ? "One colour" : "Its own colours"}</span>
+          <span style={{ flex: 1 }}>{d.tint ? t("One colour") : t("Its own colours")}</span>
           <input
             type="color"
             value={d.tint ?? "#444444"}
-            title="Print the icon as a silhouette in one colour"
+            title={t("Print the icon as a silhouette in one colour")}
             onChange={(e) => onPatch({ tint: e.target.value })}
             style={{ width: 36, height: 30, padding: 0 }}
           />
           {d.tint && (
-            <button className="btn" style={{ padding: "2px 8px" }} onClick={() => onPatch({ tint: undefined })}>
-              Original
-            </button>
+            <button className="btn" style={{ padding: "2px 8px" }} onClick={() => onPatch({ tint: undefined })}>{t("Original")}</button>
           )}
         </div>
       )}
@@ -101,7 +94,7 @@ export default function DecorProps({
             type="text"
             value={d.text ?? ""}
             maxLength={60}
-            placeholder="Your words"
+            placeholder={t("Your words")}
             onChange={(e) => onPatch({ text: e.target.value })}
           />
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -112,7 +105,7 @@ export default function DecorProps({
             >
               {FONTS.map((f) => (
                 <option key={f.id} value={f.id}>
-                  {f.label}
+                  {t(f.label)}
                 </option>
               ))}
             </select>
@@ -120,7 +113,7 @@ export default function DecorProps({
               className={`segment ${d.bold ? "active" : ""}`}
               style={{ fontWeight: 700, minWidth: 34 }}
               onClick={() => onPatch({ bold: !d.bold })}
-              title="Bold"
+              title={t("Bold")}
             >
               B
             </button>
@@ -128,27 +121,24 @@ export default function DecorProps({
               type="color"
               value={d.color ?? "#1f2937"}
               onChange={(e) => onPatch({ color: e.target.value })}
-              title="The colour it is printed in, when icons are printed in their own colours"
+              title={t("The colour it is printed in, when icons are printed in their own colours")}
               style={{ width: 36, height: 30, padding: 0 }}
             />
           </div>
           {snapsToFilaments && (
-            <div style={{ fontSize: 11, opacity: 0.7 }}>
-              Your ticked filaments are in use, so this is printed in the nearest of them and a
-              small change may not show. Untick them under Colours to print it exactly.
-            </div>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>{t("Your ticked filaments are in use, so this is printed in the nearest of them and a small change may not show. Untick them under Colours to print it exactly.")}</div>
           )}
         </div>
       )}
 
-      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 12 }}>Place</div>
+      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 12 }}>{t("Place")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4, marginTop: 4 }}>
         {(
           [
-            ["centreX", "Centre ↔", "Centre across the frame"],
-            ["centreY", "Centre ↕", "Centre up and down the frame"],
-            ["top", "Top strip", "On the middle of the top border"],
-            ["bottom", "Bottom strip", "On the middle of the bottom border"],
+            ["centreX", t("Centre ↔"), t("Centre across the frame")],
+            ["centreY", t("Centre ↕"), t("Centre up and down the frame")],
+            ["top", t("Top strip"), t("On the middle of the top border")],
+            ["bottom", t("Bottom strip"), t("On the middle of the bottom border")],
           ] as const
         ).map(([id, label, hint]) => (
           <button
@@ -167,29 +157,21 @@ export default function DecorProps({
           className="btn"
           style={{ flex: 1, justifyContent: "center", fontSize: 12 }}
           disabled={!canForward}
-          title="In front of the one above it"
+          title={t("In front of the one above it")}
           onClick={() => onOrder(1)}
-        >
-          Bring forward
-        </button>
+        >{t("Bring forward")}</button>
         <button
           className="btn"
           style={{ flex: 1, justifyContent: "center", fontSize: 12 }}
           disabled={!canBack}
-          title="Behind the one below it"
+          title={t("Behind the one below it")}
           onClick={() => onOrder(-1)}
-        >
-          Send back
-        </button>
+        >{t("Send back")}</button>
       </div>
 
       <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-        <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={onDuplicate}>
-          Duplicate
-        </button>
-        <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={onRemove}>
-          Remove
-        </button>
+        <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={onDuplicate}>{t("Duplicate")}</button>
+        <button className="btn" style={{ flex: 1, justifyContent: "center" }} onClick={onRemove}>{t("Remove")}</button>
       </div>
     </div>
   );

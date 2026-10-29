@@ -1,3 +1,4 @@
+import { LANGUAGES, setLang, t, useLang, type Lang } from "./i18n";
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import ImageEditor from "./ui/ImageEditor";
 import type { ImageEditorHandle, Tool } from "./ui/ImageEditor";
@@ -1216,6 +1217,17 @@ body {
   color: var(--k-text-475569);
 }
 
+.langPick {
+  background: transparent;
+  color: inherit;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.langPick option { color: #111; }
 .build-tag {
   font-size: 0.65rem;
   font-weight: 500;
@@ -1586,6 +1598,7 @@ function edgeColorOf(img: HTMLImageElement): string | null {
 }
 
 export default function App() {
+  const lang = useLang();
   /**
    * Who is signed in, if anyone.
    *
@@ -1637,7 +1650,7 @@ export default function App() {
     // Coming back from Google, the server has already decided; the address says
     // which way, and whoAmI above is what actually reads the result.
     if (signInOutcome() === "failed") {
-      setAccountError("Google could not sign you in. Try again, or use a password.");
+      setAccountError(t("Google could not sign you in. Try again, or use a password."));
       setAccountOpen(true);
     }
 
@@ -1665,7 +1678,7 @@ export default function App() {
       setAccountOpen(false);
       setAccountPass("");
     } catch (e) {
-      setAccountError(e instanceof Error ? e.message : "Something went wrong");
+      setAccountError(e instanceof Error ? e.message : t("Something went wrong"));
     } finally {
       setAccountBusy(false);
     }
@@ -2058,12 +2071,12 @@ export default function App() {
     setDecorSelected(to);
   }
   function applyTemplate(id: string) {
-    const t = TEMPLATES.find((x) => x.id === id);
-    if (!t) return;
+    const tpl = TEMPLATES.find((x) => x.id === id);
+    if (!tpl) return;
     commitDecorations(
-      t.build(
+      tpl.build(
         { W: holderGeom.W, H: holderGeom.H, window: holderGeom.window, rail: holderGeom.rail },
-        (greeting) => greeting,
+        (greeting) => t(greeting),
       ),
     );
     setHolderPose("standing");
@@ -2563,7 +2576,7 @@ export default function App() {
       setToneOverride(null);
       setAutoNote(
         hue.smooth
-          ? `No flat colours in this picture — ${hue.levels} is a starting point, not a reading.`
+          ? t("No flat colours in this picture — {n} is a starting point, not a reading.", { n: hue.levels })
           : `${hue.levels} flat colours, holding ${Math.round(hue.covered * 100)}% of the picture.`,
       );
       return;
@@ -2588,7 +2601,7 @@ export default function App() {
     setToneOverride(null);
     setAutoNote(
       found.smooth
-        ? `No flat tones in this picture — ${found.levels} is a starting point, not a reading.`
+        ? t("No flat tones in this picture — {n} is a starting point, not a reading.", { n: found.levels })
         : `${found.levels} flat tones, holding ${Math.round(found.covered * 100)}% of the picture.`,
     );
   }
@@ -2714,12 +2727,12 @@ export default function App() {
     }
 
     if (!account) {
-      setAccountError("Sign in to download the frame. New accounts get 50 tokens.");
+      setAccountError(t("Sign in to download the frame. New accounts get 50 tokens."));
       setAccountOpen(true);
       return;
     }
     if (!unlimited(account) && account.tokens < 1) {
-      setHolderNote("Out of tokens. Top up, or subscribe for unlimited exports.");
+      setHolderNote(t("Out of tokens. Top up, or subscribe for unlimited exports."));
       return;
     }
 
@@ -2782,15 +2795,15 @@ export default function App() {
     try {
       const paid = await spendForHolder(ref);
       setAccount(paid.account);
-      if (paid.again) setHolderNote("You have downloaded this design before, so this one is free.");
+      if (paid.again) setHolderNote(t("You have downloaded this design before, so this one is free."));
       return true;
     } catch (e) {
       setHolderNote(
         e instanceof OutOfTokens
-          ? "Out of tokens. Top up, or subscribe for unlimited exports."
+          ? t("Out of tokens. Top up, or subscribe for unlimited exports.")
           : e instanceof Error
             ? e.message
-            : "Could not download",
+            : t("Could not download"),
       );
       return false;
     }
@@ -2841,7 +2854,7 @@ export default function App() {
     : designs.map((d) => ({ ...d, cloud: false }));
 
   function saveDesign() {
-    const name = designName.trim() || `Design ${designs.length + 1}`;
+    const name = designName.trim() || t("Design {n}", { n: designs.length + 1 });
     const entry: SavedDesign = {
       name,
       savedAt: Date.now(),
@@ -2868,7 +2881,7 @@ export default function App() {
     if (signedInAs) {
       saveDesignRemote(name, entry)
         .then(() => setCloudDesigns((prev) => [entry, ...prev.filter((d) => d.name !== name)]))
-        .catch((e: Error) => setDesignNote(`Saved here, but not to your account: ${e.message}`));
+        .catch((e: Error) => setDesignNote(t("Saved here, but not to your account: {m}", { m: e.message })));
     }
   }
 
@@ -2895,7 +2908,7 @@ export default function App() {
     if (signedInAs && cloudDesigns.some((d) => d.name === name)) {
       deleteDesignRemote(name)
         .then(() => setCloudDesigns((prev) => prev.filter((d) => d.name !== name)))
-        .catch((e: Error) => setDesignNote(`Could not delete it from your account: ${e.message}`));
+        .catch((e: Error) => setDesignNote(t("Could not delete it from your account: {m}", { m: e.message })));
     }
   }
 
@@ -2907,14 +2920,14 @@ export default function App() {
     // model that cannot be handed over.
     if (download) {
       if (!account) {
-        setAccountError("Sign in to export. New accounts get 50 tokens.");
+        setAccountError(t("Sign in to export. New accounts get 50 tokens."));
         setAccountOpen(true);
         return;
       }
       if (!unlimited(account) && account.tokens < 1) {
         setStatusMsg({
           type: "error",
-          text: "Out of tokens. Top up, or subscribe for unlimited exports.",
+          text: t("Out of tokens. Top up, or subscribe for unlimited exports."),
         });
         return;
       }
@@ -3006,10 +3019,10 @@ export default function App() {
               type: "error",
               text:
                 e instanceof OutOfTokens
-                  ? "Out of tokens. Top up, or subscribe for unlimited exports."
+                  ? t("Out of tokens. Top up, or subscribe for unlimited exports.")
                   : e instanceof Error
                     ? e.message
-                    : "Could not export",
+                    : t("Could not export"),
             });
             return;
           }
@@ -3029,7 +3042,7 @@ export default function App() {
         });
       }
     } catch {
-      setStatusMsg({ type: "error", text: "Failed!" });
+      setStatusMsg({ type: "error", text: t("Failed!") });
     } finally {
       if (jobIdRef.current === currentJobId) setIsGenerating(false);
     }
@@ -3042,10 +3055,23 @@ export default function App() {
       <aside className="leftPanel">
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
           <div className="brandRow">
-            <div className="brand-title">Litogen</div>
+            <div className="brand-title">{t("Litogen")}</div>
+            <select
+              className="langPick"
+              value={lang}
+              aria-label="Language"
+              title="Language"
+              onChange={(e) => setLang(e.target.value as Lang)}
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
             {account && (
               <span className={`balance ${unlimited(account) ? "unlimited" : ""}`}>
-                {unlimited(account) ? "Unlimited" : `${account.tokens} tokens`}
+                {unlimited(account) ? t("Unlimited") : t("{n} tokens", { n: account.tokens })}
               </span>
             )}
             {account ? (
@@ -3057,23 +3083,19 @@ export default function App() {
                     : `${account.email} · ${account.tokens} tokens · tokens, settings and sign out`
                 }
                 onClick={() => setAccountPanel(true)}
-              >
-                Account
-              </button>
+              >{t("Account")}</button>
             ) : (
               <button
                 className="autoBtn"
-                title="Sign in, or make an account"
+                title={t("Sign in, or make an account")}
                 onClick={() => {
                   setAccountError(null);
                   setAccountOpen(true);
                 }}
-              >
-                Sign in
-              </button>
+              >{t("Sign in")}</button>
             )}
           </div>
-          <div className="build-tag" title="Bug bildirirken bu satırı da yaz">
+          <div className="build-tag" title={t("Bug bildirirken bu satırı da yaz")}>
             v{__APP_VERSION__} · {__BUILD_SHA__} · {__BUILD_DATE__}
             {account ? ` · ${account.email}` : ""}
           </div>
@@ -3095,7 +3117,7 @@ export default function App() {
             {file ? (
               <span>📷 {file.name.slice(0, 10)}...</span>
             ) : (
-              <span>📂 Select Image or Drag&Drop</span>
+              <span>{t("📂 Select Image or Drag&Drop")}</span>
             )}
           </label>
 
@@ -3103,8 +3125,8 @@ export default function App() {
 
         <div className="section">
           <div className="label-row">
-            <div className="sectionTitle">Surface</div>
-            <InfoIcon text="Lithophane samples the picture as a continuous surface, thicker where it is dark, the way a photograph wants. Layered quantises it into tones, each standing at its own height, and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped; use it for logos, text and line art. Inlay keeps the top flat and sets the picture's colours into it side by side, for coasters and signs. Switching also moves the print orientation to the one that suits it — upright for a lithophane, flat for the others, where colour bands cost one filament change each instead of one per layer. Change it back underneath if you would rather not." />
+            <div className="sectionTitle">{t("Surface")}</div>
+            <InfoIcon text={t("Lithophane samples the picture as a continuous surface, thicker where it is dark, the way a photograph wants. Layered quantises it into tones, each standing at its own height, and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped; use it for logos, text and line art. Inlay keeps the top flat and sets the picture's colours into it side by side, for coasters and signs. Switching also moves the print orientation to the one that suits it — upright for a lithophane, flat for the others, where colour bands cost one filament change each instead of one per layer. Change it back underneath if you would rather not.")} />
           </div>
 
           <div className="segmented">
@@ -3119,9 +3141,7 @@ export default function App() {
                 setSplitLayers([]);
                 setColors([BAND_PALETTE[0]]);
               }}
-            >
-              Lithophane
-            </button>
+            >{t("Lithophane")}</button>
             {/* Only on an actual change of surface: pressing the one that
                 is already on leaves the tone count and the orientation
                 exactly as they were set. */}
@@ -3134,9 +3154,7 @@ export default function App() {
                 setOrientation("flat");
                 restoreGraphicBands();
               }}
-            >
-              Layered
-            </button>
+            >{t("Layered")}</button>
             <button
               className={`segment ${inlayMode ? "active" : ""}`}
               onClick={() => {
@@ -3148,9 +3166,7 @@ export default function App() {
                 setSplitLayers([]);
                 applyInlayColors(toneLevels);
               }}
-            >
-              Inlay
-            </button>
+            >{t("Inlay")}</button>
           </div>
 
           {(inlayMode || graphic) && (
@@ -3160,25 +3176,25 @@ export default function App() {
                 checked={vector}
                 onChange={(e) => setVector(e.target.checked)}
               />
-              <span>Tones as regions</span>
-              <InfoIcon text="Traces each tone out of the picture as a closed outline and gives it its own solid, instead of deciding tones by thresholds on brightness. Read off brightness, a tone that sits between two others — a red between black and white, say — cannot help appearing where those two meet, so shapes come out outlined in it, and every edge steps along the sampling grid. Traced, the boundary between two tones is one line with nothing in it, drawn at the picture's own resolution. Off, the surface is built the way it was before." />
+              <span>{t("Tones as regions")}</span>
+              <InfoIcon text={t("Traces each tone out of the picture as a closed outline and gives it its own solid, instead of deciding tones by thresholds on brightness. Read off brightness, a tone that sits between two others — a red between black and white, say — cannot help appearing where those two meet, so shapes come out outlined in it, and every edge steps along the sampling grid. Traced, the boundary between two tones is one line with nothing in it, drawn at the picture's own resolution. Off, the surface is built the way it was before.")} />
             </label>
           )}
 
           <div className="bandHint">
             {inlayMode
-              ? "One flat slab, the picture set into its top layers — the filament changes across a layer, not between two."
+              ? t("One flat slab, the picture set into its top layers — the filament changes across a layer, not between two.")
               : levels === 0
-                ? "Sampled as a continuous surface — what a photograph wants."
-                : "Cut along the picture's own contours, so hard edges come out straight."}
+                ? t("Sampled as a continuous surface — what a photograph wants.")
+                : t("Cut along the picture's own contours, so hard edges come out straight.")}
           </div>
 
         </div>
 
         <div className="section">
           <div className="label-row">
-            <label className="miniLabel">Shape</label>
-            <InfoIcon text="Choose the geometric base shape for your lithophane (Triangle, Circle, Hexagon, Pentagon)." />
+            <label className="miniLabel">{t("Shape")}</label>
+            <InfoIcon text={t("Choose the geometric base shape for your lithophane (Triangle, Circle, Hexagon, Pentagon).")} />
           </div>
 
           <select
@@ -3192,7 +3208,7 @@ export default function App() {
           >
             {SHAPES.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.label}
+                {t(s.label)}
               </option>
             ))}
           </select>
@@ -3203,15 +3219,15 @@ export default function App() {
               checked={curved}
               onChange={(e) => setCurved(e.target.checked)}
             />
-            <span>Curve</span>
-            <InfoIcon text="Wraps the model round a cylinder, with the picture on the outside of the curve — the way a lithophane sits round a lamp. The angle is what the width wraps through, so it means the same at any print size: 90 degrees is a quarter turn, 180 a half. The base curves with it, so the print stands on an arc rather than a straight edge and wants a brim." />
+            <span>{t("Curve")}</span>
+            <InfoIcon text={t("Wraps the model round a cylinder, with the picture on the outside of the curve — the way a lithophane sits round a lamp. The angle is what the width wraps through, so it means the same at any print size: 90 degrees is a quarter turn, 180 a half. The base curves with it, so the print stands on an arc rather than a straight edge and wants a brim.")} />
           </label>
 
           {curved && (
             <>
               <div className="label-row" style={{ marginTop: 10 }}>
-                <label className="miniLabel">Curve (degrees)</label>
-                <InfoIcon text="How much of a turn the model's width wraps through. Small angles give a gentle bow; 180 folds it into a half cylinder." />
+                <label className="miniLabel">{t("Curve (degrees)")}</label>
+                <InfoIcon text={t("How much of a turn the model's width wraps through. Small angles give a gentle bow; 180 folds it into a half cylinder.")} />
               </div>
 
               <div style={{ display: "grid", gap: 8 }}>
@@ -3257,8 +3273,8 @@ export default function App() {
           )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
-            <label className="miniLabel">Width (mm)</label>
-            <InfoIcon text="Horizontal width of the print, defined as the maximum distance between the leftmost and rightmost points." />
+            <label className="miniLabel">{t("Width (mm)")}</label>
+            <InfoIcon text={t("Horizontal width of the print, defined as the maximum distance between the leftmost and rightmost points.")} />
           </div>
 
           <div className="spinRow">
@@ -3293,8 +3309,7 @@ export default function App() {
 
           {shape.freeRatio && (
             <div className="bandHint">
-              Height {heightMm.toFixed(1)} mm · drag the crop box's side or
-              corner grips to change it
+              {t("Height {mm} mm · drag the crop box's side or corner grips to change it", { mm: heightMm.toFixed(1) })}
             </div>
           )}
 
@@ -3317,9 +3332,7 @@ export default function App() {
                 }
                 resetThicknessDefaults();
               }}
-            >
-              Small
-            </button>
+            >{t("Small")}</button>
 
             <button
               className="btn"
@@ -3339,21 +3352,17 @@ export default function App() {
                 }
                 resetThicknessDefaults();
               }}
-            >
-              Large
-            </button>
+            >{t("Large")}</button>
           </div>
         </div>
 
         <div className="section">
-          <div className="sectionTitle" style={{ marginBottom: 12 }}>
-            Thickness
-          </div>
+          <div className="sectionTitle" style={{ marginBottom: 12 }}>{t("Thickness")}</div>
 
           {!inlayMode && (<>
           <div className="label-row">
-            <label className="miniLabel">Max (mm)</label>
-            <InfoIcon text="The thickness of the darkest (black) areas. Ideal value: 2.5mm - 3.2mm." />
+            <label className="miniLabel">{t("Max (mm)")}</label>
+            <InfoIcon text={t("The thickness of the darkest (black) areas. Ideal value: 2.5mm - 3.2mm.")} />
           </div>
 
           <div className="spinRow">
@@ -3389,8 +3398,8 @@ export default function App() {
           </div>
 
           <div className="label-row">
-            <label className="miniLabel">Min (mm)</label>
-            <InfoIcon text="The thickness of the lightest (white) areas. Do not go below 0.6mm." />
+            <label className="miniLabel">{t("Min (mm)")}</label>
+            <InfoIcon text={t("The thickness of the lightest (white) areas. Do not go below 0.6mm.")} />
           </div>
 
           <div className="spinRow">
@@ -3418,8 +3427,8 @@ export default function App() {
           </div>
 
           <div className="label-row">
-            <label className="miniLabel">Outline (mm)</label>
-            <InfoIcon text="The thickness of the outline surrounding the model." />
+            <label className="miniLabel">{t("Outline (mm)")}</label>
+            <InfoIcon text={t("The thickness of the outline surrounding the model.")} />
           </div>
 
           <div className="spinRow">
@@ -3451,8 +3460,8 @@ export default function App() {
           {inlayMode && (
             <>
               <div className="label-row">
-                <label className="miniLabel">Base Layers</label>
-                <InfoIcon text="Solid colour under the picture. These print in one filament and carry the part; the picture never reaches down into them." />
+                <label className="miniLabel">{t("Base Layers")}</label>
+                <InfoIcon text={t("Solid colour under the picture. These print in one filament and carry the part; the picture never reaches down into them.")} />
               </div>
               <div className="spinRow">
                 <input
@@ -3474,8 +3483,8 @@ export default function App() {
               </div>
 
               <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Picture Layers</label>
-                <InfoIcon text="Layers the picture is set into, on top of the base. Every tone stands in all of them, side by side, so the filament changes partway across a layer rather than between two." />
+                <label className="miniLabel">{t("Picture Layers")}</label>
+                <InfoIcon text={t("Layers the picture is set into, on top of the base. Every tone stands in all of them, side by side, so the filament changes partway across a layer rather than between two.")} />
               </div>
               <div className="spinRow">
                 <input
@@ -3504,37 +3513,30 @@ export default function App() {
           )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
-            <label className="miniLabel">Print Orientation</label>
-            <InfoIcon text="Vertical stands the model up — best for a single colour, and built a little under size so it still fits its frame. Flat lays it down so the thickness runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer, and no trim needed. An inlay is flat by nature, but standing one up is what you want for a curved panel." />
+            <label className="miniLabel">{t("Print Orientation")}</label>
+            <InfoIcon text={t("Vertical stands the model up — best for a single colour, and built a little under size so it still fits its frame. Flat lays it down so the thickness runs along the print axis, which turns each colour band into a contiguous run of layers: one filament change per band instead of one per layer, and no trim needed. An inlay is flat by nature, but standing one up is what you want for a curved panel.")} />
           </div>
 
           <div className="segmented">
             <button
               className={`segment ${orientation === "vertical" ? "active" : ""}`}
               onClick={() => setOrientation("vertical")}
-            >
-              Vertical
-            </button>
+            >{t("Vertical")}</button>
             <button
               className={`segment ${orientation === "flat" ? "active" : ""}`}
               onClick={() => setOrientation("flat")}
-            >
-              Flat
-            </button>
+            >{t("Flat")}</button>
           </div>
 
           {orientation === "vertical" && (
             <div className="bandHint">
-              Built at {buildWidthMm.toFixed(2)} mm, {VERTICAL_TRIM_MM.toFixed(2)}{" "}
-              mm under the {widthMm.toFixed(2)} mm set above — upright prints
-              come out a touch wide and stop fitting their frame. Flat needs no
-              trim.
+              {t("Built at {a} mm, {b} mm under the {c} mm set above — upright prints come out a touch wide and stop fitting their frame. Flat needs no trim.", { a: buildWidthMm.toFixed(2), b: VERTICAL_TRIM_MM.toFixed(2), c: widthMm.toFixed(2) })}
             </div>
           )}
 
           <div className="label-row" style={{ marginTop: 12 }}>
-            <label className="miniLabel">Layer Height (mm)</label>
-            <InfoIcon text="Your slicer's layer height. Colour bands are counted in these, so every boundary lands on a layer the printer can actually stop at." />
+            <label className="miniLabel">{t("Layer Height (mm)")}</label>
+            <InfoIcon text={t("Your slicer's layer height. Colour bands are counted in these, so every boundary lands on a layer the printer can actually stop at.")} />
           </div>
 
           <div className="spinRow">
@@ -3558,14 +3560,14 @@ export default function App() {
 
         <div className="section">
           <div className="sectionTitle" style={{ marginBottom: 12 }}>
-            {graphic ? "Tones & Color" : "Color"}
+            {graphic ? t("Tones & Color") : t("Color")}
           </div>
 
           {(graphic || inlayMode) && (
             <>
               <div className="label-row">
-                <label className="miniLabel">My filaments</label>
-                <InfoIcon text="The colours of filament you have. Tick the ones to print with: in an Inlay the tones are the ticked colours, darkest first, and the picture is divided by which of them each part is nearest; in Layered, the colours found in the picture are moved to the nearest of them. Nothing is used unless it is ticked, so the picture's own colours are used by default. Kept in your account when you are signed in, and in this browser." />
+                <label className="miniLabel">{t("My filaments")}</label>
+                <InfoIcon text={t("The colours of filament you have. Tick the ones to print with: in an Inlay the tones are the ticked colours, darkest first, and the picture is divided by which of them each part is nearest; in Layered, the colours found in the picture are moved to the nearest of them. Nothing is used unless it is ticked, so the picture's own colours are used by default. Kept in your account when you are signed in, and in this browser.")} />
               </div>
               <FilamentEditor value={filaments} onChange={setFilaments} addAs={colors[1] ?? "#cccccc"} />
               {graphic && activeFilaments.length > 0 && (
@@ -3573,15 +3575,11 @@ export default function App() {
                   className="btn"
                   style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                   onClick={() => setColors(colors.map((c) => snapToPalette(c, activeFilaments)))}
-                  title="Move every band colour to the nearest of your ticked filaments"
-                >
-                  Snap colours to my ticked filaments
-                </button>
+                  title={t("Move every band colour to the nearest of your ticked filaments")}
+                >{t("Snap colours to my ticked filaments")}</button>
               )}
               {inlayMode && filamentTones && (
-                <div className="bandHint" style={{ marginTop: 8 }}>
-                  Tones follow your ticked filaments, so the tone count and colours are theirs.
-                </div>
+                <div className="bandHint" style={{ marginTop: 8 }}>{t("Tones follow your ticked filaments, so the tone count and colours are theirs.")}</div>
               )}
               <div style={{ height: 12 }} />
             </>
@@ -3590,7 +3588,7 @@ export default function App() {
           {levels > 0 && !filamentTones && (
             <>
               <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Tone levels</label>
+                <label className="miniLabel">{t("Tone levels")}</label>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <button
                     className="autoBtn"
@@ -3598,13 +3596,11 @@ export default function App() {
                     disabled={!imgData}
                     title={
                       imgData
-                        ? "Count the flat tones in the picture and use that"
-                        : "Load a picture first"
+                        ? t("Count the flat tones in the picture and use that")
+                        : t("Load a picture first")
                     }
-                  >
-                    Auto
-                  </button>
-                  <InfoIcon text="How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments." />
+                  >{t("Auto")}</button>
+                  <InfoIcon text={t("How many brightness levels the picture is flattened to. 2 gives a pure silhouette — right for a black and white logo. More levels keep some shading, at the cost of extra walls. Unrelated to Color Bands below, which splits the print between filaments.")} />
                 </div>
               </div>
 
@@ -3663,7 +3659,7 @@ export default function App() {
             <>
               <div className="label-row">
                 <label className="miniLabel">Colour gap: {colorGap}</label>
-                <InfoIcon text="How different two colours have to be to count as two tones. Raise it and similar colours — three shades of one red — merge into one; lower it and the shades are kept apart. It is a colour distance (CIE Lab), where about 2 is the smallest difference an eye can see and 30 is clearly another colour. Moving it finds the tones again." />
+                <InfoIcon text={t("How different two colours have to be to count as two tones. Raise it and similar colours — three shades of one red — merge into one; lower it and the shades are kept apart. It is a colour distance (CIE Lab), where about 2 is the smallest difference an eye can see and 30 is clearly another colour. Moving it finds the tones again.")} />
               </div>
               <input
                 className="range"
@@ -3692,7 +3688,7 @@ export default function App() {
             <>
               <div className="label-row">
                 <label className="miniLabel">Colors · {levels + 1} bodies</label>
-                <InfoIcon text="One body for the base and one for each tone, all exported as a 3MF. They stand in the same layers rather than on top of each other, so a slicer changes filament partway across a layer. Assign one to each." />
+                <InfoIcon text={t("One body for the base and one for each tone, all exported as a 3MF. They stand in the same layers rather than on top of each other, so a slicer changes filament partway across a layer. Assign one to each.")} />
               </div>
 
               <div className="inlayColors">
@@ -3704,11 +3700,11 @@ export default function App() {
                       disabled={filamentTones !== null && b > 0}
                       onChange={(e) => setBandColor(b, e.target.value)}
                     />
-                    <span>{b === 0 ? "Base" : `Tone ${b}`}</span>
+                    <span>{b === 0 ? "Base" : t("Tone {n}", { n: b })}</span>
                     {b > 0 && levels > 2 && !filamentTones && (
                       <button
                         type="button"
-                        title="Remove this colour: its part of the picture goes to the nearest other colour"
+                        title={t("Remove this colour: its part of the picture goes to the nearest other colour")}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -3738,30 +3734,24 @@ export default function App() {
               </div>
 
               <div className="bandHint">
-                Base is the solid colour under the picture; tones run darkest
-                first. Auto above reads all of them off the picture.
+                {t("Base is the solid colour under the picture; tones run darkest first. Auto above reads all of them off the picture.")}
               </div>
             </>
           ) : (
           <>
           <div className="label-row">
             <label className="miniLabel">
-              Color Bands ·{" "}
+              {t("Color Bands")} ·{" "}
               {orientation === "flat"
-                ? `${totalLayers} layers`
-                : `${maxT.toFixed(2)} mm thick`}
+                ? t("{n} layers", { n: totalLayers })
+                : t("{mm} mm thick", { mm: maxT.toFixed(2) })}
             </label>
-            <InfoIcon text="Slices the lithophane into stacked bodies through its thickness and exports a 3MF instead of an STL. The bodies come out as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL." />
+            <InfoIcon text={t("Slices the lithophane into stacked bodies through its thickness and exports a 3MF instead of an STL. The bodies come out as one part made of several bodies, so they stay registered — assign a filament to each. One band means a plain single-colour STL.")} />
           </div>
 
           {orientation === "vertical" && (
             <div className="bandHint">
-              Standing up, the print is {buildHeightMm.toFixed(1)} mm tall —{" "}
-              {Math.max(1, Math.round(buildHeightMm / layerHeight))} layers. The
-              bands below run through its {maxT.toFixed(2)} mm of thickness,
-              which is across the layers rather than along them, so every layer
-              contains all of them and the printer changes filament on each one.
-              Lay it flat and each band becomes a run of layers instead.
+              {t("Standing up, the print is {h} mm tall — {n} layers. The bands below run through its {mm} mm of thickness, which is across the layers rather than along them, so every layer contains all of them and the printer changes filament on each one. Lay it flat and each band becomes a run of layers instead.", { h: buildHeightMm.toFixed(1), n: Math.max(1, Math.round(buildHeightMm / layerHeight)), mm: maxT.toFixed(2) })}
             </div>
           )}
 
@@ -3783,7 +3773,7 @@ export default function App() {
           {buriedBands.length > 0 && (
             <div className="bandWarn">
               {buriedBands.length === 1
-                ? `Band ${buriedBands[0] + 1} sits between tones — nothing on the surface stops inside it, so its colour stays buried under the band above.`
+                ? t("Band {n} sits between tones — nothing on the surface stops inside it, so its colour stays buried under the band above.", { n: buriedBands[0] + 1 })
                 : `Bands ${buriedBands
                     .map((n) => n + 1)
                     .join(", ")} sit between tones — nothing on the surface stops inside them, so those colours stay buried under the band above.`}{" "}
@@ -3793,10 +3783,10 @@ export default function App() {
 
           <div className="bandHint">
             {splitLayers.length === 0
-              ? `Single colour · ${(totalLayers * layerHeight).toFixed(2)} mm thick · click the bar to recolour`
+              ? t("Single colour · {mm} mm thick · click the bar to recolour", { mm: (totalLayers * layerHeight).toFixed(2) })
               : graphic
-                ? `Drag a divider to move it · click one to recolour · amber marks are the printed tone heights · exports as 3MF`
-                : `Drag a divider to move it · click a band to recolour · exports as 3MF`}
+                ? t("Drag a divider to move it · click one to recolour · amber marks are the printed tone heights · exports as 3MF")
+                : t("Drag a divider to move it · click a band to recolour · exports as 3MF")}
           </div>
 
           <button
@@ -3806,7 +3796,7 @@ export default function App() {
             disabled={nextBandBoundary() === null}
             title={
               nextBandBoundary() === null
-                ? "No layers left to give a new band — raise Max thickness or lower Layer height"
+                ? t("No layers left to give a new band — raise Max thickness or lower Layer height")
                 : undefined
             }
           >
@@ -3819,15 +3809,13 @@ export default function App() {
             className="btn"
             style={{ marginTop: 12, width: "100%" }}
             onClick={resetThicknessDefaults}
-          >
-            Reset Defaults
-          </button>
+          >{t("Reset Defaults")}</button>
         </div>
 
         <div className="section">
           <div className="label-row">
-            <div className="sectionTitle">Quality</div>
-            <InfoIcon text="High: More detail and more triangles (larger file). Normal: Balanced." />
+            <div className="sectionTitle">{t("Quality")}</div>
+            <InfoIcon text={t("High: More detail and more triangles (larger file). Normal: Balanced.")} />
           </div>
 
           <select
@@ -3835,9 +3823,9 @@ export default function App() {
             value={quality}
             onChange={(e) => setQuality(e.target.value as Quality)}
           >
-            <option value="draft">Draft</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
+            <option value="draft">{t("Draft")}</option>
+            <option value="normal">{t("Normal")}</option>
+            <option value="high">{t("High")}</option>
           </select>
 
           {/* Graphic answers to this too, and needs to.
@@ -3859,8 +3847,8 @@ export default function App() {
               at the print. */}
           <>
             <div className="label-row" style={{ marginTop: 12 }}>
-              <label className="miniLabel">Edge Smoothing</label>
-              <InfoIcon text="Widens sampling beyond one mesh cell. Low keeps edges crisp but hard edges come out stair-stepped; high trades a little sharpness for clean edges. Photos ~1, logos and line art 1.5-3. Costs no extra triangles." />
+              <label className="miniLabel">{t("Edge Smoothing")}</label>
+              <InfoIcon text={t("Widens sampling beyond one mesh cell. Low keeps edges crisp but hard edges come out stair-stepped; high trades a little sharpness for clean edges. Photos ~1, logos and line art 1.5-3. Costs no extra triangles.")} />
             </div>
 
             <div style={{ display: "grid", gap: 8 }}>
@@ -3915,7 +3903,7 @@ export default function App() {
             onClick={() => generate(true)}
             disabled={isGenerating}
           >
-            {isGenerating ? "Processing..." : "Generate STL/3MF"}
+            {isGenerating ? t("Processing...") : t("Generate STL/3MF")}
           </button>
 
           <button
@@ -3923,10 +3911,8 @@ export default function App() {
             style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
             onClick={() => generate(false)}
             disabled={isGenerating}
-            title="Build the model and show it in 3D without downloading"
-          >
-            Preview in 3D
-          </button>
+            title={t("Build the model and show it in 3D without downloading")}
+          >{t("Preview in 3D")}</button>
 
           {statusMsg && (
             <div
@@ -3958,21 +3944,15 @@ export default function App() {
               <button
                 className={`viewTab ${view === "editor" ? "active" : ""}`}
                 onClick={() => setView("editor")}
-              >
-                Image Editor
-              </button>
+              >{t("Image Editor")}</button>
               <button
                 className={`viewTab ${view === "preview" ? "active" : ""}`}
                 onClick={() => setView("preview")}
-              >
-                3D Preview
-              </button>
+              >{t("3D Preview")}</button>
               <button
                 className={`viewTab ${view === "holder" ? "active" : ""}`}
                 onClick={() => setView("holder")}
-              >
-                Frame &amp; Stand
-              </button>
+              >{t("Frame & Stand")}</button>
             </div>
 
             {view === "editor" && (
@@ -3998,10 +3978,8 @@ export default function App() {
 
                 <label
                   className="shadeToggle"
-                  title="Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model."
-                >
-                  Backdrop
-                  <ColorField
+                  title={t("Fills anything the photo does not cover. Leave it white so bare areas print thin and let light through — otherwise they come out as the thickest, most opaque part of the model.")}
+                >{t("Backdrop")}<ColorField
                     value={bgColor}
                     onChange={setBgColor}
                     presets={colors}
@@ -4013,34 +3991,28 @@ export default function App() {
 
             {view !== "editor" && (
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {view === "preview" && previewStale && <span className="staleChip">out of date</span>}
+                {view === "preview" && previewStale && <span className="staleChip">{t("out of date")}</span>}
                 <label
                   className="shadeToggle"
-                  title="Draw every triangle in one tone, the way a slicer does, so the mesh's real facets are visible. Off smooths the normals."
+                  title={t("Draw every triangle in one tone, the way a slicer does, so the mesh's real facets are visible. Off smooths the normals.")}
                 >
                   <input
                     type="checkbox"
                     checked={flatShading}
                     onChange={(e) => setFlatShading(e.target.checked)}
-                  />
-                  Flat shading
-                </label>
+                  />{t("Flat shading")}</label>
                 <label className="shadeToggle">
                   <input
                     type="checkbox"
                     checked={lightBackground}
                     onChange={(e) => setLightBackground(e.target.checked)}
-                  />
-                  Light background
-                </label>
+                  />{t("Light background")}</label>
                 <label className="shadeToggle">
                   <input
                     type="checkbox"
                     checked={showGrid}
                     onChange={(e) => setShowGrid(e.target.checked)}
-                  />
-                  Grid
-                </label>
+                  />{t("Grid")}</label>
               </div>
             )}
           </div>
@@ -4049,20 +4021,19 @@ export default function App() {
             <div className="paintBar">
               {tool === "pick" && (
                 <span className="paintArmed">
-                  Click the picture to take{" "}
-                  {pickInto === "backdrop" ? "the backdrop" : "the brush"} colour
+                  {pickInto === "backdrop" ? t("Click the picture to take the backdrop colour") : t("Click the picture to take the brush colour")}
                 </span>
               )}
 
               <div className="toolRow">
-                {TOOLS.map((t) => (
+                {TOOLS.map((tl) => (
                   <button
-                    key={t.id}
-                    className={`segment toolBtn ${tool === t.id ? "active" : ""}`}
-                    onClick={() => setTool(t.id)}
-                    title={t.hint}
+                    key={tl.id}
+                    className={`segment toolBtn ${tool === tl.id ? "active" : ""}`}
+                    onClick={() => setTool(tl.id)}
+                    title={t(tl.hint)}
                   >
-                    {t.label}
+                    {t(tl.label)}
                   </button>
                 ))}
               </div>
@@ -4070,7 +4041,7 @@ export default function App() {
               {/* Every setting is always here, greyed when the tool has no use
                   for it. Showing only what applies made the row rearrange
                   itself under the pointer every time a tool was picked. */}
-              <div className="paintSet" title="Brush colour. White prints thin, dark prints thick.">
+              <div className="paintSet" title={t("Brush colour. White prints thin, dark prints thick.")}>
                 <ColorField
                   value={paintColor}
                   onChange={setPaintColor}
@@ -4081,7 +4052,7 @@ export default function App() {
               </div>
 
               <label className="paintSet" title={`Brush and outline width: ${paintSize} px`}>
-                <span className="paintTag">Size</span>
+                <span className="paintTag">{t("Size")}</span>
                 <input
                   className="range paintRange"
                   type="range"
@@ -4095,7 +4066,7 @@ export default function App() {
               </label>
 
               <label className="paintSet" title={`How much shows through: ${Math.round(opacity * 100)}%`}>
-                <span className="paintTag">Opacity</span>
+                <span className="paintTag">{t("Opacity")}</span>
                 <input
                   className="range paintRange"
                   type="range"
@@ -4109,7 +4080,7 @@ export default function App() {
               </label>
 
               <label className="paintSet" title={`How far the edge is feathered: ${Math.round(softness * 100)}%`}>
-                <span className="paintTag">Soft</span>
+                <span className="paintTag">{t("Soft")}</span>
                 <input
                   className="range paintRange"
                   type="range"
@@ -4123,7 +4094,7 @@ export default function App() {
               </label>
 
               <label className="paintSet" title={`How far a fill spreads into neighbouring colours: ${fillTolerance}`}>
-                <span className="paintTag">Spread</span>
+                <span className="paintTag">{t("Spread")}</span>
                 <input
                   className="range paintRange"
                   type="range"
@@ -4136,14 +4107,14 @@ export default function App() {
                 />
               </label>
 
-              <label className="paintSet shadeToggle" title="Boxes and ovals come out solid, or as an outline of the brush's width.">
+              <label className="paintSet shadeToggle" title={t("Boxes and ovals come out solid, or as an outline of the brush's width.")}>
                 <input
                   type="checkbox"
                   checked={shapeFill}
                   disabled={tool !== "rect" && tool !== "ellipse"}
                   onChange={(e) => setShapeFill(e.target.checked)}
                 />
-                <span>Solid</span>
+                <span>{t("Solid")}</span>
               </label>
 
               <span className="paintDiv" />
@@ -4151,13 +4122,13 @@ export default function App() {
               <button
                 className={`segment toolBtn ${tool === TEXT_TOOL.id ? "active" : ""}`}
                 onClick={() => setTool(TEXT_TOOL.id)}
-                title={TEXT_TOOL.hint}
+                title={t(TEXT_TOOL.hint)}
               >
-                {TEXT_TOOL.label}
+                {t(TEXT_TOOL.label)}
               </button>
 
               <label className="paintSet" title={`Text size: ${fontSize} px`}>
-                <span className="paintTag">Size</span>
+                <span className="paintTag">{t("Size")}</span>
                 <input
                   className="range paintRange"
                   type="range"
@@ -4170,8 +4141,8 @@ export default function App() {
                 />
               </label>
 
-              <label className="paintSet" title="Typeface for the text tool">
-                <span className="paintTag">Font</span>
+              <label className="paintSet" title={t("Typeface for the text tool")}>
+                <span className="paintTag">{t("Font")}</span>
                 <select
                   className="paintFont"
                   value={fontFamily}
@@ -4189,15 +4160,9 @@ export default function App() {
               <span className="paintDiv" />
 
               <div className="paintEnd">
-                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title="Step back">
-                  Undo
-                </button>
-                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title="Step forward again">
-                  Redo
-                </button>
-                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title="Take all the paint off">
-                  Clear
-                </button>
+                <button className="autoBtn" onClick={() => editorRef.current?.undoPaint()} title={t("Step back")}>{t("Undo")}</button>
+                <button className="autoBtn" onClick={() => editorRef.current?.redoPaint()} title={t("Step forward again")}>{t("Redo")}</button>
+                <button className="autoBtn" onClick={() => editorRef.current?.clearPaint()} title={t("Take all the paint off")}>{t("Clear")}</button>
               </div>
             </div>
           )}
@@ -4254,7 +4219,7 @@ export default function App() {
             >
               {(view === "preview" || previewMesh) && (
                 <React.Suspense
-                  fallback={<div className="preview-empty">Loading viewer…</div>}
+                  fallback={<div className="preview-empty">{t("Loading viewer…")}</div>}
                 >
                   <MeshPreview
                     mesh={previewMesh}
@@ -4267,9 +4232,8 @@ export default function App() {
 
               {previewStale && (
                 <div className="staleBanner">
-                  Settings changed since this was built — press{" "}
-                  <strong>Preview in 3D</strong> to rebuild.
-                </div>
+                  {t("Settings changed since this was built — press")}{" "}
+                  <strong>{t("Preview in 3D")}</strong>{" "}{t("to rebuild.")}</div>
               )}
             </div>
 
@@ -4286,7 +4250,7 @@ export default function App() {
                     }}
                   >
                     <React.Suspense
-                      fallback={<div className="preview-empty">Loading viewer…</div>}
+                      fallback={<div className="preview-empty">{t("Loading viewer…")}</div>}
                     >
                       <MeshPreview
                         mesh={holderMesh}
@@ -4337,10 +4301,10 @@ export default function App() {
                   <div className="viewTabs" style={{ padding: "0 14px 8px", flexWrap: "wrap" }}>
                     {(
                       [
-                        ["frame", "Frame"],
-                        ["decorate", "Decorate"],
-                        ["colours", "Colours"],
-                        ["print", "Print"],
+                        ["frame", t("Frame")],
+                        ["decorate", t("Decorate")],
+                        ["colours", t("Colours")],
+                        ["print", t("Print")],
                       ] as const
                     ).map(([id, label]) => (
                       <button
@@ -4355,17 +4319,14 @@ export default function App() {
 
                   <div style={{ overflowY: "auto", padding: "0 14px 16px", flex: 1, minHeight: 0 }}>
                     {!holderUsable ? (
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        The frame is made for flat, rectangular pictures. Pick the
-                        rectangle shape and turn the curve off to use it.
-                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("The frame is made for flat, rectangular pictures. Pick the rectangle shape and turn the curve off to use it.")}</div>
                     ) : (
                       <>
                         {holderSub === "frame" && (
                           <>
                             <div className="label-row">
-                              <div className="sectionTitle">Frame &amp; stand</div>
-                              <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
+                              <div className="sectionTitle">{t("Frame & stand")}</div>
+                              <InfoIcon text={t("A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.")} />
                             </div>
                             <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
                               Frame for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
@@ -4373,7 +4334,7 @@ export default function App() {
 
                             <div className="label-row">
                               <label className="miniLabel">Panel angle: {holderAngle}°</label>
-                              <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them." />
+                              <InfoIcon text={t("How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.")} />
                             </div>
                             <input
                               className="range"
@@ -4386,8 +4347,8 @@ export default function App() {
                             />
 
                             <div className="label-row" style={{ marginTop: 12 }}>
-                              <label className="miniLabel">Frame width (mm)</label>
-                              <InfoIcon text="How wide the frame is round the picture, as wide as you like from 5 to 30 mm. Slim shows more of the picture, Wide is sturdier and leaves more room for decorations. The lip over the picture's edge follows the width." />
+                              <label className="miniLabel">{t("Frame width (mm)")}</label>
+                              <InfoIcon text={t("How wide the frame is round the picture, as wide as you like from 5 to 30 mm. Slim shows more of the picture, Wide is sturdier and leaves more room for decorations. The lip over the picture's edge follows the width.")} />
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <NumField value={holderBorder} min={5} max={30} step={0.5} onChange={setHolderBorder} />
@@ -4403,24 +4364,20 @@ export default function App() {
                               >
                                 {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
                                   <option key={id} value={id}>
-                                    {v.label}
+                                    {t(v.label)}
                                   </option>
                                 ))}
-                                <option value="custom" disabled>
-                                  Custom
-                                </option>
+                                <option value="custom" disabled>{t("Custom")}</option>
                               </select>
                             </div>
 
                             <div className="label-row" style={{ marginTop: 12 }}>
-                              <label className="miniLabel">Corner radius (mm)</label>
-                              <InfoIcon text="Rounds the frame's outer corners, from 0 (square) to 30 mm. The picture's pocket keeps square corners, since the picture itself is a rectangle; the rounding stops short of the legs." />
+                              <label className="miniLabel">{t("Corner radius (mm)")}</label>
+                              <InfoIcon text={t("Rounds the frame's outer corners, from 0 (square) to 30 mm. The picture's pocket keeps square corners, since the picture itself is a rectangle; the rounding stops short of the legs.")} />
                             </div>
                             <NumField value={holderCorner} min={0} max={30} step={1} onChange={setHolderCorner} />
 
-                            <label className="shadeToggle" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                              Frame colour
-                              <input
+                            <label className="shadeToggle" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>{t("Frame colour")}<input
                                 type="color"
                                 value={frameColour}
                                 onChange={(e) => setFrameColour(e.target.value)}
@@ -4428,18 +4385,18 @@ export default function App() {
                             </label>
 
                             <div className="label-row" style={{ marginTop: 12 }}>
-                              <label className="miniLabel">Fit (mm)</label>
-                              <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
+                              <label className="miniLabel">{t("Fit (mm)")}</label>
+                              <InfoIcon text={t("The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble.")} />
                             </div>
                             <NumField value={holderFit} min={0} max={0.6} step={0.05} onChange={setHolderFit} />
 
                             <div className="label-row" style={{ marginTop: 12 }}>
-                              <label className="miniLabel">Tealight diameter (mm)</label>
-                              <InfoIcon text="The width of the tealight. The cup in the stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm." />
+                              <label className="miniLabel">{t("Tealight diameter (mm)")}</label>
+                              <InfoIcon text={t("The width of the tealight. The cup in the stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm.")} />
                             </div>
                             <NumField value={tealightMm} min={30} max={80} step={1} onChange={setTealightMm} />
                             <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                              Cup inside: {tealightMm + 4} mm
+                              {t("Cup inside: {mm} mm", { mm: tealightMm + 4 })}
                             </div>
 
                             <label className="shadeToggle" style={{ marginTop: 14, display: "flex" }}>
@@ -4447,18 +4404,12 @@ export default function App() {
                                 type="checkbox"
                                 checked={showPicture}
                                 onChange={(e) => setShowPicture(e.target.checked)}
-                              />
-                              Show the picture in the frame
-                            </label>
+                              />{t("Show the picture in the frame")}</label>
                             {showPicture && !previewMesh && (
-                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                                Press <strong>Preview in 3D</strong> in the side panel to build the picture, and it appears here.
-                              </div>
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>{t("Press")}{" "}<strong>{t("Preview in 3D")}</strong>{" "}{t("in the side panel to build the picture, and it appears here.")}</div>
                             )}
                             {showPicture && previewMesh && previewStale && (
-                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                                The picture shown is from before your last change. Press Preview in 3D to update it.
-                              </div>
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>{t("The picture shown is from before your last change. Press Preview in 3D to update it.")}</div>
                             )}
                           </>
                         )}
@@ -4466,8 +4417,8 @@ export default function App() {
                         {holderSub === "decorate" && (
                           <>
                             <div className="label-row">
-                              <div className="sectionTitle">Decorate</div>
-                              <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the frame's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the frame standing up." />
+                              <div className="sectionTitle">{t("Decorate")}</div>
+                              <InfoIcon text={t("Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the frame's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the frame standing up.")} />
                             </div>
 
                             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
@@ -4475,7 +4426,7 @@ export default function App() {
                                 className="btn"
                                 style={{ flex: 1, justifyContent: "center" }}
                                 disabled={history.current.past.length === 0}
-                                title="Undo (Ctrl+Z)"
+                                title={t("Undo (Ctrl+Z)")}
                                 onClick={undoDecorations}
                               >
                                 ↶ Undo
@@ -4484,7 +4435,7 @@ export default function App() {
                                 className="btn"
                                 style={{ flex: 1, justifyContent: "center" }}
                                 disabled={history.current.future.length === 0}
-                                title="Redo (Ctrl+Y)"
+                                title={t("Redo (Ctrl+Y)")}
                                 onClick={redoDecorations}
                               >
                                 ↷ Redo
@@ -4492,8 +4443,8 @@ export default function App() {
                             </div>
 
                             <div className="label-row">
-                              <label className="miniLabel">Start from a template</label>
-                              <InfoIcon text="A ready-made set of decorations along the borders, to start from and change. Choosing one replaces what is on the frame now; Undo brings it back." />
+                              <label className="miniLabel">{t("Start from a template")}</label>
+                              <InfoIcon text={t("A ready-made set of decorations along the borders, to start from and change. Choosing one replaces what is on the frame now; Undo brings it back.")} />
                             </div>
                             <select
                               className="spinInput"
@@ -4503,10 +4454,10 @@ export default function App() {
                                 if (e.target.value) applyTemplate(e.target.value);
                               }}
                             >
-                              <option value="">Choose…</option>
+                              <option value="">{t("Choose…")}</option>
                               {TEMPLATES.map((tpl) => (
                                 <option key={tpl.id} value={tpl.id}>
-                                  {tpl.label}
+                                  {t(tpl.label)}
                                 </option>
                               ))}
                             </select>
@@ -4524,10 +4475,7 @@ export default function App() {
                                 canBack={decorSelected > 0}
                               />
                             ) : (
-                              <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                Pick something below to put it on the frame, then drag it into place on
-                                the left. Its handles set size and turn, and the cross takes it away.
-                              </div>
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>{t("Pick something below to put it on the frame, then drag it into place on the left. Its handles set size and turn, and the cross takes it away.")}</div>
                             )}
 
                             <div style={{ height: 12 }} />
@@ -4536,22 +4484,22 @@ export default function App() {
                             {decorations.length > 0 && (
                               <>
                                 <div className="label-row" style={{ marginTop: 14 }}>
-                                  <label className="miniLabel">Height follows colour</label>
-                                  <InfoIcon text="Flat raises every icon the same. The other two split each icon into three steps by the brightness of its own colours and raise them by different amounts: Light parts higher makes the pale colours stand out most, Dark parts higher the deep ones. The lowest step is still 40% of the height, so nothing is lost on the face." />
+                                  <label className="miniLabel">{t("Height follows colour")}</label>
+                                  <InfoIcon text={t("Flat raises every icon the same. The other two split each icon into three steps by the brightness of its own colours and raise them by different amounts: Light parts higher makes the pale colours stand out most, Dark parts higher the deep ones. The lowest step is still 40% of the height, so nothing is lost on the face.")} />
                                 </div>
                                 <select
                                   className="spinInput"
                                   value={reliefMode}
                                   onChange={(e) => setReliefMode(e.target.value as ReliefMode)}
                                 >
-                                  <option value="flat">Flat — one height</option>
-                                  <option value="lightHigher">Light parts higher</option>
-                                  <option value="darkHigher">Dark parts higher</option>
+                                  <option value="flat">{t("Flat — one height")}</option>
+                                  <option value="lightHigher">{t("Light parts higher")}</option>
+                                  <option value="darkHigher">{t("Dark parts higher")}</option>
                                 </select>
 
                                 <div className="label-row" style={{ marginTop: 12 }}>
                                   <label className="miniLabel">Relief height: {reliefMm.toFixed(1)} mm</label>
-                                  <InfoIcon text="How far the icons stand out from the front face, at the most. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked. Parts that hang over the frame's edge are a little thicker so they are joined to it." />
+                                  <InfoIcon text={t("How far the icons stand out from the front face, at the most. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked. Parts that hang over the frame's edge are a little thicker so they are joined to it.")} />
                                 </div>
                                 <input
                                   className="range"
@@ -4566,8 +4514,8 @@ export default function App() {
                                 {decorations.some((d) => d.flush && !d.cut) && (
                                   <>
                                     <div className="label-row" style={{ marginTop: 12 }}>
-                                      <label className="miniLabel">Flush clearance (mm)</label>
-                                      <InfoIcon text="Room left round a flush decoration in its recess. 0 makes the fill exactly the shape of the pocket; a tenth or two of a millimetre (up to 0.2) lets it go in if printed parts come out a little large. The pocket grows by about this much all round, in steps of the mask resolution, and a gap shows as a hairline." />
+                                      <label className="miniLabel">{t("Flush clearance (mm)")}</label>
+                                      <InfoIcon text={t("Room left round a flush decoration in its recess. 0 makes the fill exactly the shape of the pocket; a tenth or two of a millimetre (up to 0.2) lets it go in if printed parts come out a little large. The pocket grows by about this much all round, in steps of the mask resolution, and a gap shows as a hairline.")} />
                                     </div>
                                     <NumField value={flushClearance} min={0} max={0.2} step={0.05} onChange={setFlushClearance} />
                                   </>
@@ -4578,14 +4526,12 @@ export default function App() {
                                 type="checkbox"
                                 checked={iconColours > 0}
                                 onChange={(e) => setIconColours(e.target.checked ? 4 : 0)}
-                              />
-                              Print decorations in their own colours
-                            </label>
+                              />{t("Print decorations in their own colours")}</label>
                             {iconColours > 0 && (
                               <>
                                 <div className="label-row" style={{ marginTop: 8 }}>
-                                  <label className="miniLabel">Reduce colours to at most</label>
-                                  <InfoIcon text="Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them." />
+                                  <label className="miniLabel">{t("Reduce colours to at most")}</label>
+                                  <InfoIcon text={t("Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them.")} />
                                 </div>
                                 <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
                               </>
@@ -4597,47 +4543,42 @@ export default function App() {
 
                         {holderSub === "colours" && (
                           <>
-                            <div className="sectionTitle" style={{ marginBottom: 10 }}>Colours</div>
-                            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
-                              The frame&apos;s own colour is on the Frame tab, and printing decorations in their
-                              own colours is on the Decorate tab.
-                            </div>
+                            <div className="sectionTitle" style={{ marginBottom: 10 }}>{t("Colours")}</div>
+                            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>{t("The frame's own colour is on the Frame tab, and printing decorations in their own colours is on the Decorate tab.")}</div>
 
 
 
                             <div className="label-row">
-                              <label className="miniLabel">My filaments</label>
-                              <InfoIcon text="Add the colours of filament you have and tick the ones to print with. Every colour of a decoration is then printed in the nearest ticked one, whatever it was drawn in, so nothing needs a colour you do not own. Nothing is used unless it is ticked, so decorations keep their own colours by default." />
+                              <label className="miniLabel">{t("My filaments")}</label>
+                              <InfoIcon text={t("Add the colours of filament you have and tick the ones to print with. Every colour of a decoration is then printed in the nearest ticked one, whatever it was drawn in, so nothing needs a colour you do not own. Nothing is used unless it is ticked, so decorations keep their own colours by default.")} />
                             </div>
                             <FilamentEditor value={filaments} onChange={setFilaments} addAs={frameColour} />
                             <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
                               {account
-                                ? "Kept in your account, and the same list as for Inlay and Layered."
-                                : "Kept in this browser; sign in to keep them in your account. The same list as for Inlay and Layered."}
+                                ? t("Kept in your account, and the same list as for Inlay and Layered.")
+                                : t("Kept in this browser; sign in to keep them in your account. The same list as for Inlay and Layered.")}
                             </div>
                           </>
                         )}
 
                         {holderSub === "print" && (
                           <>
-                            <div className="sectionTitle" style={{ marginBottom: 10 }}>Print</div>
+                            <div className="sectionTitle" style={{ marginBottom: 10 }}>{t("Print")}</div>
 
                             <div className="label-row">
-                              <label className="miniLabel">Print the frame</label>
-                              <InfoIcon text="Front face down lies the frame flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees." />
+                              <label className="miniLabel">{t("Print the frame")}</label>
+                              <InfoIcon text={t("Front face down lies the frame flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees.")} />
                             </div>
                             <select
                               className="spinInput"
                               value={holderPose}
                               onChange={(e) => setHolderPose(e.target.value as "face" | "standing")}
                             >
-                              <option value="face">Front face down</option>
-                              <option value="standing">Standing up</option>
+                              <option value="face">{t("Front face down")}</option>
+                              <option value="standing">{t("Standing up")}</option>
                             </select>
                             {holderPose === "face" && decorations.length > 0 && (
-                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
-                                The decorations would be underneath. Print standing up.
-                              </div>
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>{t("The decorations would be underneath. Print standing up.")}</div>
                             )}
 
                             <button
@@ -4646,39 +4587,33 @@ export default function App() {
                               onClick={() => downloadHolderPart("holder")}
                             >
                               {(iconColours > 0 && decorations.some((d) => !d.cut)
-                                ? "Download frame (3MF, colours)"
-                                : "Download frame (STL)") +
+                                ? t("Download frame (3MF, colours)")
+                                : t("Download frame (STL)")) +
                                 (unlimited(account) ? " · included" : " · 1 token")}
                             </button>
                             <button
                               className="btn"
                               style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                               onClick={() => downloadHolderPart("stand")}
-                            >
-                              Download stand (STL) · free
-                            </button>
-                            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
-                              Downloading the same frame design again is free.
-                            </div>
+                            >{t("Download stand (STL) · free")}</button>
+                            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>{t("Downloading the same frame design again is free.")}</div>
                             {holderNote && (
                               <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>
                             )}
 
                             <div className="label-row" style={{ marginTop: 18 }}>
-                              <label className="miniLabel">Saved designs</label>
-                              <InfoIcon text="A design holds the frame's settings and what is on it, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first." />
+                              <label className="miniLabel">{t("Saved designs")}</label>
+                              <InfoIcon text={t("A design holds the frame's settings and what is on it, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first.")} />
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <input
                                 className="spinInput"
                                 type="text"
-                                placeholder="Name"
+                                placeholder={t("Name")}
                                 value={designName}
                                 onChange={(e) => setDesignName(e.target.value)}
                               />
-                              <button className="btn" onClick={saveDesign}>
-                                Save
-                              </button>
+                              <button className="btn" onClick={saveDesign}>{t("Save")}</button>
                             </div>
                             {shownDesigns.map((d) => (
                               <div
@@ -4686,16 +4621,14 @@ export default function App() {
                                 style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13 }}
                               >
                                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  {d.cloud && <span title="Kept in your account"> ☁ </span>}
+                                  {d.cloud && <span title={t("Kept in your account")}> ☁ </span>}
                                   {d.name}
                                   <span style={{ opacity: 0.6 }}>
                                     {" "}· {d.picture.w}×{d.picture.h}
                                   </span>
                                 </span>
-                                <button className="btn" onClick={() => loadDesign(d)}>
-                                  Load
-                                </button>
-                                <button className="btn" onClick={() => deleteDesign(d.name)} title="Delete">
+                                <button className="btn" onClick={() => loadDesign(d)}>{t("Load")}</button>
+                                <button className="btn" onClick={() => deleteDesign(d.name)} title={t("Delete")}>
                                   ✕
                                 </button>
                               </div>
@@ -4757,7 +4690,7 @@ export default function App() {
         <div className="modalBackdrop" onClick={() => setAccountOpen(false)}>
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
             <div className="modalTitle">
-              {accountMode === "in" ? "Sign in" : "Make an account"}
+              {accountMode === "in" ? t("Sign in") : t("Make an account")}
             </div>
 
             <div className="googleSlot" ref={googleSlot} />
@@ -4774,7 +4707,7 @@ export default function App() {
                 className="spinInput"
                 type="email"
                 autoComplete="email"
-                placeholder="you@example.com"
+                placeholder={t("you@example.com")}
                 value={accountEmail}
                 onChange={(e) => setAccountEmail(e.target.value)}
                 style={{ marginBottom: 8 }}
@@ -4783,7 +4716,7 @@ export default function App() {
                 className="spinInput"
                 type="password"
                 autoComplete={accountMode === "in" ? "current-password" : "new-password"}
-                placeholder={accountMode === "in" ? "Password" : "Password, eight or more"}
+                placeholder={accountMode === "in" ? t("Password") : t("Password, eight or more")}
                 value={accountPass}
                 onChange={(e) => setAccountPass(e.target.value)}
               />
@@ -4795,8 +4728,8 @@ export default function App() {
                   {accountBusy
                     ? "…"
                     : accountMode === "in"
-                      ? "Sign in"
-                      : "Create"}
+                      ? t("Sign in")
+                      : t("Create")}
                 </button>
                 <button
                   className="btn"
@@ -4817,18 +4750,10 @@ export default function App() {
       {flatHintOpen && (
         <div className="modalBackdrop" onClick={() => setFlatHintOpen(false)}>
           <div className="modalCard" onClick={(e) => e.stopPropagation()}>
-            <div className="modalTitle">Print this one flat?</div>
-            <p className="modalBody">
-              Standing up, the colour bands run through the model's depth, so
-              every layer contains all of them and the printer changes filament
-              on <em>each layer</em>.
+            <div className="modalTitle">{t("Print this one flat?")}</div>
+            <p className="modalBody">{t("Standing up, the colour bands run through the model's depth, so every layer contains all of them and the printer changes filament on")}{" "}<em>{t("each layer")}</em>.
               <br />
-              <br />
-              Laid flat, the bands stack along the print axis instead — each one
-              becomes a contiguous run of layers, so it is a single change per
-              band. That is also what makes the layer numbers here line up with
-              your slicer.
-            </p>
+              <br />{t("Laid flat, the bands stack along the print axis instead — each one becomes a contiguous run of layers, so it is a single change per band. That is also what makes the layer numbers here line up with your slicer.")}</p>
 
             <div className="modalActions">
               <button
@@ -4837,16 +4762,12 @@ export default function App() {
                   setOrientation("flat");
                   setFlatHintOpen(false);
                 }}
-              >
-                Switch to flat
-              </button>
+              >{t("Switch to flat")}</button>
               <button
                 className="btn"
                 style={{ justifyContent: "center" }}
                 onClick={() => setFlatHintOpen(false)}
-              >
-                Keep vertical
-              </button>
+              >{t("Keep vertical")}</button>
             </div>
 
             <button
@@ -4855,9 +4776,7 @@ export default function App() {
                 localStorage.setItem(FLAT_HINT_KEY, "1");
                 setFlatHintOpen(false);
               }}
-            >
-              Don't show this again
-            </button>
+            >{t("Don't show this again")}</button>
           </div>
         </div>
       )}

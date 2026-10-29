@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
@@ -253,7 +254,7 @@ export default function ColorField({
             <button
               type="button"
               className="colorDrop"
-              title="Take a colour off the picture — click the swatch, then click the picture"
+              title={t("Take a colour off the picture — click the swatch, then click the picture")}
               onClick={() => {
                 setOpen(false);
                 onPick?.();

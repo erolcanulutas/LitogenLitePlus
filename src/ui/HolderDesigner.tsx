@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { OVERHANG_MM, isText, type Decoration } from "../core/decor";
 import { decorationBox, drawDecoration, loadIcon } from "./decorIcons";
@@ -465,14 +466,12 @@ export default function HolderDesigner({
           pointerEvents: "none",
         }}
       >
-        <span>Wheel zooms · drag the background to move the view · Alt while dragging skips the guides</span>
+        <span>{t("Wheel zooms · drag the background to move the view · Alt while dragging skips the guides")}</span>
         <button
           className="btn"
           style={{ padding: "1px 10px", fontSize: 11, pointerEvents: "auto" }}
           onClick={() => setView(rest())}
-        >
-          Reset view
-        </button>
+        >{t("Reset view")}</button>
       </div>
     </div>
   );

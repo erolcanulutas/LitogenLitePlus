@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useState } from "react";
 import { CATEGORIES, HAS_MORE, iconsIn, searchIcons } from "./decorIcons";
 
@@ -36,7 +37,7 @@ export default function IconPalette({ onAdd, onAddText }: Props) {
       <input
         className="spinInput"
         type="search"
-        placeholder="Search icons…"
+        placeholder={t("Search icons…")}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         style={{ marginTop: 8 }}
@@ -51,7 +52,7 @@ export default function IconPalette({ onAdd, onAddText }: Props) {
               style={{ padding: "4px 8px", fontSize: 12 }}
               onClick={() => setCategory(c.id)}
             >
-              {c.label}
+              {t(c.label)}
             </button>
           ))}
         </div>
@@ -85,13 +86,11 @@ export default function IconPalette({ onAdd, onAddText }: Props) {
           </button>
         ))}
         {searching && shown.length === 0 && (
-          <div style={{ gridColumn: "1 / -1", fontSize: 12, opacity: 0.7 }}>No icon by that name.</div>
+          <div style={{ gridColumn: "1 / -1", fontSize: 12, opacity: 0.7 }}>{t("No icon by that name.")}</div>
         )}
       </div>
 
-      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>
-        Icons: Fluent Emoji by Microsoft, MIT licence.
-      </div>
+      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>{t("Icons: Fluent Emoji by Microsoft, MIT licence.")}</div>
     </div>
   );
 }

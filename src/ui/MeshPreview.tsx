@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
@@ -491,7 +492,7 @@ export default function MeshPreview({
       )}
       {!mesh && (
         <div className="preview-empty">
-          Generate a model to see it here. Drag to orbit, scroll to zoom.
+          {t("Generate a model to see it here. Drag to orbit, scroll to zoom.")}
         </div>
       )}
     </div>

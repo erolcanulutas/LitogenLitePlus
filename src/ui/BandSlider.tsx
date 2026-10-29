@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 
 type Props = {
@@ -239,7 +240,7 @@ export default function BandSlider({
                 className="bandKnobDrop"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => onRemoveSplit(i)}
-                title="Remove this boundary"
+                title={t("Remove this boundary")}
                 tabIndex={-1}
               >
                 ×
@@ -249,7 +250,7 @@ export default function BandSlider({
         ))}
       </div>
 
-      <div className="bandEnd">Base · layer 1</div>
+      <div className="bandEnd">{t("Base · layer 1")}</div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { type Dispatch, type SetStateAction } from "react";
 
 type Props = {
@@ -59,7 +60,7 @@ export default function ImageControls({
         <button className="btn" onClick={() => setFlipV(!flipV)}>⇅ V Flip</button>
       </div>
 
-      <button className="btn" onClick={onReset}>Reset All</button>
+      <button className="btn" onClick={onReset}>{t("Reset All")}</button>
     </div>
   );
 }

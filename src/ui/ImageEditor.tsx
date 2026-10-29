@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 // src/ui/ImageEditor.tsx
 import React, {
   useEffect,
@@ -1801,7 +1802,7 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
                 autoFocus
                 value={draft}
                 spellCheck={false}
-                placeholder="Type here"
+                placeholder={t("Type here")}
                 style={{
                   // The size is a size on screen, and the stamp works out to
                   // exactly that at whatever zoom it is made — so the box has
@@ -1826,20 +1827,16 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
                 <button
                   className="autoBtn"
                   onClick={settleText}
-                  title="Put it on the picture — it stays movable until you change tool (Ctrl+Enter)"
-                >
-                  Place
-                </button>
+                  title={t("Put it on the picture — it stays movable until you change tool (Ctrl+Enter)")}
+                >{t("Place")}</button>
                 <button
                   className="autoBtn"
                   onClick={() => {
                     setTextAt(null);
                     setDraft("");
                   }}
-                  title="Throw it away (Esc)"
-                >
-                  Cancel
-                </button>
+                  title={t("Throw it away (Esc)")}
+                >{t("Cancel")}</button>
               </div>
             </div>
           );
