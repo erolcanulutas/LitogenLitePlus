@@ -36,6 +36,12 @@ function buildSha(): string {
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   base: mode === "production" ? BASE_PATH : "/",
+  build: {
+    // The icons are many small files, each wanted only when its palette tab is
+    // opened. Folded into the script as text they would all be downloaded with
+    // the page whether or not anyone opens a palette.
+    assetsInlineLimit: (file) => (file.endsWith(".svg") ? false : undefined),
+  },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_SHA__: JSON.stringify(buildSha()),

@@ -3,13 +3,14 @@ import {
   cutLoops,
   MASK_PX_PER_MM,
   OVERHANG_MM,
-  RELIEF_STEPS,
+  stepHeights,
   type DecorGeom,
   type DecorMask,
   type Decoration,
+  type Relief,
   type ReliefMode,
 } from "../core/decor";
-import type { Mesh } from "../core/mesh";
+import { clusterColors, labelPixels, type Lab } from "../core/palette";
 
 /** Every icon in the assets folder, found by Vite at build time. */
 const files = import.meta.glob("../assets/icons/*.svg", {
@@ -86,9 +87,20 @@ const BRIDGE_RADIUS_PX = 3;
  * because they are built differently; anything below the frame's underside is
  * dropped, because that is where the table is.
  */
+/** How the raised shapes are told apart: by height, and by colour. */
+export type ReliefLook = {
+  mode: ReliefMode;
+  /** The most colours the icons are printed in; 0 prints them all in one. */
+  colours: number;
+};
+
+/** Colours closer than this are one colour of filament. */
+const COLOUR_GAP = 30;
+
 export async function renderMask(
   decorations: readonly Decoration[],
   geom: DecorGeom,
+  look: ReliefLook = { mode: "flat", colours: 0 },
 ): Promise<DecorMask> {
   const M = OVERHANG_MM;
   const px = MASK_PX_PER_MM;
@@ -129,7 +141,6 @@ export async function renderMask(
 
   const onFrame = new Uint8Array(w * h);
   const beyond = new Uint8Array(w * h);
-  const steps = new Uint8Array(w * h);
   const cutOut = new Uint8Array(w * h);
   /** The frame's border: on the frame and not over the pocket. */
   const border = new Uint8Array(w * h);
@@ -145,8 +156,6 @@ export async function renderMask(
       if (rd && rd[i * 4 + 3] >= 128 && my >= 0) {
         if (onFace && !inRect(window, mx, my)) onFrame[i] = 1;
         else beyond[i] = 1;
-        const lum = (0.2126 * rd[i * 4] + 0.7152 * rd[i * 4 + 1] + 0.0722 * rd[i * 4 + 2]) / 255;
-        steps[i] = Math.min(RELIEF_STEPS - 1, Math.floor(lum * RELIEF_STEPS));
       }
 
       // A cut stays clear of the edge and the pocket, and above the rail the
@@ -178,17 +187,96 @@ export async function renderMask(
     }
   }
 
+  const { group, groupFrac, groupColors } = groupRaised(onFrame, beyond, rd, look);
+
   return {
     onFrame,
     beyond,
     cutOut,
-    steps,
+    group,
+    groupFrac,
+    groupColors,
     w,
     h,
     originX: -M,
     originY: -M,
     spanX: W + 2 * M,
     spanY: H + 2 * M,
+  };
+}
+
+/** Brightness of a #rrggbb colour, 0 to 1. */
+function brightness(hex: string): number {
+  const v = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+  return (0.2126 * v(1) + 0.7152 * v(3) + 0.0722 * v(5)) / 255;
+}
+
+/**
+ * Splits the raised pixels into bodies.
+ *
+ * By default a body is a height step: the icons' own brightness, in three steps
+ * when heights follow colour, or one step when they do not. With colours on, a
+ * body is one of the icons' colours, found in Lab so that shades of one colour
+ * are one body, and each stands at the height its own brightness gives it.
+ */
+function groupRaised(
+  onFrame: Uint8Array,
+  beyond: Uint8Array,
+  rgba: Uint8ClampedArray | null,
+  look: ReliefLook,
+): { group: Uint8Array; groupFrac: number[]; groupColors: string[] } {
+  const n = onFrame.length;
+  const group = new Uint8Array(n);
+  const fracs = stepHeights(look.mode);
+  const stepOf = (lum: number) => Math.min(fracs.length - 1, Math.floor(lum * fracs.length));
+
+  const raised: number[] = [];
+  for (let i = 0; i < n; i++) if (onFrame[i] || beyond[i]) raised.push(i);
+
+  if (look.colours <= 0 || !rgba || raised.length === 0) {
+    if (rgba && fracs.length > 1) {
+      for (const i of raised) {
+        const lum = (0.2126 * rgba[i * 4] + 0.7152 * rgba[i * 4 + 1] + 0.0722 * rgba[i * 4 + 2]) / 255;
+        group[i] = stepOf(lum);
+      }
+    }
+    return { group, groupFrac: fracs, groupColors: fracs.map(() => "") };
+  }
+
+  // The icons' colours, from the pixels that are actually raised.
+  const sample = new Uint8ClampedArray(raised.length * 4);
+  raised.forEach((p, k) => {
+    sample[k * 4] = rgba[p * 4];
+    sample[k * 4 + 1] = rgba[p * 4 + 1];
+    sample[k * 4 + 2] = rgba[p * 4 + 2];
+    sample[k * 4 + 3] = 255;
+  });
+  const img = { width: raised.length, height: 1, data: sample } as unknown as ImageData;
+
+  const found = clusterColors(img, Math.max(2, look.colours), COLOUR_GAP);
+
+  // Centres too near one another are one colour: keep the first of each.
+  const centres: Lab[] = [];
+  const colours: string[] = [];
+  found.lab.forEach((c, k) => {
+    const near = centres.some(
+      (o) => (o[0] - c[0]) ** 2 + (o[1] - c[1]) ** 2 + (o[2] - c[2]) ** 2 < COLOUR_GAP * COLOUR_GAP,
+    );
+    if (!near) {
+      centres.push(c);
+      colours.push(found.colors[k]);
+    }
+  });
+
+  const label = labelPixels(sample, centres);
+  raised.forEach((p, k) => {
+    group[p] = label[k];
+  });
+
+  return {
+    group,
+    groupFrac: colours.map((c) => (look.mode === "flat" ? 1 : fracs[stepOf(brightness(c))])),
+    groupColors: colours,
   };
 }
 
@@ -353,11 +441,11 @@ export async function makeDecor(
   decorations: readonly Decoration[],
   geom: DecorGeom,
   height: number,
-  mode: ReliefMode,
-): Promise<{ relief: Mesh; cuts: [number, number][][] }> {
-  const mask = await renderMask(decorations, geom);
+  look: ReliefLook,
+): Promise<{ relief: Relief; cuts: [number, number][][] }> {
+  const mask = await renderMask(decorations, geom, look);
   return {
-    relief: buildRelief(mask, geom.frontZ, height, mode, geom.lip),
+    relief: buildRelief(mask, geom.frontZ, height, geom.lip),
     cuts: cutLoops(mask),
   };
 }
@@ -372,29 +460,88 @@ export const CATEGORIES: { id: string; label: string; icons: string[] }[] = [
     label: "Beach & travel",
     icons: [
       "palm-tree", "cocktail", "umbrella-beach", "sun", "wave", "seashell", "beach-ball",
-      "sailboat", "ship", "anchor", "airplane", "tent", "camera", "tropical-fish", "compass",
-      "luggage", "globe", "palm-sunglasses", "ice-cream", "watermelon", "bicycle",
+      "sailboat", "ship", "anchor", "airplane", "tent", "camera", "tropical-fish",
+      "compass", "luggage", "globe", "palm-sunglasses", "ice-cream", "watermelon",
+      "bicycle", "rocket", "locomotive", "bus", "taxi", "automobile", "motor-scooter",
+      "sunrise", "camping", "telescope", "castle", "statue-of-liberty", "mount-fuji",
+      "national-park", "desert", "volcano", "map-of-japan", "world-map",
+      "passport-control", "house", "ferris-wheel", "roller-coaster", "carousel-horse",
+      "fountain", "bridge-at-night", "cityscape",
     ],
   },
   {
     id: "halloween",
     label: "Halloween",
-    icons: ["pumpkin", "ghost", "bat", "spider-web", "skull", "candy", "candle"],
+    icons: [
+      "pumpkin", "ghost", "bat", "spider-web", "skull", "candy", "candle", "wilted-flower",
+      "skull-and-crossbones", "spider", "black-cat", "crystal-ball", "lollipop",
+      "chocolate-bar", "coffin", "headstone", "eye", "brain", "alien-monster", "alien",
+      "robot", "full-moon", "broom", "crescent-moon",
+    ],
   },
   {
     id: "party",
-    label: "Party & holidays",
+    label: "Party & music",
     icons: [
       "party-popper", "cake", "gift", "balloon", "fireworks", "sparkles", "christmas-tree",
-      "snowflake", "bell", "crown", "star",
+      "snowflake", "bell", "crown", "star", "snowman", "snowman-without-snow", "sparkler",
+      "firecracker", "confetti-ball", "cupcake", "bottle-with-popping-cork",
+      "clinking-glasses", "beer-mug", "wine-glass", "trophy", "1st-place-medal", "ribbon",
+      "reminder-ribbon", "red-envelope", "tanabata-tree", "carp-streamer", "wind-chime",
+      "glowing-star", "musical-notes", "musical-note", "microphone", "headphone", "guitar",
+      "violin", "drum", "trumpet", "saxophone", "musical-keyboard", "hamsa",
+    ],
+  },
+  {
+    id: "culture",
+    label: "Culture",
+    icons: [
+      "star-and-crescent", "mosque", "kaaba", "teapot", "hot-beverage", "pot-of-food",
+      "bagel", "flatbread", "stuffed-flatbread", "falafel", "olive", "grapes",
+      "hot-pepper", "garlic", "lemon", "tangerine", "peach", "honey-pot", "camel",
+      "church", "synagogue", "hindu-temple", "shinto-shrine", "tokyo-tower", "moai",
+      "nazar-amulet", "tulip",
     ],
   },
   {
     id: "nature",
-    label: "Nature & love",
+    label: "Nature, animals & love",
     icons: [
-      "heart", "flower", "rose", "tulip", "sunflower", "clover", "butterfly", "rainbow",
-      "mountain", "cat", "dog", "paw-prints", "bone",
+      "heart", "flower", "rose", "sunflower", "clover", "butterfly", "rainbow", "mountain",
+      "cat", "dog", "paw-prints", "bone", "hibiscus", "blossom", "herb", "cactus",
+      "evergreen-tree", "deciduous-tree", "maple-leaf", "fallen-leaf", "mushroom",
+      "bouquet", "seedling", "honeybee", "lady-beetle", "snail", "turtle", "dolphin",
+      "whale", "octopus", "crab", "penguin", "owl", "peacock", "swan", "flamingo", "dove",
+      "fox", "panda", "koala", "lion", "elephant", "giraffe", "rabbit-face", "hedgehog",
+      "horse", "unicorn", "dragon", "cloud", "fire", "droplet", "high-voltage",
+      "sparkling-heart", "two-hearts", "revolving-hearts", "heart-with-arrow", "kiss-mark",
+      "love-letter", "ring", "gem-stone", "cherry-blossom", "comet", "cow-face",
+      "pig-face", "frog", "monkey-face", "bird", "chicken", "duck", "parrot", "shark",
+      "fish", "blowfish", "seal", "otter", "sloth", "raccoon", "bear", "wolf",
+      "tiger-face", "leopard", "zebra",
+    ],
+  },
+  {
+    id: "fun",
+    label: "Fun & hobbies",
+    icons: [
+      "video-game", "soccer-ball", "basketball", "baseball", "tennis", "puzzle-piece",
+      "artist-palette", "paintbrush", "books", "open-book", "graduation-cap", "light-bulb",
+      "key", "locked", "laptop", "joystick", "teddy-bear", "kite", "magic-wand",
+      "telephone", "camera-with-flash", "movie-camera", "film-frames", "clapper-board",
+      "ticket", "performing-arts", "circus-tent", "roller-skate", "skateboard", "sled",
+      "ice-skate", "fishing-pole", "bowling", "boxing-glove",
+    ],
+  },
+  {
+    id: "food",
+    label: "Food & drink",
+    icons: [
+      "pizza", "hamburger", "french-fries", "taco", "doughnut", "cookie", "red-apple",
+      "strawberry", "cherries", "pineapple", "banana", "avocado", "carrot", "hot-dog",
+      "popcorn", "pie", "teacup-without-handle", "tropical-drink", "cocktail-glass",
+      "baguette-bread", "croissant", "pancakes", "waffle", "cheese-wedge", "egg",
+      "cooking", "spaghetti", "sushi", "birthday-cake",
     ],
   },
 ];

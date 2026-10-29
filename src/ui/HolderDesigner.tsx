@@ -465,6 +465,9 @@ export default function HolderDesigner({
           gridTemplateColumns: "repeat(6, 1fr)",
           gap: 4,
           marginTop: 8,
+          maxHeight: 250,
+          overflowY: "auto",
+          alignContent: "start",
         }}
       >
         {iconsIn(category).map((icon) => (
@@ -480,7 +483,7 @@ export default function HolderDesigner({
               cursor: "pointer",
             }}
           >
-            <img src={icon.url} alt={icon.label} style={{ width: "100%", display: "block" }} />
+            <img src={icon.url} alt={icon.label} loading="lazy" style={{ width: "100%", display: "block" }} />
           </button>
         ))}
       </div>

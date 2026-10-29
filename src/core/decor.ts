@@ -105,8 +105,12 @@ export type DecorMask = {
   beyond: Uint8Array;
   /** Pixels to cut clean through the frame, after bridging what would float. */
   cutOut: Uint8Array;
-  /** Which colour step each pixel is, dark to light, from 0. */
-  steps: Uint8Array;
+  /** Which body each raised pixel belongs to: a height step, or one of the icons' colours. */
+  group: Uint8Array;
+  /** How high each body stands, as a share of the full relief height. */
+  groupFrac: number[];
+  /** The colour of each body, as #rrggbb, or empty when the bodies are one colour. */
+  groupColors: string[];
   w: number;
   h: number;
   /** Where the canvas's left edge and bottom edge are, in holder mm. */
@@ -115,6 +119,13 @@ export type DecorMask = {
   /** What the canvas spans, in mm. */
   spanX: number;
   spanY: number;
+};
+
+/** The raised shapes, and which run of triangles is which body. */
+export type Relief = {
+  mesh: Mesh;
+  /** One per body, in order, each a run of triangles of `mesh`. */
+  groups: { start: number; end: number; color: string }[];
 };
 
 /**
@@ -129,14 +140,14 @@ export function buildRelief(
   mask: DecorMask,
   frontZ: number,
   height: number,
-  mode: ReliefMode,
   rootDepth: number,
-): Mesh {
+): Relief {
   const mb = new MeshBuilder(256);
-  if (height <= 0) return mb.finish();
+  const groups: Relief["groups"] = [];
+  if (height <= 0) return { mesh: mb.finish(), groups };
 
-  const heights = stepHeights(mode);
   const { w, h } = mask;
+  const count = mask.groupFrac.length;
   const floorPx = (MIN_FEATURE_MM * MASK_PX_PER_MM) ** 2;
   const lum = new Float64Array(w * h);
 
@@ -152,6 +163,9 @@ export function buildRelief(
     [mask.beyond, frontZ - rootDepth],
   ];
 
+  // Each layer is traced once, all its bodies together, so that two bodies side
+  // by side share the line between them.
+  const traced: { baseZ: number; regions: ReturnType<typeof vectorise>["regions"] }[] = [];
   for (const [where, baseZ] of layers) {
     let any = false;
     for (let i = 0; i < where.length; i++) {
@@ -160,25 +174,27 @@ export function buildRelief(
         break;
       }
     }
-    if (!any) continue;
-
-    // The tone of a pixel is its step; a flat relief is all one step.
-    const labels = new Uint8Array(w * h);
-    if (heights.length > 1) {
-      for (let i = 0; i < labels.length; i++) labels[i] = Math.min(heights.length - 1, mask.steps[i]);
-    }
+    if (!any || count === 0) continue;
 
     const vec = vectorise(
-      lum, w, h, heights.map((_, k) => k), 1.2, where, floorPx, undefined, 2, labels,
+      lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, where, floorPx, undefined, 2, mask.group,
     );
-
-    for (const region of vec.regions) {
-      if (region.rings.length === 0) continue;
-      extrudeRegion(mb, region.rings, place, baseZ, frontZ + height * heights[region.tone]);
-    }
+    traced.push({ baseZ, regions: vec.regions });
   }
 
-  return mb.finish();
+  // Then body by body, so that each is one run of triangles.
+  for (let g = 0; g < count; g++) {
+    const start = mb.triangleCount;
+    for (const { baseZ, regions } of traced) {
+      const region = regions[g];
+      if (!region || region.rings.length === 0) continue;
+      extrudeRegion(mb, region.rings, place, baseZ, frontZ + height * mask.groupFrac[g]);
+    }
+    const end = mb.triangleCount;
+    if (end > start) groups.push({ start, end, color: mask.groupColors[g] ?? "" });
+  }
+
+  return { mesh: mb.finish(), groups };
 }
 
 /**

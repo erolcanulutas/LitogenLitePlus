@@ -427,3 +427,29 @@ export function labelByColor(img: ImageData, centres: readonly Lab[]): Uint8Arra
 
   return out;
 }
+
+/**
+ * Which centre each pixel of a flat list of RGBA values is nearest to.
+ *
+ * No treatment of edges: for artwork drawn in flat colours, the odd in-between
+ * pixel on an edge is a speck the tracing drops.
+ */
+export function labelPixels(data: ArrayLike<number>, centres: readonly Lab[]): Uint8Array {
+  const n = Math.floor(data.length / 4);
+  const out = new Uint8Array(n);
+  const px: Lab = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    toLab(data[i * 4], data[i * 4 + 1], data[i * 4 + 2], px);
+    let best = 0;
+    let bestD = Infinity;
+    for (let c = 0; c < centres.length; c++) {
+      const dd = d2(px, centres[c]);
+      if (dd < bestD) {
+        bestD = dd;
+        best = c;
+      }
+    }
+    out[i] = best;
+  }
+  return out;
+}

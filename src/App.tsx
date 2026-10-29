@@ -24,7 +24,8 @@ import {
   holderLayout,
   holderStanding,
 } from "./core/holder";
-import type { DecorGeom, Decoration, ReliefMode } from "./core/decor";
+import type { DecorGeom, Decoration, Relief, ReliefMode } from "./core/decor";
+import { writeColored3MF } from "./core/3mf_writer";
 import type { CutLoop } from "./core/holder";
 import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
@@ -1421,6 +1422,8 @@ type SavedDesign = {
   tealight: number;
   relief: number;
   reliefMode?: ReliefMode;
+  iconColours?: number;
+  frameColour?: string;
   pose: "face" | "standing";
   decorations: Decoration[];
 };
@@ -1799,10 +1802,13 @@ export default function App() {
   const [decorSelected, setDecorSelected] = useState<number | null>(null);
   const [reliefMm, setReliefMm] = useState(1);
   const [reliefMode, setReliefMode] = useState<ReliefMode>("flat");
+  /** Print the icons in their own colours, up to this many; 0 prints them all in one. */
+  const [iconColours, setIconColours] = useState(0);
+  const [frameColour, setFrameColour] = useState("#e2c28b");
   // How the holder lies on the bed. Raised decorations are on the front face,
   // so with any the holder has to be printed standing.
   const [holderPose, setHolderPose] = useState<"face" | "standing">("face");
-  const [decor, setDecor] = useState<{ relief: Mesh; cuts: CutLoop[] } | null>(null);
+  const [decor, setDecor] = useState<{ relief: Relief; cuts: CutLoop[] } | null>(null);
   const [designName, setDesignName] = useState("");
   const [designs, setDesigns] = useState<SavedDesign[]>(readDesigns);
   /** The same, as the account keeps them: filled in once somebody is signed in. */
@@ -1857,7 +1863,7 @@ export default function App() {
     let live = true;
     if (decorations.length === 0) return;
     const timer = setTimeout(() => {
-      makeDecor(decorations, decorGeom, reliefMm, reliefMode)
+      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours })
         .then((d) => live && setDecor(d))
         .catch(() => live && setDecor(null));
     }, 300);
@@ -1865,13 +1871,14 @@ export default function App() {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, decorGeom, reliefMm, reliefMode]);
+  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
     const made = decorations.length > 0 ? decor : null;
     const plate = buildHolder(holderParams, made?.cuts ?? []);
-    const frame = made && made.relief.triangleCount > 0 ? joinMeshes(plate, made.relief) : plate;
+    const raised = made && made.relief.mesh.triangleCount > 0 ? made.relief : null;
+    const frame = raised ? joinMeshes(plate, raised.mesh) : plate;
 
     const placed = holderInPlace(frame, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
     const stand = buildStand({ tealight: tealightMm });
@@ -1879,15 +1886,27 @@ export default function App() {
     positions.set(placed.positions, 0);
     positions.set(stand.positions, placed.positions.length);
 
+    // The frame, then each body of the raised icons, then the stand.
+    const bandStarts = [0];
+    const colors = [frameColour];
+    if (raised) {
+      for (const g of raised.groups) {
+        bandStarts.push(plate.triangleCount + g.start);
+        colors.push(g.color || frameColour);
+      }
+    }
+    bandStarts.push(placed.triangleCount);
+    colors.push("#9fb4c8");
+
     const tilt = (holderParams.tiltDeg * Math.PI) / 180;
     return {
       positions,
       triangleCount: placed.triangleCount + stand.triangleCount,
-      bandStarts: [0, placed.triangleCount],
-      colors: ["#e2c28b", "#9fb4c8"],
+      bandStarts,
+      colors,
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
-  }, [shapeId, curved, holderParams, holderGeom, decor, decorations.length, tealightMm]);
+  }, [shapeId, curved, holderParams, holderGeom, decor, decorations.length, tealightMm, frameColour]);
 
   // The finished picture is its own model, which can have millions of
   // triangles. It is placed in the pocket by a matrix, so changing the angle or
@@ -2436,9 +2455,18 @@ export default function App() {
     }
 
     let whole: Mesh;
+    let bodies: { start: number; color: string }[] = [];
     if (decorations.length > 0) {
-      const made = await makeDecor(decorations, decorGeom, reliefMm, reliefMode);
-      whole = joinMeshes(buildHolder(holderParams, made.cuts), made.relief);
+      const made = await makeDecor(decorations, decorGeom, reliefMm, {
+        mode: reliefMode,
+        colours: iconColours,
+      });
+      const plate = buildHolder(holderParams, made.cuts);
+      whole = joinMeshes(plate, made.relief.mesh);
+      bodies = made.relief.groups.map((g) => ({
+        start: plate.triangleCount + g.start,
+        color: g.color || frameColour,
+      }));
     } else {
       whole = buildHolder(holderParams);
     }
@@ -2446,6 +2474,22 @@ export default function App() {
       holderPose === "standing"
         ? holderStanding(whole, holderParams.tiltDeg)
         : holderForPrinting(whole);
+
+    // Icons in their own colours need a file that can say so: the frame and
+    // each colour are separate bodies of one 3MF. The turning above keeps the
+    // triangles in the order they were built, so the runs are still the runs.
+    if (iconColours > 0 && bodies.length > 0) {
+      const file = await writeColored3MF(
+        {
+          positions: out.positions,
+          triangleCount: out.triangleCount,
+          bandStarts: [0, ...bodies.map((b) => b.start)],
+        },
+        [frameColour, ...bodies.map((b) => b.color)],
+      );
+      downloadArrayBuffer(file, `litogen-holder-${holderAngle}deg.3mf`);
+      return;
+    }
     downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
   }
 
@@ -2491,6 +2535,8 @@ export default function App() {
       tealight: tealightMm,
       relief: reliefMm,
       reliefMode,
+      iconColours,
+      frameColour,
       pose: holderPose,
       decorations,
     };
@@ -2515,6 +2561,8 @@ export default function App() {
     setTealightMm(d.tealight);
     setReliefMm(d.relief);
     setReliefMode(d.reliefMode ?? "flat");
+    setIconColours(d.iconColours ?? 0);
+    setFrameColour(d.frameColour ?? "#e2c28b");
     setHolderPose(d.pose);
     setDecorations(d.decorations);
     setDecorSelected(null);
@@ -3954,6 +4002,15 @@ export default function App() {
               </div>
               <NumField value={holderCorner} min={0} max={30} step={1} onChange={setHolderCorner} />
 
+              <label className="shadeToggle" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                Frame colour
+                <input
+                  type="color"
+                  value={frameColour}
+                  onChange={(e) => setFrameColour(e.target.value)}
+                />
+              </label>
+
               <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Fit (mm)</label>
                 <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
@@ -4031,6 +4088,24 @@ export default function App() {
                     <option value="lightHigher">Light parts higher</option>
                     <option value="darkHigher">Dark parts higher</option>
                   </select>
+
+                  <label className="shadeToggle" style={{ marginTop: 12, display: "flex" }}>
+                    <input
+                      type="checkbox"
+                      checked={iconColours > 0}
+                      onChange={(e) => setIconColours(e.target.checked ? 4 : 0)}
+                    />
+                    Print icons in their own colours
+                  </label>
+                  {iconColours > 0 && (
+                    <>
+                      <div className="label-row" style={{ marginTop: 8 }}>
+                        <label className="miniLabel">Colours, at most</label>
+                        <InfoIcon text="Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour. With a colour per body the file is a 3MF; a plain STL cannot carry them." />
+                      </div>
+                      <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
+                    </>
+                  )}
 
                   <div className="label-row" style={{ marginTop: 12 }}>
                     <label className="miniLabel">Relief height: {reliefMm.toFixed(1)} mm</label>
@@ -4111,7 +4186,9 @@ export default function App() {
                 style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                 onClick={() => downloadHolderPart("holder")}
               >
-                Download holder (STL)
+                {iconColours > 0 && decorations.some((d) => !d.cut)
+                  ? "Download holder (3MF, colours)"
+                  : "Download holder (STL)"}
               </button>
               <button
                 className="btn"
