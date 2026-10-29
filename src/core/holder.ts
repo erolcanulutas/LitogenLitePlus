@@ -313,23 +313,24 @@ export function holderForPrinting(mesh: Mesh): Mesh {
  *
  * Only for showing the two together: the stand lies flat with its cup at the
  * origin, the prongs point up, and the holder is set on them leaning back by
- * `tiltDeg`, with the legs' underside on the same plane as the stand's. The
+ * `tiltDeg`, centred on `centreX`, with the legs' underside on the same plane as the stand's. The
  * inverse of how the channels were placed on the plate.
  */
-export function holderInPlace(mesh: Mesh, tiltDeg: number, socketDepth: number): Mesh {
+export function holderInPlace(
+  mesh: Mesh,
+  tiltDeg: number,
+  socketDepth: number,
+  centreX: number,
+): Mesh {
   const t = (Math.min(45, Math.max(0, tiltDeg)) * Math.PI) / 180;
   const st = Math.sin(t);
   const ct = Math.cos(t);
   const src = mesh.positions;
   const out = new Float32Array(mesh.triangleCount * 9);
 
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (let i = 0; i < out.length; i += 3) {
-    lo = Math.min(lo, src[i]);
-    hi = Math.max(hi, src[i]);
-  }
-  const mid = (lo + hi) / 2;
+  // The frame's own middle, not the mesh's: decorations may hang over its
+  // edge, and the holder must not slide along the stand because of them.
+  const mid = centreX;
 
   const edge = PRONG.reach + socketDepth;
   for (let i = 0; i < out.length; i += 3) {

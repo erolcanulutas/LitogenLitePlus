@@ -1,4 +1,12 @@
-import { buildRelief, MASK_PX_PER_MM, type Decoration } from "../core/decor";
+import {
+  buildRelief,
+  MASK_PX_PER_MM,
+  OVERHANG_MM,
+  RELIEF_STEPS,
+  type DecorMask,
+  type Decoration,
+  type ReliefMode,
+} from "../core/decor";
 import type { Mesh } from "../core/mesh";
 
 /** Every icon in the assets folder, found by Vite at build time. */
@@ -59,19 +67,25 @@ export function drawDecoration(
 type Rect = { x0: number; x1: number; y0: number; y1: number };
 
 /**
- * Which pixels of the holder's front face an icon covers.
+ * Which pixels of the holder an icon covers, and how bright each is.
  *
- * Anything over the window is taken out, so a decoration can never stand in
- * front of the picture.
+ * The canvas reaches OVERHANG_MM past the frame on every side so an icon can
+ * hang over its edge. What is over the frame's face is told apart from what is
+ * beyond it, because they are built differently; anything over the picture's
+ * window is taken out, so a decoration can never stand in front of the
+ * picture, and anything below the frame's underside is dropped, because that
+ * is where the table is.
  */
 export async function renderMask(
   decorations: readonly Decoration[],
   widthMm: number,
   heightMm: number,
   window: Rect,
-): Promise<{ mask: Uint8Array; w: number; h: number }> {
-  const w = Math.ceil(widthMm * MASK_PX_PER_MM);
-  const h = Math.ceil(heightMm * MASK_PX_PER_MM);
+): Promise<DecorMask> {
+  const M = OVERHANG_MM;
+  const px = MASK_PX_PER_MM;
+  const w = Math.ceil((widthMm + 2 * M) * px);
+  const h = Math.ceil((heightMm + 2 * M) * px);
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -79,22 +93,59 @@ export async function renderMask(
   if (!ctx) throw new Error("No canvas");
 
   const images = await Promise.all(decorations.map((d) => loadIcon(d.icon)));
-  decorations.forEach((d, i) => drawDecoration(ctx, images[i], d, heightMm, MASK_PX_PER_MM));
-
-  // A sliver of the window's own edge is spared the icon: a raised edge
-  // against the opening would overhang it.
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.fillRect(
-    window.x0 * MASK_PX_PER_MM,
-    (heightMm - window.y1) * MASK_PX_PER_MM,
-    (window.x1 - window.x0) * MASK_PX_PER_MM,
-    (window.y1 - window.y0) * MASK_PX_PER_MM,
-  );
+  ctx.save();
+  ctx.translate(M * px, M * px);
+  decorations.forEach((d, i) => drawDecoration(ctx, images[i], d, heightMm, px));
+  ctx.restore();
 
   const data = ctx.getImageData(0, 0, w, h).data;
-  const mask = new Uint8Array(w * h);
-  for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] >= 128 ? 1 : 0;
-  return { mask, w, h };
+
+  // Frame and window in canvas pixels: row 0 is the top, which is y = H + M.
+  const left = M * px;
+  const right = (M + widthMm) * px;
+  const top = M * px;
+  const bottom = (M + heightMm) * px;
+  const wx0 = (M + window.x0) * px;
+  const wx1 = (M + window.x1) * px;
+  const wy0 = (M + heightMm - window.y1) * px;
+  const wy1 = (M + heightMm - window.y0) * px;
+
+  const onFrame = new Uint8Array(w * h);
+  const beyond = new Uint8Array(w * h);
+  const steps = new Uint8Array(w * h);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (data[i * 4 + 3] < 128) continue;
+
+      const over = x >= left && x < right && y >= top && y < bottom;
+      if (over) {
+        if (x >= wx0 && x < wx1 && y >= wy0 && y < wy1) continue;
+        onFrame[i] = 1;
+      } else if (y < bottom) {
+        beyond[i] = 1;
+      } else {
+        continue;
+      }
+
+      const lum =
+        (0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2]) / 255;
+      steps[i] = Math.min(RELIEF_STEPS - 1, Math.floor(lum * RELIEF_STEPS));
+    }
+  }
+
+  return {
+    onFrame,
+    beyond,
+    steps,
+    w,
+    h,
+    originX: -M,
+    originY: -M,
+    spanX: widthMm + 2 * M,
+    spanY: heightMm + 2 * M,
+  };
 }
 
 /** The raised shapes for a set of decorations, ready to join the holder. */
@@ -103,11 +154,12 @@ export async function makeRelief(
   widthMm: number,
   heightMm: number,
   window: Rect,
-  baseZ: number,
+  frontZ: number,
   height: number,
+  mode: ReliefMode,
 ): Promise<Mesh> {
-  const { mask, w, h } = await renderMask(decorations, widthMm, heightMm, window);
-  return buildRelief(mask, w, h, widthMm, heightMm, baseZ, height);
+  const mask = await renderMask(decorations, widthMm, heightMm, window);
+  return buildRelief(mask, frontZ, height, mode);
 }
 
 /**

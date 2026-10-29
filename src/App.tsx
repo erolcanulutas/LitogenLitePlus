@@ -24,7 +24,7 @@ import {
   holderLayout,
   holderStanding,
 } from "./core/holder";
-import type { Decoration } from "./core/decor";
+import type { Decoration, ReliefMode } from "./core/decor";
 import type { Mesh } from "./core/mesh";
 import { pictureInPocket } from "./core/pocket";
 import HolderDesigner from "./ui/HolderDesigner";
@@ -1417,6 +1417,7 @@ type SavedDesign = {
   fit: number;
   tealight: number;
   relief: number;
+  reliefMode?: ReliefMode;
   pose: "face" | "standing";
   decorations: Decoration[];
 };
@@ -1784,7 +1785,7 @@ export default function App() {
   const [baseLayers, setBaseLayers] = useState(6);
 
   // The holder and stand are separate parts, made from the picture's size.
-  const [holderAngle, setHolderAngle] = useState(90);
+  const [holderAngle, setHolderAngle] = useState(85);
   const [holderBorder, setHolderBorder] = useState(10);
   const [showPicture, setShowPicture] = useState(true);
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
@@ -1793,6 +1794,7 @@ export default function App() {
   const [decorations, setDecorations] = useState<Decoration[]>([]);
   const [decorSelected, setDecorSelected] = useState<number | null>(null);
   const [reliefMm, setReliefMm] = useState(1);
+  const [reliefMode, setReliefMode] = useState<ReliefMode>("flat");
   // How the holder lies on the bed. Raised decorations are on the front face,
   // so with any the holder has to be printed standing.
   const [holderPose, setHolderPose] = useState<"face" | "standing">("face");
@@ -1832,13 +1834,14 @@ export default function App() {
       holderGeom.window,
       holderGeom.T,
       reliefMm,
+      reliefMode,
     )
       .then((m) => live && setReliefMesh(m))
       .catch(() => live && setReliefMesh(null));
     return () => {
       live = false;
     };
-  }, [decorations, holderGeom, reliefMm]);
+  }, [decorations, holderGeom, reliefMm, reliefMode]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
@@ -1861,7 +1864,7 @@ export default function App() {
         : null;
 
     const whole = pic ? joinMeshes(frame, pic) : frame;
-    const placed = holderInPlace(whole, holderParams.tiltDeg, holderGeom.socketDepth);
+    const placed = holderInPlace(whole, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
     const stand = buildStand({ tealight: tealightMm });
     const positions = new Float32Array(placed.positions.length + stand.positions.length);
     positions.set(placed.positions, 0);
@@ -2404,6 +2407,7 @@ export default function App() {
         holderGeom.window,
         holderGeom.T,
         reliefMm,
+        reliefMode,
       );
       whole = joinMeshes(plate, relief);
     }
@@ -2425,6 +2429,7 @@ export default function App() {
       fit: holderFit,
       tealight: tealightMm,
       relief: reliefMm,
+      reliefMode,
       pose: holderPose,
       decorations,
     };
@@ -2440,6 +2445,7 @@ export default function App() {
     setHolderFit(d.fit);
     setTealightMm(d.tealight);
     setReliefMm(d.relief);
+    setReliefMode(d.reliefMode ?? "flat");
     setHolderPose(d.pose);
     setDecorations(d.decorations);
     setDecorSelected(null);
@@ -3879,7 +3885,7 @@ export default function App() {
 
               <div className="label-row" style={{ marginTop: 16 }}>
                 <label className="miniLabel">Decorations</label>
-                <InfoIcon text="Pick an icon to put it on the frame, then drag it into place and set its size and turn. Icons are raised on the holder's front face; anything over the picture's window is cut away so nothing stands in front of it. Because they are on the front, print the holder standing up." />
+                <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the holder's front face and may hang over its edge; anything over the picture's window is cut away so nothing stands in front of it. Because they are on the front, print the holder standing up." />
               </div>
               <HolderDesigner
                 width={holderGeom.W}
@@ -3902,8 +3908,22 @@ export default function App() {
               {decorations.length > 0 && (
                 <>
                   <div className="label-row" style={{ marginTop: 12 }}>
+                    <label className="miniLabel">Height follows colour</label>
+                    <InfoIcon text="Flat raises every icon the same. The other two split each icon into three steps by the brightness of its own colours and raise them by different amounts: Light parts higher makes the pale colours stand out most, Dark parts higher the deep ones. The lowest step is still 40% of the height, so nothing is lost on the face." />
+                  </div>
+                  <select
+                    className="spinInput"
+                    value={reliefMode}
+                    onChange={(e) => setReliefMode(e.target.value as ReliefMode)}
+                  >
+                    <option value="flat">Flat — one height</option>
+                    <option value="lightHigher">Light parts higher</option>
+                    <option value="darkHigher">Dark parts higher</option>
+                  </select>
+
+                  <div className="label-row" style={{ marginTop: 12 }}>
                     <label className="miniLabel">Relief height: {reliefMm.toFixed(1)} mm</label>
-                    <InfoIcon text="How far the icons stand out from the front face. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked." />
+                    <InfoIcon text="How far the icons stand out from the front face, at the most. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked. Parts that hang over the frame's edge are a little thicker so they are joined to it." />
                   </div>
                   <input
                     className="range"
