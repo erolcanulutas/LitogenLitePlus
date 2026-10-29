@@ -65,17 +65,40 @@ jobs:
                --retry 4 --retry-delay 6 --retry-connrefused
                --connect-timeout 30 --user $USER:$PASS"
 
+          # What is already up there, and how big. A file in assets/ has a hash of
+          # its contents in its name, so one that is there at the right size is
+          # the same file and need not go again — which is most of them, most of
+          # the time, and is the difference between a deploy of seconds and one of
+          # ten minutes now that there are hundreds of small icons. The size is
+          # checked as well as the name so that a file cut short by an interrupted
+          # deploy is sent again rather than trusted.
+          declare -A have
+          while read -r size name; do
+            [ -n "${name:-}" ] && have["$name"]="$size"
+          done < <( $FTP "ftp://$HOST/public_html/assets/" 2>/dev/null | sed 's/\r$//' | awk '$1 ~ /^-/ { print $5, $9 }' || true )
+
           # Every file in one call, so curl opens the connection once and keeps
           # it. A call per file is a login per file, and a shared host counts
           # those: enough of them close together and its brute-force guard
           # stops answering on port 21 for a while, which is exactly what a
           # deploy looks like to it.
           args=()
+          skipped=0
           while read -r f; do
             path="${f#./}"
+            case "$path" in
+              assets/*)
+                name="${path#assets/}"
+                if [ "${have[$name]:-}" = "$(stat -c %s "dist/$path")" ]; then
+                  skipped=$((skipped + 1))
+                  continue
+                fi
+                ;;
+            esac
             echo "  $path"
             args+=(-T "dist/$path" "ftp://$HOST/public_html/$path")
           done < <( cd dist && find . -type f )
+          echo "  ($skipped files in assets/ already there, not sent again)"
 
           for f in server/api/*.php server/api/.htaccess; do
             echo "  api/$(basename "$f")"
