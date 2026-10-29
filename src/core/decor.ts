@@ -68,6 +68,8 @@ export type DecorGeom = {
   /** The front face, and how thick the layer in front of the picture is. */
   frontZ: number;
   lip: number;
+  /** When the frame follows a shape: its outer edge, window and pocket as loops. */
+  poly?: { outer: [number, number][]; window: [number, number][]; pocket: [number, number][] } | null;
 };
 
 /** Typefaces for text: what every device has, so a design looks the same wherever it is opened. */

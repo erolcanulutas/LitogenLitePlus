@@ -17,6 +17,7 @@ import {
 } from "../core/decor";
 import { clusterColors, hexToLab, labelPixels, type Lab } from "../core/palette";
 import type { Recess } from "../core/holder";
+import { outsideBy } from "../core/outline";
 
 /** Every icon in the assets folder, found by Vite at build time. */
 const files = import.meta.glob("../assets/icons/*.svg", {
@@ -194,6 +195,7 @@ export async function renderMask(
 
   /** Whether a point is on a rounded rectangle from (0,0) to (W,H) shrunk by `inset`. */
   const inside = (x: number, y: number, inset: number) => {
+    if (geom.poly) return outsideBy(geom.poly.outer, x, y) <= -inset;
     if (x < inset || x > W - inset || y < inset || y > H - inset) return false;
     const r = Math.max(0, corner - inset);
     if (r <= 0) return true;
@@ -203,6 +205,12 @@ export async function renderMask(
   };
   const inRect = (r: Rect, x: number, y: number, grow = 0) =>
     x >= r.x0 - grow && x <= r.x1 + grow && y >= r.y0 - grow && y <= r.y1 + grow;
+  // A frame that follows a shape is not boxes, so these ask the shape instead.
+  const frame = geom.poly;
+  const inPocket = (x: number, y: number, grow = 0) =>
+    frame ? outsideBy(frame.pocket, x, y) <= grow : inRect(pocket, x, y, grow);
+  const inWindow = (x: number, y: number, grow = 0) =>
+    frame ? outsideBy(frame.window, x, y) <= grow : inRect(window, x, y, grow);
 
   const onFrame = new Uint8Array(w * h);
   const beyond = new Uint8Array(w * h);
@@ -218,10 +226,10 @@ export async function renderMask(
       const i = y * w + x;
       const mx = (x + 0.5) / px - M;
       const onFace = inside(mx, my, 0);
-      if (onFace && !inRect(pocket, mx, my, CUT_MARGIN_MM)) border[i] = 1;
+      if (onFace && !inPocket(mx, my, CUT_MARGIN_MM)) border[i] = 1;
 
       if (rd && rd[i * 4 + 3] >= 128 && my >= 0) {
-        if (onFace && !inRect(window, mx, my)) onFrame[i] = 1;
+        if (onFace && !inWindow(mx, my)) onFrame[i] = 1;
         else beyond[i] = 1;
       }
 
@@ -232,15 +240,15 @@ export async function renderMask(
       // edge; what is outside that is raised instead, so nothing goes missing.
       const roomy =
         inside(mx, my, CUT_MARGIN_MM) &&
-        !inRect(pocket, mx, my, CUT_MARGIN_MM) &&
+        !inPocket(mx, my, CUT_MARGIN_MM) &&
         my >= rail + CUT_MARGIN_MM;
-      const sinkable = inside(mx, my, CUT_MARGIN_MM) && !inRect(window, mx, my, CUT_MARGIN_MM);
+      const sinkable = inside(mx, my, CUT_MARGIN_MM) && !inWindow(mx, my, CUT_MARGIN_MM);
       if (sinkable) sinkableMask[i] = 1;
       if (fd && fd[i * 4 + 3] >= 128) {
         if (sinkable) {
           flush[i] = 1;
         } else if (my >= 0) {
-          if (onFace && !inRect(window, mx, my)) onFrame[i] = 1;
+          if (onFace && !inWindow(mx, my)) onFrame[i] = 1;
           else beyond[i] = 1;
         }
       }

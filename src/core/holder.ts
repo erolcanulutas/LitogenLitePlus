@@ -2,6 +2,7 @@ import { MeshBuilder, type Mesh } from "./mesh";
 import { atY, atZ, cap, frustum, holeWall, roundedBox, wall, type V3 } from "./solids";
 import { PRONG, armAngle } from "./prong";
 import { STAND_DEFAULTS } from "./stand";
+import { convexHull, offsetConvex, type Pt } from "./outline";
 
 /**
  * The frame a lithophane is slid into, and the two legs that stand on the stand.
@@ -70,7 +71,17 @@ export type HolderParams = {
 
   /** Radius the frame's outer corners are rounded to, in mm. 0 leaves them square. */
   corner: number;
+
+  /**
+   * The picture's outline when it is not a rectangle, counter-clockwise and
+   * centred on its bounding box. The frame then follows it, and fills the
+   * ground between the shape and the legs.
+   */
+  outline?: Pt[] | null;
 };
+
+/** The loops of a frame that follows a shape, in the front face's terms. */
+export type FramePoly = { outer: Pt[]; window: Pt[]; pocket: Pt[] };
 
 /** A hole cut clean through the frame, as a closed outline in front-face mm. */
 export type CutLoop = [number, number][];
@@ -130,7 +141,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   const pocketDepth = p.pictureT + 1;
   const T = pocketDepth + p.lipThickness;
 
-  const W = p.pictureW + 2 * p.border;
+  let W = p.pictureW + 2 * p.border;
 
   // The channel, measured up from the table: the arm fills the lower part, the
   // prong the narrower part above it, and a roof of 1.5 mm closes it.
@@ -153,24 +164,72 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
 
   const pocketW = p.pictureW + 2 * p.pocketPlay;
   const pocketH = p.pictureH + 2 * p.pocketPlay;
-  const H = rail + pocketH + p.border - p.pocketPlay;
+  let H = rail + pocketH + p.border - p.pocketPlay;
 
   // Rounding cannot take more than half of either side, and the legs stand on
   // the rail, so it stops short of them.
-  const corner = Math.max(0, Math.min(p.corner, W / 2 - 2, H / 2 - 2, 30));
+  let corner = Math.max(0, Math.min(p.corner, W / 2 - 2, H / 2 - 2, 30));
 
   const winW = p.pictureW - 2 * p.lip;
   const winH = p.pictureH - 2 * p.lip;
   const winY = rail + pocketH / 2;
 
+  // A shape that is not a rectangle: the frame is the shape grown by the
+  // border, joined down to a base the legs stand on. The hull of the two is
+  // what fills the gaps between them.
+  let poly: FramePoly | null = null;
+  let window = { x0: W / 2 - winW / 2, x1: W / 2 + winW / 2, y0: winY - winH / 2, y1: winY + winH / 2 };
+  let pocket = { x0: W / 2 - pocketW / 2, x1: W / 2 + pocketW / 2, y0: rail, y1: rail + pocketH };
+  if (p.outline && p.outline.length >= 3) {
+    const baseHalf = p.prongSpacing / 2 + legW / 2 + 2;
+    const cy = rail + pocketH / 2;
+    // The ring's corners may reach below the table plane; it is cut off there.
+    const flat = (pts: Pt[]): Pt[] => {
+      const out: Pt[] = [];
+      for (let k = 0; k < pts.length; k++) {
+        const a = pts[k];
+        const b = pts[(k + 1) % pts.length];
+        if (a[1] >= 0) out.push(a);
+        if ((a[1] >= 0) !== (b[1] >= 0)) {
+          const f = a[1] / (a[1] - b[1]);
+          out.push([a[0] + (b[0] - a[0]) * f, 0]);
+        }
+      }
+      return out;
+    };
+    const grown = offsetConvex(p.outline, p.border).map(([x, y]): Pt => [x, y + cy]);
+    const reach = Math.max(baseHalf, ...grown.map((q) => Math.abs(q[0])));
+    W = 2 * reach;
+    const cx = W / 2;
+    const at = (pts: Pt[]): Pt[] => pts.map(([x, y]): Pt => [x + cx, y + cy]);
+    const ring = flat(grown).map(([x, y]): Pt => [x + cx, y]);
+    // Whatever of the ring is down in the rail is carried on to the table plane,
+    // so the underside is one flat edge as wide as the frame.
+    const dropped = ring.filter((q) => q[1] <= rail + 1e-6).map(([x]): Pt => [x, 0]);
+    const outer = convexHull([...ring, ...dropped, [cx - baseHalf, 0], [cx + baseHalf, 0], [cx - baseHalf, rail], [cx + baseHalf, rail]]);
+    const win = at(offsetConvex(p.outline, -p.lip));
+    const pock = at(offsetConvex(p.outline, p.pocketPlay));
+    H = Math.max(...outer.map((q) => q[1]));
+    corner = 0;
+    poly = { outer, window: win, pocket: pock };
+    const bound = (pts: Pt[]) => ({
+      x0: Math.min(...pts.map((q) => q[0])),
+      x1: Math.max(...pts.map((q) => q[0])),
+      y0: Math.min(...pts.map((q) => q[1])),
+      y1: Math.max(...pts.map((q) => q[1])),
+    });
+    window = bound(win);
+    pocket = bound(pock);
+  }
+
   return {
-    p, tilt, T, pocketDepth, W, H, rail, corner,
+    p, tilt, T, pocketDepth, W, H, rail, corner, poly,
     pocketW, pocketH,
     socketDepth, legW, h1, h2, top, half, armWide,
     /** The window the picture shows through, in the front face's terms. */
-    window: { x0: W / 2 - winW / 2, x1: W / 2 + winW / 2, y0: winY - winH / 2, y1: winY + winH / 2 },
+    window,
     /** The pocket behind it, which no decoration may stand over. */
-    pocket: { x0: W / 2 - pocketW / 2, x1: W / 2 + pocketW / 2, y0: rail, y1: rail + pocketH },
+    pocket,
   };
 }
 
@@ -201,10 +260,10 @@ export function buildHolder(
     [x1, y1],
     [x0, y1],
   ];
-  const pocket = box(L.pocket.x0, L.pocket.x1, L.pocket.y0, L.pocket.y1);
-  const window = box(L.window.x0, L.window.x1, L.window.y0, L.window.y1);
+  const pocket: [number, number][] = L.poly ? L.poly.pocket : box(L.pocket.x0, L.pocket.x1, L.pocket.y0, L.pocket.y1);
+  const window: [number, number][] = L.poly ? L.poly.window : box(L.window.x0, L.window.x1, L.window.y0, L.window.y1);
 
-  const outline = roundedBox(0, W, 0, H, corner);
+  const outline: [number, number][] = L.poly ? L.poly.outer : roundedBox(0, W, 0, H, corner);
   const outerBack = atZ(outline, 0);
   // The front face's lower edge reaches down to the table plane, so the whole
   // underside of the plate lies on it; round a corner and the arc rises from
@@ -263,7 +322,7 @@ export function buildHolder(
     });
   }
 
-  if (p.clips) {
+  if (p.clips && !L.poly) {
     const x0 = W / 2 - pocketW / 2;
     const x1 = W / 2 + pocketW / 2;
     const half = 6;

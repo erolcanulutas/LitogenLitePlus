@@ -15,6 +15,8 @@ type Props = {
   rail: number;
   window: Rect;
   pocket: Rect;
+  /** When the frame follows a shape: its edge, window and pocket as loops. */
+  poly?: { outer: [number, number][]; window: [number, number][]; pocket: [number, number][] } | null;
   decorations: Decoration[];
   onChange: (next: Decoration[]) => void;
   selected: number | null;
@@ -65,6 +67,7 @@ export default function HolderDesigner({
   rail,
   window: win,
   pocket,
+  poly,
   decorations: committed,
   onChange,
   selected,
@@ -171,19 +174,40 @@ export default function HolderDesigner({
       const rect = (r: Rect) =>
         [toX(r.x0), toY(r.y1), (r.x1 - r.x0) * s, (r.y1 - r.y0) * s] as const;
 
+      const trace = (loop: [number, number][]) => {
+        ctx.beginPath();
+        loop.forEach(([x, y], k) => (k === 0 ? ctx.moveTo(toX(x), toY(y)) : ctx.lineTo(toX(x), toY(y))));
+        ctx.closePath();
+      };
+
       ctx.fillStyle = "#d9b77a";
-      const r = Math.min(corner, width / 2, height / 2) * s;
-      ctx.beginPath();
-      ctx.roundRect(toX(0), toY(height), width * s, height * s, r);
-      ctx.fill();
+      if (poly) {
+        trace(poly.outer);
+        ctx.fill();
+      } else {
+        const r = Math.min(corner, width / 2, height / 2) * s;
+        ctx.beginPath();
+        ctx.roundRect(toX(0), toY(height), width * s, height * s, r);
+        ctx.fill();
+      }
 
       ctx.setLineDash([4, 3]);
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
-      ctx.strokeRect(...rect(pocket));
+      if (poly) {
+        trace(poly.pocket);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(...rect(pocket));
+      }
       ctx.setLineDash([]);
 
       ctx.fillStyle = "#1e293b";
-      ctx.fillRect(...rect(win));
+      if (poly) {
+        trace(poly.window);
+        ctx.fill();
+      } else {
+        ctx.fillRect(...rect(win));
+      }
 
       // Below the frame's underside is the table: nothing is raised there.
       ctx.fillStyle = "rgba(220,38,38,0.18)";
@@ -273,7 +297,7 @@ export default function HolderDesigner({
     return () => {
       live = false;
     };
-  }, [decorations, selected, width, height, corner, rail, win, pocket, view, viewW, viewH, caught]);
+  }, [decorations, selected, width, height, corner, rail, win, pocket, poly, view, viewW, viewH, caught]);
 
   // The wheel has to be a native listener: React's is passive, and a passive
   // one cannot stop the page scrolling under the pointer.

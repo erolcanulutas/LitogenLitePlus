@@ -32,6 +32,7 @@ import { writeColored3MF } from "./core/3mf_writer";
 import type { CutLoop, Recess } from "./core/holder";
 import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
+import { shapeOutline, type OutlineShape } from "./core/outline";
 import HolderDesigner from "./ui/HolderDesigner";
 import IconPalette from "./ui/IconPalette";
 import DecorProps from "./ui/DecorProps";
@@ -1927,11 +1928,12 @@ export default function App() {
       fit: holderFit,
       tiltDeg: 90 - holderAngle,
       corner: holderCorner,
+      outline: shapeId === "rectangle" ? null : shapeOutline(shapeId as OutlineShape, widthMm, heightMm),
     };
-  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderAngle]);
+  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderAngle, shapeId]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
-  const holderUsable = shapeId === "rectangle" && !curved;
+  const holderUsable = !curved;
 
   /**
    * Every change to the decorations goes through here, so each can be undone.
@@ -2104,6 +2106,7 @@ export default function App() {
       rail: holderGeom.rail,
       frontZ: holderGeom.T,
       lip: holderGeom.T - holderGeom.pocketDepth,
+      poly: holderGeom.poly,
     }),
     [holderGeom],
   );
@@ -2130,7 +2133,7 @@ export default function App() {
   }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, activeFilaments, flushClearance]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
-    if (shapeId !== "rectangle" || curved) return null;
+    if (curved) return null;
     const made = decorations.length > 0 ? decor : null;
     const plate = buildHolder(holderParams, made?.cuts ?? [], made?.recess ?? null);
     const raised = made && made.relief.mesh.triangleCount > 0 ? made.relief : null;
@@ -2168,7 +2171,7 @@ export default function App() {
   // triangles. It is placed in the pocket by a matrix, so changing the angle or
   // dragging a decoration never copies it.
   const holderPicture = useMemo<PreviewOverlay | null>(() => {
-    if (shapeId !== "rectangle" || curved || !showPicture || !previewMesh) return null;
+    if (curved || !showPicture || !previewMesh) return null;
     return {
       mesh: previewMesh,
       matrix: pictureMatrix(
@@ -4279,6 +4282,7 @@ export default function App() {
                         rail={holderGeom.rail}
                         window={holderGeom.window}
                         pocket={holderGeom.pocket}
+                        poly={holderGeom.poly}
                         decorations={decorations}
                         onChange={(next) => {
                           if (next.length > 0 && decorations.length === 0) setHolderPose("standing");
@@ -4321,7 +4325,7 @@ export default function App() {
 
                   <div style={{ overflowY: "auto", padding: "0 14px 16px", flex: 1, minHeight: 0 }}>
                     {!holderUsable ? (
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("The frame is made for flat, rectangular pictures. Pick the rectangle shape and turn the curve off to use it.")}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("The frame is made for flat pictures. Turn the curve off to use it.")}</div>
                     ) : (
                       <>
                         {holderSub === "frame" && (
