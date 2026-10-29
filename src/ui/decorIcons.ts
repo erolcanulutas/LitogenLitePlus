@@ -1,8 +1,10 @@
 import {
   buildRelief,
   cutLoops,
+  FLUSH_DEPTH_MM,
   MASK_PX_PER_MM,
   OVERHANG_MM,
+  recessLoops,
   stepHeights,
   type DecorGeom,
   type DecorMask,
@@ -13,6 +15,7 @@ import {
   type ReliefMode,
 } from "../core/decor";
 import { clusterColors, hexToLab, labelPixels, type Lab } from "../core/palette";
+import type { Recess } from "../core/holder";
 
 /** Every icon in the assets folder, found by Vite at build time. */
 const files = import.meta.glob("../assets/icons/*.svg", {
@@ -165,9 +168,11 @@ export async function renderMask(
     return ctx.getImageData(0, 0, w, h).data;
   };
 
-  const raised = decorations.filter((d) => !d.cut);
+  const raised = decorations.filter((d) => !d.cut && !d.flush);
+  const flushing = decorations.filter((d) => !d.cut && d.flush);
   const cutting = decorations.filter((d) => d.cut);
   const rd = raised.length > 0 ? await draw(raised) : null;
+  const fd = flushing.length > 0 ? await draw(flushing) : null;
   const cd = cutting.length > 0 ? await draw(cutting) : null;
 
   /** Whether a point is on a rounded rectangle from (0,0) to (W,H) shrunk by `inset`. */
@@ -185,6 +190,7 @@ export async function renderMask(
   const onFrame = new Uint8Array(w * h);
   const beyond = new Uint8Array(w * h);
   const cutOut = new Uint8Array(w * h);
+  const flush = new Uint8Array(w * h);
   /** The frame's border: on the frame and not over the pocket. */
   const border = new Uint8Array(w * h);
 
@@ -201,8 +207,24 @@ export async function renderMask(
         else beyond[i] = 1;
       }
 
-      // A cut stays clear of the edge and the pocket, and above the rail the
-      // legs stand on.
+      // Flush and cut decorations stay clear of the edge and the pocket, and
+      // above the rail the legs stand on; what is outside that is simply not
+      // there, since there is no frame to sink them into.
+      const roomy =
+        inside(mx, my, CUT_MARGIN_MM) &&
+        !inRect(pocket, mx, my, CUT_MARGIN_MM) &&
+        my >= rail + CUT_MARGIN_MM;
+      if (fd && fd[i * 4 + 3] >= 128) {
+        if (roomy) {
+          flush[i] = 1;
+        } else if (my >= 0) {
+          // Nowhere to sink it — over the window, past the edge, in the rail's
+          // strip: it is raised there instead, so nothing of it goes missing.
+          if (onFace && !inRect(window, mx, my)) onFrame[i] = 1;
+          else beyond[i] = 1;
+        }
+      }
+
       if (
         cd && cd[i * 4 + 3] >= 128 &&
         inside(mx, my, CUT_MARGIN_MM) &&
@@ -216,20 +238,65 @@ export async function renderMask(
 
   if (cd) joinFloating(cutOut, border, w, h);
 
-  // What is cut is not also raised.
+  // What is cut is not also raised, or sunk.
   for (let i = 0; i < onFrame.length; i++) {
     if (cutOut[i]) {
       onFrame[i] = 0;
       beyond[i] = 0;
+      flush[i] = 0;
     }
   }
 
-  const { group, groupFrac, groupColors } = groupRaised(onFrame, beyond, rd, look);
+  // What fills a recess is grown by a pixel, so that it overlaps the frame round
+  // it rather than meeting it, and a hair of gap cannot be left open. The pixels
+  // it gains take the colour of the one they grew from.
+  const colours = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    if (onFrame[i] || beyond[i]) {
+      const src = rd && rd[i * 4 + 3] >= 128 ? rd : fd;
+      if (src) {
+        colours[i * 4] = src[i * 4];
+        colours[i * 4 + 1] = src[i * 4 + 1];
+        colours[i * 4 + 2] = src[i * 4 + 2];
+      }
+    }
+  }
+  const flushBody = new Uint8Array(flush);
+  if (fd) {
+    for (let i = 0; i < w * h; i++) {
+      if (flush[i]) {
+        colours[i * 4] = fd[i * 4];
+        colours[i * 4 + 1] = fd[i * 4 + 1];
+        colours[i * 4 + 2] = fd[i * 4 + 2];
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (flush[i] || cutOut[i]) continue;
+        const from =
+          x > 0 && flush[i - 1] ? i - 1
+          : x < w - 1 && flush[i + 1] ? i + 1
+          : y > 0 && flush[i - w] ? i - w
+          : y < h - 1 && flush[i + w] ? i + w
+          : -1;
+        if (from < 0) continue;
+        flushBody[i] = 1;
+        colours[i * 4] = colours[from * 4];
+        colours[i * 4 + 1] = colours[from * 4 + 1];
+        colours[i * 4 + 2] = colours[from * 4 + 2];
+      }
+    }
+  }
+
+  const { group, groupFrac, groupColors } = groupRaised(onFrame, beyond, flushBody, colours, look);
 
   return {
     onFrame,
     beyond,
     cutOut,
+    flush,
+    flushBody,
     group,
     groupFrac,
     groupColors,
@@ -259,6 +326,7 @@ function brightness(hex: string): number {
 function groupRaised(
   onFrame: Uint8Array,
   beyond: Uint8Array,
+  sunk: Uint8Array,
   rgba: Uint8ClampedArray | null,
   look: ReliefLook,
 ): { group: Uint8Array; groupFrac: number[]; groupColors: string[] } {
@@ -268,7 +336,7 @@ function groupRaised(
   const stepOf = (lum: number) => Math.min(fracs.length - 1, Math.floor(lum * fracs.length));
 
   const raised: number[] = [];
-  for (let i = 0; i < n; i++) if (onFrame[i] || beyond[i]) raised.push(i);
+  for (let i = 0; i < n; i++) if (onFrame[i] || beyond[i] || sunk[i]) raised.push(i);
 
   if (look.colours <= 0 || !rgba || raised.length === 0) {
     if (rgba && fracs.length > 1) {
@@ -452,11 +520,13 @@ export async function makeDecor(
   geom: DecorGeom,
   height: number,
   look: ReliefLook,
-): Promise<{ relief: Relief; cuts: [number, number][][] }> {
+): Promise<{ relief: Relief; cuts: [number, number][][]; recess: Recess | null }> {
   const mask = await renderMask(decorations, geom, look);
+  const sunk = recessLoops(mask);
   return {
     relief: buildRelief(mask, geom.frontZ, height, geom.lip),
     cuts: cutLoops(mask),
+    recess: sunk.outer.length > 0 ? { ...sunk, depth: FLUSH_DEPTH_MM } : null,
   };
 }
 

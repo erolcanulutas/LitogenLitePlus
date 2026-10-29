@@ -45,6 +45,21 @@ export default function DecorProps({ decoration: d, onPatch, onDuplicate, onRemo
         </button>
       </div>
 
+      {!d.cut && (
+        <label
+          className="shadeToggle"
+          style={{ display: "flex", marginTop: 10 }}
+          title="Instead of standing out, the decoration is set into the frame so its top is level with the face: the frame is recessed 1 mm to its shape and filled, which gives a colour in the surface when printed in colours. Any part with no frame to sink into — over the window, past the edge, on the bottom rail — is raised instead."
+        >
+          <input
+            type="checkbox"
+            checked={d.flush === true}
+            onChange={(e) => onPatch({ flush: e.target.checked })}
+          />
+          Flush with the frame
+        </label>
+      )}
+
       {isText(d) && (
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           <input

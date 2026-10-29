@@ -28,7 +28,7 @@ import {
 } from "./core/holder";
 import type { DecorGeom, Decoration, Relief, ReliefMode } from "./core/decor";
 import { writeColored3MF } from "./core/3mf_writer";
-import type { CutLoop } from "./core/holder";
+import type { CutLoop, Recess } from "./core/holder";
 import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
 import HolderDesigner from "./ui/HolderDesigner";
@@ -1871,7 +1871,7 @@ export default function App() {
   // How the holder lies on the bed. Raised decorations are on the front face,
   // so with any the holder has to be printed standing.
   const [holderPose, setHolderPose] = useState<"face" | "standing">("face");
-  const [decor, setDecor] = useState<{ relief: Relief; cuts: CutLoop[] } | null>(null);
+  const [decor, setDecor] = useState<{ relief: Relief; cuts: CutLoop[]; recess: Recess | null } | null>(null);
   const [designName, setDesignName] = useState("");
   const [designs, setDesigns] = useState<SavedDesign[]>(readDesigns);
   /** The same, as the account keeps them: filled in once somebody is signed in. */
@@ -2000,7 +2000,7 @@ export default function App() {
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
     const made = decorations.length > 0 ? decor : null;
-    const plate = buildHolder(holderParams, made?.cuts ?? []);
+    const plate = buildHolder(holderParams, made?.cuts ?? [], made?.recess ?? null);
     const raised = made && made.relief.mesh.triangleCount > 0 ? made.relief : null;
     const frame = raised ? joinMeshes(plate, raised.mesh) : plate;
 
@@ -2612,7 +2612,7 @@ export default function App() {
         colours: iconColours,
         palette: activeFilaments,
       });
-      const plate = buildHolder(holderParams, made.cuts);
+      const plate = buildHolder(holderParams, made.cuts, made.recess);
       whole = joinMeshes(plate, made.relief.mesh);
       bodies = made.relief.groups.map((g) => ({
         start: plate.triangleCount + g.start,

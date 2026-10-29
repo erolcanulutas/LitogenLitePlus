@@ -173,6 +173,7 @@ export function holeWall(
   loop: readonly [number, number][],
   z0: number,
   z1: number,
+  facing: "in" | "out" = "in",
 ): void {
   let area = 0;
   for (let i = 0; i < loop.length; i++) {
@@ -181,7 +182,8 @@ export function holeWall(
     area += a[0] * b[1] - b[0] * a[1];
   }
   // For a counter-clockwise loop the inside is on the left of every edge.
-  const side = area >= 0 ? 1 : -1;
+  // Facing out is the same wall seen from the other side: an island in a pocket.
+  const side = (area >= 0 ? 1 : -1) * (facing === "in" ? 1 : -1);
 
   for (let i = 0; i < loop.length; i++) {
     const a = loop[i];

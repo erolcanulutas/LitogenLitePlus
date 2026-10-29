@@ -75,6 +75,20 @@ export type HolderParams = {
 /** A hole cut clean through the frame, as a closed outline in front-face mm. */
 export type CutLoop = [number, number][];
 
+/** Pockets sunk into the frame's face, to be filled level with it, and how deep. */
+export type Recess = { outer: CutLoop[]; islands: CutLoop[]; depth: number };
+
+/** Whether a point is inside a loop, by counting the edges a ray to the right crosses. */
+function inLoop(p: [number, number], loop: CutLoop): boolean {
+  let inside = false;
+  for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
+    const [xi, yi] = loop[i];
+    const [xj, yj] = loop[j];
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** How close a cut-out may come to the frame's edge and to the pocket, in mm. */
 export const CUT_MARGIN_MM = 1.2;
 
@@ -160,7 +174,11 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   };
 }
 
-export function buildHolder(input: Partial<HolderParams> = {}, cuts: readonly CutLoop[] = []): Mesh {
+export function buildHolder(
+  input: Partial<HolderParams> = {},
+  cuts: readonly CutLoop[] = [],
+  recess: Recess | null = null,
+): Mesh {
   const L = holderLayout(input);
   const { p, T, pocketDepth, W, H, rail, corner, pocketW, pocketH } = L;
   const mb = new MeshBuilder(2048);
@@ -202,9 +220,25 @@ export function buildHolder(input: Partial<HolderParams> = {}, cuts: readonly Cu
   wall(mb, atZ(pocket, 0), atZ(pocket, pocketDepth), false);
   cap(mb, atZ(pocket, pocketDepth), [atZ(window, pocketDepth)], [0, 0, -1]);
   wall(mb, atZ(window, pocketDepth), atZ(window, T), false);
-  cap(mb, outerFront, [atZ(window, T), ...cuts.map((c) => atZ(c, T))], [0, 0, 1]);
+  const pockets = recess?.outer ?? [];
+  cap(mb, outerFront, [atZ(window, T), ...cuts.map((c) => atZ(c, T)), ...pockets.map((c) => atZ(c, T))], [0, 0, 1]);
   wall(mb, outerBack, outerFront, true);
   for (const c of cuts) holeWall(mb, c, 0, T);
+
+  // Pockets for flush decorations: the walls down, a floor, and any island of
+  // frame left standing in one with its own sides and top.
+  if (recess && pockets.length > 0) {
+    const floor = T - recess.depth;
+    for (const pocketLoop of pockets) {
+      const mine = recess.islands.filter((i) => inLoop(i[0], pocketLoop));
+      holeWall(mb, pocketLoop, floor, T);
+      cap(mb, atZ(pocketLoop, floor), mine.map((i) => atZ(i, floor)), [0, 0, 1]);
+      for (const island of mine) {
+        holeWall(mb, island, floor, T, "out");
+        cap(mb, atZ(island, T), [], [0, 0, 1]);
+      }
+    }
+  }
 
   if (p.clips) {
     const x0 = W / 2 - pocketW / 2;

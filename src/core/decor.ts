@@ -42,6 +42,11 @@ export type Decoration = {
   rotation: number;
   /** Cut clean through the frame instead of being raised on it. */
   cut?: boolean;
+  /**
+   * Level with the frame's face instead of raised on it: the frame is recessed
+   * to its shape and filled, so a colour sits in the surface rather than on it.
+   */
+  flush?: boolean;
 };
 
 type Rect = { x0: number; x1: number; y0: number; y1: number };
@@ -77,6 +82,9 @@ export const isText = (d: Decoration) => typeof d.text === "string";
 
 /** How heights follow the icon's own colours. */
 export type ReliefMode = "flat" | "lightHigher" | "darkHigher";
+
+/** How deep a flush decoration is sunk into the frame's face, in mm. */
+export const FLUSH_DEPTH_MM = 1;
 
 /** Pixels in the mask for each millimetre of the holder. */
 export const MASK_PX_PER_MM = 6;
@@ -124,6 +132,10 @@ export type DecorMask = {
   beyond: Uint8Array;
   /** Pixels to cut clean through the frame, after bridging what would float. */
   cutOut: Uint8Array;
+  /** Pixels to sink into the frame's face: where a flush decoration is, over the frame. */
+  flush: Uint8Array;
+  /** The same grown by a pixel, which is what fills it: a little over, so nothing is left open. */
+  flushBody: Uint8Array;
   /** Which body each raised pixel belongs to: a height step, or one of the icons' colours. */
   group: Uint8Array;
   /** How high each body stands, as a share of the full relief height. */
@@ -163,7 +175,6 @@ export function buildRelief(
 ): Relief {
   const mb = new MeshBuilder(256);
   const groups: Relief["groups"] = [];
-  if (height <= 0) return { mesh: mb.finish(), groups };
 
   const { w, h } = mask;
   const count = mask.groupFrac.length;
@@ -193,11 +204,28 @@ export function buildRelief(
   const baseZ = frontZ - rootDepth + ROOT_CLEARANCE_MM;
 
   const traced: { regions: ReturnType<typeof vectorise>["regions"] }[] = [];
-  if (any && count > 0) {
+  if (any && count > 0 && height > 0) {
     const vec = vectorise(
       lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, where, floorPx, undefined, 2, mask.group,
     );
     traced.push({ regions: vec.regions });
+  }
+
+  // What is sunk into the frame is traced on its own, in the same bodies: its
+  // top is the frame's face, so it is flush, and it fills the recess the frame
+  // was given.
+  let anyFlush = false;
+  for (let i = 0; i < mask.flushBody.length; i++) {
+    if (mask.flushBody[i]) {
+      anyFlush = true;
+      break;
+    }
+  }
+  let flushRegions: ReturnType<typeof vectorise>["regions"] | null = null;
+  if (anyFlush && count > 0) {
+    flushRegions = vectorise(
+      lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, mask.flushBody, floorPx, undefined, 2, mask.group,
+    ).regions;
   }
 
   // Then body by body, so that each is one run of triangles.
@@ -207,6 +235,10 @@ export function buildRelief(
       const region = regions[g];
       if (!region || region.rings.length === 0) continue;
       extrudeRegion(mb, region.rings, place, baseZ, frontZ + height * mask.groupFrac[g]);
+    }
+    const sunk = flushRegions?.[g];
+    if (sunk && sunk.rings.length > 0) {
+      extrudeRegion(mb, sunk.rings, place, frontZ - FLUSH_DEPTH_MM, frontZ);
     }
     const end = mb.triangleCount;
     if (end > start) groups.push({ start, end, color: mask.groupColors[g] ?? "" });
@@ -278,4 +310,49 @@ function clean(loop: [number, number][]): [number, number][] {
     pts = next;
   }
   return pts;
+}
+
+/**
+ * Where the frame is recessed for flush decorations: the outlines, and any
+ * islands of frame left standing inside them, like the middle of an O.
+ *
+ * The islands stay: they are joined to the frame by what is under the recess,
+ * so nothing floats, and they are what makes the letter read as a letter.
+ */
+export function recessLoops(mask: DecorMask): {
+  outer: [number, number][][];
+  islands: [number, number][][];
+} {
+  const none = { outer: [], islands: [] };
+  let any = false;
+  for (let i = 0; i < mask.flush.length; i++) {
+    if (mask.flush[i]) {
+      any = true;
+      break;
+    }
+  }
+  if (!any) return none;
+
+  const { w, h } = mask;
+  const floorPx = (MIN_FEATURE_MM * MASK_PX_PER_MM) ** 2;
+  const vec = vectorise(
+    new Float64Array(w * h), w, h, [0, 1], 1.2, undefined, floorPx, undefined, 2, mask.flush,
+  );
+
+  const outer: [number, number][][] = [];
+  const islands: [number, number][][] = [];
+  for (const ring of vec.regions[1]?.rings ?? []) {
+    if (ring.x.length < 3) continue;
+    const loop: [number, number][] = [];
+    for (let i = 0; i < ring.x.length; i++) {
+      loop.push([
+        mask.originX + ring.x[i] * mask.spanX,
+        mask.originY + (1 - ring.y[i]) * mask.spanY,
+      ]);
+    }
+    const tidy = clean(loop);
+    if (tidy.length < 3) continue;
+    (ring.area > 0 ? outer : islands).push(tidy);
+  }
+  return { outer, islands };
 }
