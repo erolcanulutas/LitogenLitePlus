@@ -1837,7 +1837,7 @@ export default function App() {
     const plate = buildHolder(holderParams);
     const relief = decorations.length > 0 ? reliefMesh : null;
     const whole = relief && relief.triangleCount > 0 ? joinMeshes(plate, relief) : plate;
-    const holder = holderInPlace(whole, holderParams.tiltDeg);
+    const holder = holderInPlace(whole, holderParams.tiltDeg, holderGeom.socketDepth);
     const stand = buildStand({ tealight: tealightMm });
     const positions = new Float32Array(holder.positions.length + stand.positions.length);
     positions.set(holder.positions, 0);
@@ -3761,7 +3761,7 @@ export default function App() {
             <>
               <div className="label-row">
                 <label className="miniLabel">Panel angle: {holderAngle}°</label>
-                <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand's prongs stay upright, so the holder's sockets lean with the panel and its underside is cut to rest flat on the table; the rail under the picture grows to carry the legs when it leans." />
+                <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the holder's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them." />
               </div>
               <input
                 className="range"
@@ -3791,7 +3791,7 @@ export default function App() {
 
               <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Fit (mm)</label>
-                <InfoIcon text="The gap between each prong and its socket. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
+                <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
               </div>
               <input
                 className="spinInput"

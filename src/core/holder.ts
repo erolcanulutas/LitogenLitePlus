@@ -1,10 +1,10 @@
 import { MeshBuilder, type Mesh } from "./mesh";
-import { atY, atZ, cap, clip, rect, wall, type V3 } from "./solids";
+import { atY, atZ, cap, frustum, wall, type V3 } from "./solids";
 import { PRONG, armAngle } from "./prong";
 import { STAND_DEFAULTS } from "./stand";
 
 /**
- * The frame a lithophane is slid into, and the two legs the stand plugs into.
+ * The frame a lithophane is slid into, and the two legs that stand on the stand.
  *
  * Built lying on its front: the back face is z = 0, the picture goes in there,
  * and the legs hang off it towards -z. Standing the finished part up is the
@@ -16,19 +16,20 @@ import { STAND_DEFAULTS } from "./stand";
  *         │ │  pocket  │ │   the picture, so it cannot fall out the front.
  *         │ └──────────┘ │   Two small ramps in the side walls click it in.
  *         └──┬────────┬──┘
- *            ╲legs   ╱      Each leg is a prism along y with a tapered socket
- *                           in its lower face, and leans to match the stand's
- *                           arm it plugs onto.
+ *            ╲legs   ╱      Each leg is a block with a channel cut up into
+ *                           its underside, wide for the stand's arm and
+ *                           narrower above for its prong. The arm's tip sits
+ *                           inside, hidden, so the leg's underside and the
+ *                           stand's underside are one plane.
  *
- * Tilted back by `tiltDeg`, the stand's prongs stay upright while the plate
- * leans, so the sockets lean with it and the underside of the legs and rail is
- * cut to the table plane rather than to the plate. Leaning also needs more
- * rail under the picture to hold the legs, which the bottom border grows to
- * provide.
+ * Tilted back by `tiltDeg`, the stand stays flat while the plate leans, so
+ * the channels stay upright, the underside of the legs and rail is cut to the
+ * table plane rather than to the plate, and the legs sit further back and
+ * the rail grows to hold them: the plate overhangs the prong as it leans.
  *
  * Shells that touch are left as separate solids rather than fused: the legs
- * sit on the plate's back face and the ramps against the pocket wall. A slicer
- * joins what touches.
+ * are built from blocks that meet face to face, and sit on the plate's back
+ * face. A slicer joins what touches.
  */
 export type HolderParams = {
   /** Size of the lithophane it holds, in mm. */
@@ -47,20 +48,21 @@ export type HolderParams = {
   /** Ramps in the side walls that hold the picture in. */
   clips: boolean;
 
-  /** How far the legs reach out behind the plate. */
-  legLength: number;
-  /** Across the leg, along x. */
+  /** Across the leg, along x. At least wide enough for the channel and its walls. */
   legWidth: number;
-  /** Down the leg's length from the plate to the middle of its socket. */
+  /**
+   * From the plate's back edge to the middle of the prong, at the least. A
+   * leaning plate pushes it further back, so this is the upright distance.
+   */
   socketDepth: number;
 
-  /** What the stand's prong looks like, so the socket can match it. */
+  /** What the stand's prong looks like, so the channel can match it. */
   prongSpacing: number;
   prongReach: number;
   prongSize: number;
   prongHeight: number;
   taperDeg: number;
-  /** Gap between prong and socket, all round. */
+  /** Gap between the stand and the channel, all round. */
   fit: number;
 
   /** How far the plate leans back from upright, 0 to 45 degrees. */
@@ -76,7 +78,6 @@ export const HOLDER_DEFAULTS: HolderParams = {
   pocketPlay: 0.3,
   lipThickness: 2,
   clips: true,
-  legLength: 16.6,
   legWidth: 10,
   socketDepth: 9.5,
   prongSpacing: PRONG.spacing,
@@ -86,12 +87,6 @@ export const HOLDER_DEFAULTS: HolderParams = {
   taperDeg: PRONG.taperDeg,
   fit: 0.2,
   tiltDeg: 0,
-};
-
-type Leg = {
-  body: [number, number][];
-  centre: [number, number];
-  u: [number, number];
 };
 
 /**
@@ -105,43 +100,32 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   const p = { ...HOLDER_DEFAULTS, ...input };
 
   const tilt = (Math.min(45, Math.max(0, p.tiltDeg)) * Math.PI) / 180;
-  const st = Math.sin(tilt);
   const ct = Math.cos(tilt);
+  const tt = Math.tan(tilt);
 
   const pocketDepth = p.pictureT + 1;
   const T = pocketDepth + p.lipThickness;
 
-  const alpha = armAngle(p.prongSpacing, p.prongReach);
-  const sa = Math.sin(alpha);
-  const ca = Math.cos(alpha);
-  const socketY = p.prongHeight + 0.5;
-
   const W = p.pictureW + 2 * p.border;
 
-  // Legs first, because how deep they are decides how much rail the plate
-  // needs under the picture.
-  const legs: Leg[] = [];
-  let tallest = 0;
+  // The channel, measured up from the table: the arm fills the lower part, the
+  // prong the narrower part above it, and a roof of 1.5 mm closes it.
+  const armH = STAND_DEFAULTS.armHeight;
+  const h1 = armH + p.fit;
+  const h2 = armH + p.prongHeight + p.fit;
+  const top = h2 + 1.5;
+  const half = p.prongSize / 2 + p.fit;
+  const armWide = STAND_DEFAULTS.armWidth + 2 * p.fit;
+  const legW = Math.max(p.legWidth, armWide + 3.2);
 
-  for (const side of [-1, 1]) {
-    // side -1 is the left leg: it leans towards +x going away from the plate.
-    const u: [number, number] = [-side * sa, -ca];
-    const centre: [number, number] = [W / 2 + side * (p.prongSpacing / 2), -p.socketDepth];
+  // A plate leaning back overhangs what is behind it: at the height of the
+  // channel's roof its back face has moved back by top * tan(tilt). The prong
+  // has to be clear of that, with room for the wall in front of it.
+  const socketDepth = Math.max(p.socketDepth, top * tt + half + 4);
 
-    const t0 = (-p.socketDepth - 3) / ca;
-    const t1 = (-p.socketDepth + p.legLength) / ca;
-    const mid: [number, number] = [
-      centre[0] + (u[0] * (t0 + t1)) / 2,
-      centre[1] + (u[1] * (t0 + t1)) / 2,
-    ];
-    // Cut square on the plate's back edge.
-    const body = clip(rect(mid, u, t1 - t0, p.legWidth), (q) => -q[1]);
-    for (const [, wy] of body) tallest = Math.max(tallest, -wy * st);
-    legs.push({ body, centre, u });
-  }
-
-  const legTop = Math.max(p.border - 0.5, tallest + socketY * ct + 1.5);
-  const rail = legTop + 0.5;
+  // The leg's near face is the plate's own back face, which at the roof's
+  // height is top / cos(tilt) up the plate, and the picture starts above that.
+  const rail = Math.max(p.border - 0.5, top / ct + 0.5);
 
   const pocketW = p.pictureW + 2 * p.pocketPlay;
   const pocketH = p.pictureH + 2 * p.pocketPlay;
@@ -152,8 +136,9 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   const winY = rail + pocketH / 2;
 
   return {
-    p, tilt, T, pocketDepth, W, H, rail, legTop, legs, socketY,
+    p, tilt, T, pocketDepth, W, H, rail,
     pocketW, pocketH,
+    socketDepth, legW, h1, h2, top, half, armWide,
     /** The window the picture shows through, in the front face's terms. */
     window: { x0: W / 2 - winW / 2, x1: W / 2 + winW / 2, y0: winY - winH / 2, y1: winY + winH / 2 },
     /** The pocket behind it, which no decoration may stand over. */
@@ -163,14 +148,13 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
 
 export function buildHolder(input: Partial<HolderParams> = {}): Mesh {
   const L = holderLayout(input);
-  const { p, T, pocketDepth, W, H, rail, legTop, legs, socketY, pocketW, pocketH } = L;
+  const { p, T, pocketDepth, W, H, rail, pocketW, pocketH } = L;
   const mb = new MeshBuilder(2048);
 
   const st = Math.sin(L.tilt);
   const ct = Math.cos(L.tilt);
   const tt = Math.tan(L.tilt);
   const taper = Math.tan((p.taperDeg * Math.PI) / 180);
-  const mouth = p.prongSize + 2 * p.fit;
 
   // The table plane, in the plate's terms, is y = -z tan(tilt). A point on it
   // that is `wy` out from the plate's back edge (negative behind it) sits at:
@@ -223,21 +207,75 @@ export function buildHolder(input: Partial<HolderParams> = {}): Mesh {
     }
   }
 
-  for (const { body, centre, u } of legs) {
-    const under = body.map(([x, wy]) => onTable(x, wy));
-    const over = under.map((v): V3 => [v[0], legTop, v[2]]);
+  // Legs. Each is built from blocks that meet face to face around a channel
+  // that runs along the stand's arm: `s` is along the arm, away from the plate
+  // towards the cup, `t` across it, and `h` up from the table.
+  const alpha = armAngle(p.prongSpacing, p.prongReach);
+  const sa = Math.sin(alpha);
+  const ca = Math.cos(alpha);
+  const { socketDepth, legW, h1, h2, top, half, armWide } = L;
+  const sNear = -half; // the channel's end wall, one fit short of the arm's tip
+  const sFar = half; // end of the prong's pocket
+  const sEnd = half + 7; // the leg ends here, with the channel open
+  const innerA = armWide / 2;
+  const innerB1 = half;
+  const innerB2 = half - taper * (h2 - h1);
 
-    const sq = (size: number) =>
-      rect(centre, u, size, size).map(([x, wy]) => onTable(x, wy));
-    const m0 = sq(mouth);
-    const m1 = sq(mouth - 2 * socketY * taper).map((v) => lift(v, socketY));
-    const down: V3 = [-up[0], -up[1], -up[2]];
+  for (const side of [-1, 1]) {
+    // side -1 is the left leg: it leans towards +x going away from the plate.
+    const u: [number, number] = [-side * sa, -ca];
+    const pv: [number, number] = [-u[1], u[0]];
+    const c: [number, number] = [W / 2 + side * (p.prongSpacing / 2), -socketDepth];
 
-    cap(mb, under, [m0], down);
-    cap(mb, over, [], [0, 1, 0]);
-    wall(mb, under, over, true);
-    wall(mb, m0, m1, false);
-    cap(mb, m1, [], down);
+    const at = (s: number, t: number, h: number): V3 =>
+      lift(onTable(c[0] + u[0] * s + pv[0] * t, c[1] + u[1] * s + pv[1] * t), h);
+
+    // A block between two heights, with its footprint given as corners in
+    // (s, t) at the bottom and at the top, in the same order.
+    const block = (
+      lo: number, hi: number,
+      foot: [number, number][], head: [number, number][] = foot,
+    ) =>
+      frustum(
+        mb,
+        foot.map(([s, t]) => at(s, t, lo)),
+        head.map(([s, t]) => at(s, t, hi)),
+      );
+    const span = (s0: number, s1: number, t0: number, t1: number): [number, number][] => [
+      [s0, t0], [s1, t0], [s1, t1], [s0, t1],
+    ];
+
+    // Where the plate's back face meets the table, along the leg's width. The
+    // plate leans, so at height h that line has moved back by h tan(tilt);
+    // the root block's near face follows it, which keeps it flat on the plate.
+    const lean = (t: number, h: number) =>
+      (-socketDepth + pv[1] * t + h * Math.tan(L.tilt)) / ca;
+    const root = (h: number): [number, number][] => [
+      [lean(-legW / 2, h), -legW / 2],
+      [sNear, -legW / 2],
+      [sNear, legW / 2],
+      [lean(legW / 2, h), legW / 2],
+    ];
+    block(0, top, root(0), root(top));
+
+    // Either side of the arm's slot, below the arm's top.
+    for (const sign of [-1, 1]) {
+      const t0 = sign * innerA;
+      const t1 = sign * (legW / 2);
+      block(0, h1, span(sNear, sEnd, Math.min(t0, t1), Math.max(t0, t1)));
+    }
+
+    // Either side of the prong's pocket, whose walls close in as they rise.
+    for (const sign of [-1, 1]) {
+      const outer = sign * (legW / 2);
+      const foot = span(sNear, sFar, sign * innerB1, outer);
+      const head = span(sNear, sFar, sign * innerB2, outer);
+      block(h1, h2, foot, head);
+    }
+
+    // Over the arm behind the prong, and over the prong itself.
+    block(h1, top, span(sFar, sEnd, -legW / 2, legW / 2));
+    block(h2, top, span(sNear, sFar, -legW / 2, legW / 2));
   }
 
   return mb.finish();
@@ -249,7 +287,7 @@ export function buildHolder(input: Partial<HolderParams> = {}): Mesh {
  * Turned half a revolution about y, which keeps it a proper solid rather than
  * a mirror image, then lowered so the front face is on the bed. Printed this
  * way the picture's pocket opens upwards and nothing hangs in the air but the
- * sockets, which are small enough to bridge.
+ * roof of each channel, which is a few millimetres across.
  */
 export function holderForPrinting(mesh: Mesh): Mesh {
   const src = mesh.positions;
@@ -275,9 +313,10 @@ export function holderForPrinting(mesh: Mesh): Mesh {
  *
  * Only for showing the two together: the stand lies flat with its cup at the
  * origin, the prongs point up, and the holder is set on them leaning back by
- * `tiltDeg`. The inverse of how the sockets were placed on the plate.
+ * `tiltDeg`, with the legs' underside on the same plane as the stand's. The
+ * inverse of how the channels were placed on the plate.
  */
-export function holderInPlace(mesh: Mesh, tiltDeg: number): Mesh {
+export function holderInPlace(mesh: Mesh, tiltDeg: number, socketDepth: number): Mesh {
   const t = (Math.min(45, Math.max(0, tiltDeg)) * Math.PI) / 180;
   const st = Math.sin(t);
   const ct = Math.cos(t);
@@ -292,13 +331,13 @@ export function holderInPlace(mesh: Mesh, tiltDeg: number): Mesh {
   }
   const mid = (lo + hi) / 2;
 
-  const edge = PRONG.reach + HOLDER_DEFAULTS.socketDepth;
+  const edge = PRONG.reach + socketDepth;
   for (let i = 0; i < out.length; i += 3) {
     const y = src[i + 1];
     const z = src[i + 2];
     out[i] = src[i] - mid;
     out[i + 1] = z * ct - y * st + edge;
-    out[i + 2] = y * ct + z * st + STAND_DEFAULTS.armHeight;
+    out[i + 2] = y * ct + z * st;
   }
   return { positions: out, triangleCount: mesh.triangleCount };
 }
@@ -308,7 +347,7 @@ export function holderInPlace(mesh: Mesh, tiltDeg: number): Mesh {
  *
  * The underside is the table plane, so lowering it so nothing is below zero
  * rests it exactly as it will stand. Printed this way the front face is a
- * vertical wall, which is where decorations are raised, and the sockets open
+ * vertical wall, which is where decorations are raised, and the channels open
  * onto the bed. With the plate leaned back the overhang is the lean, at most
  * 45 degrees.
  */
