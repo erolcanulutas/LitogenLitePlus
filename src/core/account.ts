@@ -41,7 +41,7 @@ const HEADERS = {
 async function call(
   path: string,
   body?: unknown,
-): Promise<{ user?: Account | null; designs?: DesignRecord[] }> {
+): Promise<{ user?: Account | null; designs?: DesignRecord[]; filaments?: string[] }> {
   let res: Response;
   try {
     res = await fetch(`/api/${path}`, {
@@ -54,7 +54,13 @@ async function call(
     throw new Error("Could not reach the server");
   }
 
-  let data: { ok?: boolean; error?: string; user?: Account | null; designs?: DesignRecord[] } = {};
+  let data: {
+    ok?: boolean;
+    error?: string;
+    user?: Account | null;
+    designs?: DesignRecord[];
+    filaments?: string[];
+  } = {};
   try {
     data = await res.json();
   } catch {
@@ -155,4 +161,14 @@ export async function saveDesignRemote(name: string, data: unknown): Promise<voi
 
 export async function deleteDesignRemote(name: string): Promise<void> {
   await call("designs.php", { action: "delete", name });
+}
+
+/** The filament colours this account has kept. */
+export async function loadFilaments(): Promise<string[]> {
+  const { filaments } = await call("filaments.php");
+  return filaments ?? [];
+}
+
+export async function storeFilaments(list: string[]): Promise<void> {
+  await call("filaments.php", { filaments: list });
 }

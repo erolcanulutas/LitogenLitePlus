@@ -36,6 +36,7 @@ $id = (int) $user['id'];
 
 $db->prepare('DELETE FROM holder_designs WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM export_receipts WHERE user_id = ?')->execute([$id]);
+$db->prepare('DELETE FROM user_filaments WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM identities WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM token_ledger WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM pending_credits WHERE email = ?')->execute([$user['email']]);

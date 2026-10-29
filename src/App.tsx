@@ -16,7 +16,9 @@ import STLWorker from "./worker/stl.worker?worker";
 import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
-import { DEFAULT_GAP, clusterColors, suggestColourLevels, type Lab } from "./core/palette";
+import {
+  DEFAULT_GAP, clusterColors, hexToLab, snapToPalette, suggestColourLevels, type Lab,
+} from "./core/palette";
 import {
   buildHolder,
   holderForPrinting,
@@ -30,12 +32,16 @@ import type { CutLoop } from "./core/holder";
 import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
 import HolderDesigner from "./ui/HolderDesigner";
+import IconPalette from "./ui/IconPalette";
+import DecorProps from "./ui/DecorProps";
+import FilamentEditor from "./ui/FilamentEditor";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
-  OutOfTokens, deleteDesignRemote, listDesigns, saveDesignRemote, signIn, signOut,
+  OutOfTokens, deleteDesignRemote, listDesigns, loadFilaments, saveDesignRemote, signIn, signOut,
+  storeFilaments,
   signUp, spendForExport, spendForHolder, unlimited, whoAmI,
   type Account,
 } from "./core/account";
@@ -1833,6 +1839,7 @@ export default function App() {
   // The holder and stand are separate parts, made from the picture's size.
   const [holderAngle, setHolderAngle] = useState(85);
   const [holderBorder, setHolderBorder] = useState(10);
+  const [holderSub, setHolderSub] = useState<"frame" | "decorate" | "colours" | "print">("frame");
   const [holderCorner, setHolderCorner] = useState(0);
   const [showPicture, setShowPicture] = useState(true);
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
@@ -1847,9 +1854,19 @@ export default function App() {
   const [frameColour, setFrameColour] = useState("#e2c28b");
   /** Filament colours to hand; icon colours are printed in the nearest. Empty uses the icons' own. */
   const [filaments, setFilamentsState] = useState<string[]>(readFilaments);
+  const filamentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** The filament colours, kept here and, when signed in, in the account. */
   const setFilaments = (next: string[]) => {
     setFilamentsState(next);
     writeFilaments(next);
+    clearTimeout(filamentTimer.current);
+    if (account) {
+      filamentTimer.current = setTimeout(() => {
+        storeFilaments(next).catch(() => {
+          // Kept in this browser; the account will have it the next time they change.
+        });
+      }, 600);
+    }
   };
   const [holderNote, setHolderNote] = useState<string | null>(null);
   // How the holder lies on the bed. Raised decorations are on the front face,
@@ -1868,7 +1885,21 @@ export default function App() {
   const [colorGap, setColorGap] = useState<number>(DEFAULT_GAP);
   /** Tone centres once one has been taken away by hand, for this picture. */
   const [centresKept, setCentresKept] = useState<{ img: ImageData; lab: Lab[] } | null>(null);
-  const levels = graphic || inlayMode ? toneLevels : 0;
+
+  /**
+   * With filaments named, an inlay's tones are those filaments, darkest first:
+   * the picture is divided by which of them each pixel is nearest, so nothing is
+   * ever asked for a colour that is not to hand.
+   */
+  const filamentTones = useMemo(() => {
+    if (!inlayMode || filaments.length < 2) return null;
+    const lab = filaments.map((c) => ({ c, lab: hexToLab(c) }));
+    lab.sort((a, b) => a.lab[0] - b.lab[0]);
+    const kept = lab.slice(0, 16);
+    return { hex: kept.map((k) => k.c), lab: kept.map((k) => k.lab) };
+  }, [inlayMode, filaments]);
+
+  const levels = graphic || inlayMode ? (filamentTones ? filamentTones.hex.length : toneLevels) : 0;
 
   const holderParams = useMemo(() => {
     return {
@@ -1884,6 +1915,53 @@ export default function App() {
   }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderAngle]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
+  const holderUsable = shapeId === "rectangle" && !curved;
+
+  /** Puts something on the frame, selected, ready to be dragged. */
+  function addDecoration(d: Decoration) {
+    if (decorations.length === 0) setHolderPose("standing");
+    setDecorations([...decorations, d]);
+    setDecorSelected(decorations.length);
+  }
+  function addIcon(icon: string) {
+    // The top border is the widest strip clear of the window, so new ones start
+    // there and are dragged to where they belong.
+    addDecoration({
+      icon,
+      x: holderGeom.W / 2,
+      y: (holderGeom.window.y1 + holderGeom.H) / 2,
+      size: Math.max(8, Math.min(20, (holderGeom.H - holderGeom.window.y1) * 1.6)),
+      rotation: 0,
+    });
+  }
+  function addText() {
+    addDecoration({
+      icon: "",
+      text: "Text",
+      font: "sans",
+      bold: true,
+      color: "#1f2937",
+      x: holderGeom.W / 2,
+      y: (holderGeom.window.y1 + holderGeom.H) / 2,
+      size: Math.max(5, Math.min(9, (holderGeom.H - holderGeom.window.y1) * 0.7)),
+      rotation: 0,
+    });
+  }
+  function patchSelectedDecor(change: Partial<Decoration>) {
+    if (decorSelected === null) return;
+    setDecorations(decorations.map((d, i) => (i === decorSelected ? { ...d, ...change } : d)));
+  }
+  function duplicateSelectedDecor() {
+    const d = decorSelected !== null ? decorations[decorSelected] : undefined;
+    if (!d) return;
+    setDecorations([...decorations, { ...d, x: d.x + 5, y: d.y - 5 }]);
+    setDecorSelected(decorations.length);
+  }
+  function removeSelectedDecor() {
+    if (decorSelected === null) return;
+    setDecorations(decorations.filter((_, i) => i !== decorSelected));
+    setDecorSelected(null);
+  }
 
   const decorGeom = useMemo<DecorGeom>(
     () => ({
@@ -1979,6 +2057,7 @@ export default function App() {
    */
   const toneCentres = useMemo(() => {
     if (!inlayMode || !imgData) return undefined;
+    if (filamentTones) return filamentTones.lab;
     // A tone taken away by hand leaves the centres the picture is divided by
     // as they were, minus that one; it holds only while the picture and the
     // count are the ones it was made for.
@@ -1986,7 +2065,7 @@ export default function App() {
       return centresKept.lab;
     }
     return clusterColors(imgData, toneLevels, colorGap).lab;
-  }, [inlayMode, imgData, toneLevels, colorGap, centresKept]);
+  }, [inlayMode, imgData, toneLevels, colorGap, centresKept, filamentTones]);
 
   /**
    * Where a given number of tones would sit, in layers, thickest first.
@@ -2095,10 +2174,16 @@ export default function App() {
   const [previewKey, setPreviewKey] = useState<string | null>(null);
   const imgSigRef = useRef("");
 
+  /** The colours the bodies are given: the filaments, if tones follow them. */
+  const inlayColors = useMemo(
+    () => (filamentTones ? [colors[0] ?? "#cccccc", ...filamentTones.hex] : colors),
+    [filamentTones, colors],
+  );
+
   /** Everything the generated mesh depends on. */
   const settingsKey = JSON.stringify([
     imgVersion, shapeId, widthMm, cropRatio, minT, maxT, frameMm, curved, curveDeg,
-    quality, smoothing, levels, tonePlateaus, toneCuts, layerHeight, splitLayers, colors,
+    quality, smoothing, levels, tonePlateaus, toneCuts, layerHeight, splitLayers, inlayColors,
     inlayMode, baseLayers, pictureLayers, vector,
     orientation,
   ]);
@@ -2376,7 +2461,10 @@ export default function App() {
       // a coaster wants underneath.
       setColors([found.colors[found.dominant], ...found.colors]);
     } else {
-      applyToneBands(found.levels, found.colors);
+      applyToneBands(
+        found.levels,
+        filaments.length > 0 ? found.colors.map((c) => snapToPalette(c, filaments)) : found.colors,
+      );
     }
 
     setToneOverride(null);
@@ -2594,6 +2682,22 @@ export default function App() {
   useEffect(() => {
     if (!signedInAs) return;
     let live = true;
+    loadFilaments()
+      .then((list) => {
+        if (!live) return;
+        const clean = list.filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12);
+        if (clean.length > 0) {
+          setFilamentsState(clean);
+          writeFilaments(clean);
+        } else if (readFilaments().length > 0) {
+          storeFilaments(readFilaments()).catch(() => {
+            // Not stored yet; the next change tries again.
+          });
+        }
+      })
+      .catch(() => {
+        // The account cannot be reached: the colours kept here stand.
+      });
     listDesigns()
       .then((list) => {
         if (!live) return;
@@ -2754,7 +2858,7 @@ export default function App() {
           inlayTopLayers: inlayMode ? pictureLayers : 0,
           toneCentres: inlayMode ? toneCentres : undefined,
           vector,
-          colors,
+          colors: inlayColors,
           layerHeight,
           emboss: "back",
         });
@@ -2767,7 +2871,7 @@ export default function App() {
           positions: new Float32Array(result.preview),
           triangleCount: result.previewTriangles,
           bandStarts: result.previewBands,
-          colors: [...colors],
+          colors: [...inlayColors],
           // Built on +z, and standing it up turns that into -y.
           faceAxis: orientation === "flat" ? [0, 0, 1] : [0, -1, 0],
         });
@@ -3340,7 +3444,33 @@ export default function App() {
             {graphic ? "Tones & Color" : "Color"}
           </div>
 
-          {levels > 0 && (
+          {(graphic || inlayMode) && (
+            <>
+              <div className="label-row">
+                <label className="miniLabel">My filaments</label>
+                <InfoIcon text="The colours of filament you have. In an Inlay the tones are these colours, darkest first: the picture is divided by which of them each part is nearest. In Layered, the colours found in the picture are moved to the nearest of them. Leave it empty to use the picture's own colours. Kept in your account when you are signed in, and in this browser." />
+              </div>
+              <FilamentEditor value={filaments} onChange={setFilaments} addAs={colors[1] ?? "#cccccc"} />
+              {graphic && filaments.length > 0 && (
+                <button
+                  className="btn"
+                  style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                  onClick={() => setColors(colors.map((c) => snapToPalette(c, filaments)))}
+                  title="Move every band colour to the nearest of your filaments"
+                >
+                  Snap colours to my filaments
+                </button>
+              )}
+              {inlayMode && filamentTones && (
+                <div className="bandHint" style={{ marginTop: 8 }}>
+                  Tones follow your filaments, so the tone count and colours are theirs.
+                </div>
+              )}
+              <div style={{ height: 12 }} />
+            </>
+          )}
+
+          {levels > 0 && !filamentTones && (
             <>
               <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Tone levels</label>
@@ -3412,7 +3542,7 @@ export default function App() {
             </>
           )}
 
-          {inlayMode && levels > 0 && (
+          {inlayMode && levels > 0 && !filamentTones && (
             <>
               <div className="label-row">
                 <label className="miniLabel">Colour gap: {colorGap}</label>
@@ -3453,11 +3583,12 @@ export default function App() {
                   <label className="inlayColor" key={`ic${b}`} style={{ position: "relative" }}>
                     <input
                       type="color"
-                      value={colors[b] ?? "#cccccc"}
+                      value={inlayColors[b] ?? "#cccccc"}
+                      disabled={filamentTones !== null && b > 0}
                       onChange={(e) => setBandColor(b, e.target.value)}
                     />
                     <span>{b === 0 ? "Base" : `Tone ${b}`}</span>
-                    {b > 0 && levels > 2 && (
+                    {b > 0 && levels > 2 && !filamentTones && (
                       <button
                         type="button"
                         title="Remove this colour: its part of the picture goes to the nearest other colour"
@@ -4027,337 +4158,369 @@ export default function App() {
 
             {view === "holder" && (
               <div style={{ position: "absolute", inset: 0, display: "flex" }}>
-                <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
-                  <React.Suspense
-                    fallback={<div className="preview-empty">Loading viewer…</div>}
-                  >
-                    <MeshPreview
-                      mesh={holderMesh}
-                      overlay={holderPicture}
-                      flatShading={flatShading}
-                      lightBackground={lightBackground}
-                      showGrid={showGrid}
-                    />
-                  </React.Suspense>
-                </div>
-                <div style={{ width: 360, overflowY: "auto", padding: "0 14px" }}>
-        <div className="section">
-          <div className="label-row">
-            <div className="sectionTitle">Settings</div>
-            <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The holder is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the holder prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
-          </div>
-
-          {shapeId !== "rectangle" || curved ? (
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              The holder is made for flat, rectangular pictures. Pick the
-              rectangle shape and turn the curve off to use it.
-            </div>
-          ) : (
-            <>
-              <div className="label-row">
-                <label className="miniLabel">Panel angle: {holderAngle}°</label>
-                <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the holder's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them." />
-              </div>
-              <input
-                className="range"
-                type="range"
-                min={45}
-                max={90}
-                step={5}
-                value={holderAngle}
-                onChange={(e) => setHolderAngle(Number(e.target.value))}
-              />
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Frame width (mm)</label>
-                <InfoIcon text="How wide the frame is round the picture, as wide as you like from 5 to 30 mm. Slim shows more of the picture, Wide is sturdier and leaves more room for decorations. The lip over the picture's edge follows the width." />
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <NumField value={holderBorder} min={5} max={30} step={0.5} onChange={setHolderBorder} />
-                <select
-                  className="spinInput"
-                  value={
-                    Object.entries(HOLDER_PRESETS).find(([, v]) => v.border === holderBorder)?.[0] ?? "custom"
-                  }
-                  onChange={(e) => {
-                    const v = HOLDER_PRESETS[e.target.value as keyof typeof HOLDER_PRESETS];
-                    if (v) setHolderBorder(v.border);
-                  }}
-                >
-                  {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
-                    <option key={id} value={id}>
-                      {v.label}
-                    </option>
-                  ))}
-                  <option value="custom" disabled>
-                    Custom
-                  </option>
-                </select>
-              </div>
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Corner radius (mm)</label>
-                <InfoIcon text="Rounds the frame's outer corners, from 0 (square) to 30 mm. The picture's pocket keeps square corners, since the picture itself is a rectangle; the rounding stops short of the legs." />
-              </div>
-              <NumField value={holderCorner} min={0} max={30} step={1} onChange={setHolderCorner} />
-
-              <label className="shadeToggle" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                Frame colour
-                <input
-                  type="color"
-                  value={frameColour}
-                  onChange={(e) => setFrameColour(e.target.value)}
-                />
-              </label>
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Fit (mm)</label>
-                <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
-              </div>
-              <NumField value={holderFit} min={0} max={0.6} step={0.05} onChange={setHolderFit} />
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Tealight diameter (mm)</label>
-                <InfoIcon text="The width of the tealight. The cup in the stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm." />
-              </div>
-              <NumField value={tealightMm} min={30} max={80} step={1} onChange={setTealightMm} />
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                Cup inside: {tealightMm + 4} mm
-              </div>
-
-              <label className="shadeToggle" style={{ marginTop: 12, display: "flex" }}>
-                <input
-                  type="checkbox"
-                  checked={showPicture}
-                  onChange={(e) => setShowPicture(e.target.checked)}
-                />
-                Show the picture in the frame
-              </label>
-              {showPicture && !previewMesh && (
-                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                  Press <strong>Preview in 3D</strong> in the side panel to build the picture, and it appears here.
-                </div>
-              )}
-              {showPicture && previewMesh && previewStale && (
-                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-                  The picture shown is from before your last change. Press Preview in 3D to update it.
-                </div>
-              )}
-
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
-                Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
-              </div>
-
-              <div className="label-row" style={{ marginTop: 16 }}>
-                <label className="miniLabel">Decorations</label>
-                <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the holder's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the holder standing up." />
-              </div>
-              <HolderDesigner
-                width={holderGeom.W}
-                height={holderGeom.H}
-                corner={holderGeom.corner}
-                rail={holderGeom.rail}
-                window={holderGeom.window}
-                pocket={holderGeom.pocket}
-                decorations={decorations}
-                onChange={(next) => {
-                  if (next.length > 0 && decorations.length === 0) setHolderPose("standing");
-                  setDecorations(next);
-                }}
-                selected={decorSelected}
-                onSelect={setDecorSelected}
-              />
-
-              <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>
-                Icons: Fluent Emoji by Microsoft, MIT licence.
-              </div>
-
-              {decorations.length > 0 && (
-                <>
-                  <div className="label-row" style={{ marginTop: 12 }}>
-                    <label className="miniLabel">Height follows colour</label>
-                    <InfoIcon text="Flat raises every icon the same. The other two split each icon into three steps by the brightness of its own colours and raise them by different amounts: Light parts higher makes the pale colours stand out most, Dark parts higher the deep ones. The lowest step is still 40% of the height, so nothing is lost on the face." />
-                  </div>
-                  <select
-                    className="spinInput"
-                    value={reliefMode}
-                    onChange={(e) => setReliefMode(e.target.value as ReliefMode)}
-                  >
-                    <option value="flat">Flat — one height</option>
-                    <option value="lightHigher">Light parts higher</option>
-                    <option value="darkHigher">Dark parts higher</option>
-                  </select>
-
-                  <label className="shadeToggle" style={{ marginTop: 12, display: "flex" }}>
-                    <input
-                      type="checkbox"
-                      checked={iconColours > 0}
-                      onChange={(e) => setIconColours(e.target.checked ? 4 : 0)}
-                    />
-                    Print icons in their own colours
-                  </label>
-                  {iconColours > 0 && (
-                    <>
-                      <div className="label-row" style={{ marginTop: 8 }}>
-                        <label className="miniLabel">Reduce colours to at most</label>
-                        <InfoIcon text="Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them." />
-                      </div>
-                      <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
-
-                      <div className="label-row" style={{ marginTop: 10 }}>
-                        <label className="miniLabel">My filaments</label>
-                        <InfoIcon text="Add the colours of filament you have. Every colour of an icon is then printed in the nearest of these, whatever the icon was drawn in, so nothing needs a colour you do not own. Leave it empty to use the icons' own colours. Kept in this browser." />
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                        {filaments.map((c, i) => (
-                          <span key={i} style={{ position: "relative", display: "inline-flex" }}>
-                            <input
-                              type="color"
-                              value={c}
-                              onChange={(e) =>
-                                setFilaments(filaments.map((f, j) => (j === i ? e.target.value : f)))
-                              }
-                              style={{ width: 34, height: 28, padding: 0 }}
-                            />
-                            <button
-                              type="button"
-                              title="Remove this filament"
-                              onClick={() => setFilaments(filaments.filter((_, j) => j !== i))}
-                              style={{
-                                position: "absolute",
-                                top: -6,
-                                right: -6,
-                                width: 16,
-                                height: 16,
-                                lineHeight: "14px",
-                                padding: 0,
-                                borderRadius: 8,
-                                border: "1px solid rgba(255,255,255,0.35)",
-                                background: "rgba(15,23,42,0.92)",
-                                color: "#e2e8f0",
-                                fontSize: 10,
-                                cursor: "pointer",
-                              }}
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        ))}
-                        {filaments.length < 12 && (
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{ padding: "2px 10px" }}
-                            onClick={() => setFilaments([...filaments, frameColour])}
-                          >
-                            + Add
-                          </button>
-                        )}
-                      </div>
-                    </>
+                {/* Where it is seen: the front of the frame, large, to place things on,
+                    and the whole thing in 3D. Placing is the only time the first is wanted. */}
+                <div style={{ flex: 1, minWidth: 0, display: "flex" }}>
+                  {holderSub === "decorate" && holderUsable && (
+                    <div
+                      style={{
+                        flex: "1 1 58%",
+                        minWidth: 0,
+                        position: "relative",
+                        borderRight: "1px solid rgba(148,163,184,0.25)",
+                      }}
+                    >
+                      <HolderDesigner
+                        width={holderGeom.W}
+                        height={holderGeom.H}
+                        corner={holderGeom.corner}
+                        rail={holderGeom.rail}
+                        window={holderGeom.window}
+                        pocket={holderGeom.pocket}
+                        decorations={decorations}
+                        onChange={(next) => {
+                          if (next.length > 0 && decorations.length === 0) setHolderPose("standing");
+                          setDecorations(next);
+                        }}
+                        selected={decorSelected}
+                        onSelect={setDecorSelected}
+                      />
+                    </div>
                   )}
-
-                  <div className="label-row" style={{ marginTop: 12 }}>
-                    <label className="miniLabel">Relief height: {reliefMm.toFixed(1)} mm</label>
-                    <InfoIcon text="How far the icons stand out from the front face, at the most. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked. Parts that hang over the frame's edge are a little thicker so they are joined to it." />
+                  <div
+                    style={{
+                      flex: holderSub === "decorate" && holderUsable ? "1 1 42%" : "1 1 100%",
+                      minWidth: 0,
+                      position: "relative",
+                    }}
+                  >
+                    <React.Suspense
+                      fallback={<div className="preview-empty">Loading viewer…</div>}
+                    >
+                      <MeshPreview
+                        mesh={holderMesh}
+                        overlay={holderPicture}
+                        flatShading={flatShading}
+                        lightBackground={lightBackground}
+                        showGrid={showGrid}
+                      />
+                    </React.Suspense>
                   </div>
-                  <input
-                    className="range"
-                    type="range"
-                    min={0.4}
-                    max={3}
-                    step={0.2}
-                    value={reliefMm}
-                    onChange={(e) => setReliefMm(Number(e.target.value))}
-                  />
-                </>
-              )}
-
-              <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Print the holder</label>
-                <InfoIcon text="Front face down lies the holder flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees." />
-              </div>
-              <select
-                className="spinInput"
-                value={holderPose}
-                onChange={(e) => setHolderPose(e.target.value as "face" | "standing")}
-              >
-                <option value="face">Front face down</option>
-                <option value="standing">Standing up</option>
-              </select>
-              {holderPose === "face" && decorations.length > 0 && (
-                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
-                  The decorations would be underneath. Print standing up.
                 </div>
-              )}
 
-              <div className="label-row" style={{ marginTop: 16 }}>
-                <label className="miniLabel">Saved designs</label>
-                <InfoIcon text="A design holds the holder's settings and what is on the frame, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first." />
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  className="spinInput"
-                  type="text"
-                  placeholder="Name"
-                  value={designName}
-                  onChange={(e) => setDesignName(e.target.value)}
-                />
-                <button className="btn" onClick={saveDesign}>
-                  Save
-                </button>
-              </div>
-              {shownDesigns.map((d) => (
-                <div
-                  key={d.name}
-                  style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13 }}
-                >
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {d.cloud && <span title="Kept in your account"> ☁ </span>}
-                    {d.name}
-                    <span style={{ opacity: 0.6 }}>
-                      {" "}· {d.picture.w}×{d.picture.h}
-                    </span>
-                  </span>
-                  <button className="btn" onClick={() => loadDesign(d)}>
-                    Load
-                  </button>
-                  <button className="btn" onClick={() => deleteDesign(d.name)} title="Delete">
-                    ✕
-                  </button>
-                </div>
-              ))}
-              {designNote && (
-                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>{designNote}</div>
-              )}
+                <div style={{ width: 390, display: "flex", flexDirection: "column", minHeight: 0 }}>
+                  <div className="viewTabs" style={{ padding: "0 14px 8px", flexWrap: "wrap" }}>
+                    {(
+                      [
+                        ["frame", "Frame"],
+                        ["decorate", "Decorate"],
+                        ["colours", "Colours"],
+                        ["print", "Print"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        className={`viewTab ${holderSub === id ? "active" : ""}`}
+                        onClick={() => setHolderSub(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
 
-              <button
-                className="btn"
-                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-                onClick={() => downloadHolderPart("holder")}
-              >
-                {(iconColours > 0 && decorations.some((d) => !d.cut)
-                  ? "Download holder (3MF, colours)"
-                  : "Download holder (STL)") +
-                  (unlimited(account) ? " · included" : " · 1 token")}
-              </button>
-              <button
-                className="btn"
-                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-                onClick={() => downloadHolderPart("stand")}
-              >
-                Download stand (STL) · free
-              </button>
-              <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
-                Downloading the same holder design again is free.
-              </div>
-              {holderNote && (
-                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>
-              )}
-            </>
-          )}
-        </div>
+                  <div style={{ overflowY: "auto", padding: "0 14px 16px", flex: 1, minHeight: 0 }}>
+                    {!holderUsable ? (
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>
+                        The holder is made for flat, rectangular pictures. Pick the
+                        rectangle shape and turn the curve off to use it.
+                      </div>
+                    ) : (
+                      <>
+                        {holderSub === "frame" && (
+                          <>
+                            <div className="label-row">
+                              <div className="sectionTitle">Frame &amp; stand</div>
+                              <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The holder is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the holder prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
+                            </div>
+                            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
+                              Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
+                            </div>
 
+                            <div className="label-row">
+                              <label className="miniLabel">Panel angle: {holderAngle}°</label>
+                              <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the holder's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them." />
+                            </div>
+                            <input
+                              className="range"
+                              type="range"
+                              min={45}
+                              max={90}
+                              step={5}
+                              value={holderAngle}
+                              onChange={(e) => setHolderAngle(Number(e.target.value))}
+                            />
+
+                            <div className="label-row" style={{ marginTop: 12 }}>
+                              <label className="miniLabel">Frame width (mm)</label>
+                              <InfoIcon text="How wide the frame is round the picture, as wide as you like from 5 to 30 mm. Slim shows more of the picture, Wide is sturdier and leaves more room for decorations. The lip over the picture's edge follows the width." />
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <NumField value={holderBorder} min={5} max={30} step={0.5} onChange={setHolderBorder} />
+                              <select
+                                className="spinInput"
+                                value={
+                                  Object.entries(HOLDER_PRESETS).find(([, v]) => v.border === holderBorder)?.[0] ?? "custom"
+                                }
+                                onChange={(e) => {
+                                  const v = HOLDER_PRESETS[e.target.value as keyof typeof HOLDER_PRESETS];
+                                  if (v) setHolderBorder(v.border);
+                                }}
+                              >
+                                {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
+                                  <option key={id} value={id}>
+                                    {v.label}
+                                  </option>
+                                ))}
+                                <option value="custom" disabled>
+                                  Custom
+                                </option>
+                              </select>
+                            </div>
+
+                            <div className="label-row" style={{ marginTop: 12 }}>
+                              <label className="miniLabel">Corner radius (mm)</label>
+                              <InfoIcon text="Rounds the frame's outer corners, from 0 (square) to 30 mm. The picture's pocket keeps square corners, since the picture itself is a rectangle; the rounding stops short of the legs." />
+                            </div>
+                            <NumField value={holderCorner} min={0} max={30} step={1} onChange={setHolderCorner} />
+
+                            <div className="label-row" style={{ marginTop: 12 }}>
+                              <label className="miniLabel">Fit (mm)</label>
+                              <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
+                            </div>
+                            <NumField value={holderFit} min={0} max={0.6} step={0.05} onChange={setHolderFit} />
+
+                            <div className="label-row" style={{ marginTop: 12 }}>
+                              <label className="miniLabel">Tealight diameter (mm)</label>
+                              <InfoIcon text="The width of the tealight. The cup in the stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm." />
+                            </div>
+                            <NumField value={tealightMm} min={30} max={80} step={1} onChange={setTealightMm} />
+                            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                              Cup inside: {tealightMm + 4} mm
+                            </div>
+
+                            <label className="shadeToggle" style={{ marginTop: 14, display: "flex" }}>
+                              <input
+                                type="checkbox"
+                                checked={showPicture}
+                                onChange={(e) => setShowPicture(e.target.checked)}
+                              />
+                              Show the picture in the frame
+                            </label>
+                            {showPicture && !previewMesh && (
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                                Press <strong>Preview in 3D</strong> in the side panel to build the picture, and it appears here.
+                              </div>
+                            )}
+                            {showPicture && previewMesh && previewStale && (
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                                The picture shown is from before your last change. Press Preview in 3D to update it.
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {holderSub === "decorate" && (
+                          <>
+                            <div className="label-row">
+                              <div className="sectionTitle">Decorate</div>
+                              <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the holder's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the holder standing up." />
+                            </div>
+
+                            {decorSelected !== null && decorations[decorSelected] ? (
+                              <DecorProps
+                                decoration={decorations[decorSelected]}
+                                onPatch={patchSelectedDecor}
+                                onDuplicate={duplicateSelectedDecor}
+                                onRemove={removeSelectedDecor}
+                              />
+                            ) : (
+                              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Pick something below to put it on the frame, then drag it into place on
+                                the left. Its handles set size and turn, and the cross takes it away.
+                              </div>
+                            )}
+
+                            <div style={{ height: 12 }} />
+                            <IconPalette onAdd={addIcon} onAddText={addText} />
+
+                            {decorations.length > 0 && (
+                              <>
+                                <div className="label-row" style={{ marginTop: 14 }}>
+                                  <label className="miniLabel">Height follows colour</label>
+                                  <InfoIcon text="Flat raises every icon the same. The other two split each icon into three steps by the brightness of its own colours and raise them by different amounts: Light parts higher makes the pale colours stand out most, Dark parts higher the deep ones. The lowest step is still 40% of the height, so nothing is lost on the face." />
+                                </div>
+                                <select
+                                  className="spinInput"
+                                  value={reliefMode}
+                                  onChange={(e) => setReliefMode(e.target.value as ReliefMode)}
+                                >
+                                  <option value="flat">Flat — one height</option>
+                                  <option value="lightHigher">Light parts higher</option>
+                                  <option value="darkHigher">Dark parts higher</option>
+                                </select>
+
+                                <div className="label-row" style={{ marginTop: 12 }}>
+                                  <label className="miniLabel">Relief height: {reliefMm.toFixed(1)} mm</label>
+                                  <InfoIcon text="How far the icons stand out from the front face, at the most. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked. Parts that hang over the frame's edge are a little thicker so they are joined to it." />
+                                </div>
+                                <input
+                                  className="range"
+                                  type="range"
+                                  min={0.4}
+                                  max={3}
+                                  step={0.2}
+                                  value={reliefMm}
+                                  onChange={(e) => setReliefMm(Number(e.target.value))}
+                                />
+                              </>
+                            )}
+                          </>
+                        )}
+
+                        {holderSub === "colours" && (
+                          <>
+                            <div className="sectionTitle" style={{ marginBottom: 10 }}>Colours</div>
+
+                            <label className="shadeToggle" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              Frame colour
+                              <input
+                                type="color"
+                                value={frameColour}
+                                onChange={(e) => setFrameColour(e.target.value)}
+                              />
+                            </label>
+
+                            <label className="shadeToggle" style={{ marginTop: 14, display: "flex" }}>
+                              <input
+                                type="checkbox"
+                                checked={iconColours > 0}
+                                onChange={(e) => setIconColours(e.target.checked ? 4 : 0)}
+                              />
+                              Print decorations in their own colours
+                            </label>
+                            {iconColours > 0 && (
+                              <>
+                                <div className="label-row" style={{ marginTop: 8 }}>
+                                  <label className="miniLabel">Reduce colours to at most</label>
+                                  <InfoIcon text="Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them." />
+                                </div>
+                                <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
+                              </>
+                            )}
+
+                            <div className="label-row" style={{ marginTop: 14 }}>
+                              <label className="miniLabel">My filaments</label>
+                              <InfoIcon text="Add the colours of filament you have. Every colour of an icon is then printed in the nearest of these, whatever the icon was drawn in, so nothing needs a colour you do not own. Leave it empty to use the icons' own colours. Kept in this browser." />
+                            </div>
+                            <FilamentEditor value={filaments} onChange={setFilaments} addAs={frameColour} />
+                            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 6 }}>
+                              {account
+                                ? "Kept in your account, and used for Inlay and Layered too."
+                                : "Kept in this browser; sign in to keep them in your account. Used for Inlay and Layered too."}
+                            </div>
+                          </>
+                        )}
+
+                        {holderSub === "print" && (
+                          <>
+                            <div className="sectionTitle" style={{ marginBottom: 10 }}>Print</div>
+
+                            <div className="label-row">
+                              <label className="miniLabel">Print the holder</label>
+                              <InfoIcon text="Front face down lies the holder flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees." />
+                            </div>
+                            <select
+                              className="spinInput"
+                              value={holderPose}
+                              onChange={(e) => setHolderPose(e.target.value as "face" | "standing")}
+                            >
+                              <option value="face">Front face down</option>
+                              <option value="standing">Standing up</option>
+                            </select>
+                            {holderPose === "face" && decorations.length > 0 && (
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+                                The decorations would be underneath. Print standing up.
+                              </div>
+                            )}
+
+                            <button
+                              className="btn"
+                              style={{ width: "100%", marginTop: 14, justifyContent: "center" }}
+                              onClick={() => downloadHolderPart("holder")}
+                            >
+                              {(iconColours > 0 && decorations.some((d) => !d.cut)
+                                ? "Download holder (3MF, colours)"
+                                : "Download holder (STL)") +
+                                (unlimited(account) ? " · included" : " · 1 token")}
+                            </button>
+                            <button
+                              className="btn"
+                              style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                              onClick={() => downloadHolderPart("stand")}
+                            >
+                              Download stand (STL) · free
+                            </button>
+                            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
+                              Downloading the same holder design again is free.
+                            </div>
+                            {holderNote && (
+                              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>
+                            )}
+
+                            <div className="label-row" style={{ marginTop: 18 }}>
+                              <label className="miniLabel">Saved designs</label>
+                              <InfoIcon text="A design holds the holder's settings and what is on the frame, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first." />
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <input
+                                className="spinInput"
+                                type="text"
+                                placeholder="Name"
+                                value={designName}
+                                onChange={(e) => setDesignName(e.target.value)}
+                              />
+                              <button className="btn" onClick={saveDesign}>
+                                Save
+                              </button>
+                            </div>
+                            {shownDesigns.map((d) => (
+                              <div
+                                key={d.name}
+                                style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13 }}
+                              >
+                                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {d.cloud && <span title="Kept in your account"> ☁ </span>}
+                                  {d.name}
+                                  <span style={{ opacity: 0.6 }}>
+                                    {" "}· {d.picture.w}×{d.picture.h}
+                                  </span>
+                                </span>
+                                <button className="btn" onClick={() => loadDesign(d)}>
+                                  Load
+                                </button>
+                                <button className="btn" onClick={() => deleteDesign(d.name)} title="Delete">
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                            {designNote && (
+                              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>{designNote}</div>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

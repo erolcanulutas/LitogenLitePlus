@@ -7,6 +7,8 @@ import {
   type DecorGeom,
   type DecorMask,
   type Decoration,
+  FONTS,
+  isText,
   type Relief,
   type ReliefMode,
 } from "../core/decor";
@@ -51,20 +53,59 @@ export function loadIcon(id: string): Promise<HTMLImageElement> {
   return p;
 }
 
-/** Where an icon is drawn, in a canvas whose unit is `scale` pixels to the mm. */
+let measurer: CanvasRenderingContext2D | null = null;
+
+/** The CSS font for a piece of text, at `px` pixels. */
+export function fontOf(d: Decoration, px: number): string {
+  const css = FONTS.find((f) => f.id === d.font)?.css ?? FONTS[0].css;
+  return `${d.bold ? "bold " : ""}${px}px ${css}`;
+}
+
+/**
+ * How big a decoration is, in mm: an icon is a square, text is as wide as its
+ * words. Measured at a large size and scaled, so it does not depend on how
+ * small the letters happen to be drawn.
+ */
+export function decorationBox(d: Decoration): { w: number; h: number } {
+  if (!isText(d)) return { w: d.size, h: d.size };
+  if (!measurer) measurer = document.createElement("canvas").getContext("2d");
+  let width = (d.text?.length ?? 0) * 0.6 * 100;
+  if (measurer) {
+    measurer.font = fontOf(d, 100);
+    width = measurer.measureText(d.text || " ").width;
+  }
+  return { w: Math.max(d.size * 0.5, (width / 100) * d.size), h: d.size * 1.25 };
+}
+
+/** Where a decoration is drawn, in a canvas whose unit is `scale` pixels to the mm. */
 export function drawDecoration(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
+  img: HTMLImageElement | null,
   d: Decoration,
   heightMm: number,
   scale: number,
 ) {
-  const px = d.size * scale;
   ctx.save();
   ctx.translate(d.x * scale, (heightMm - d.y) * scale);
   ctx.rotate((d.rotation * Math.PI) / 180);
-  ctx.drawImage(img, -px / 2, -px / 2, px, px);
+  if (isText(d)) {
+    ctx.font = fontOf(d, d.size * scale);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = d.color ?? "#1f2937";
+    ctx.fillText(d.text || "", 0, 0);
+  } else if (img) {
+    const px = d.size * scale;
+    ctx.drawImage(img, -px / 2, -px / 2, px, px);
+  }
   ctx.restore();
+}
+
+/** Icons whose name or category matches what was typed, for the search box. */
+export function searchIcons(query: string): Icon[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return ICONS.filter((i) => i.label.includes(q) || i.id.includes(q));
 }
 
 type Rect = { x0: number; x1: number; y0: number; y1: number };
@@ -116,7 +157,7 @@ export async function renderMask(
     canvas.height = h;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("No canvas");
-    const images = await Promise.all(which.map((d) => loadIcon(d.icon)));
+    const images = await Promise.all(which.map((d) => (isText(d) ? null : loadIcon(d.icon))));
     ctx.save();
     ctx.translate(M * px, M * px);
     which.forEach((d, i) => drawDecoration(ctx, images[i], d, H, px));

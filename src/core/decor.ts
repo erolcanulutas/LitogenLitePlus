@@ -23,13 +23,20 @@ import { vectorise } from "./vectorise";
  * of an O — is joined back to the rest by a narrow bridge.
  */
 export type Decoration = {
-  /** Which icon, by the name of its file. */
+  /** Which icon, by the name of its file. Empty for text. */
   icon: string;
+  /** The words, when this is text rather than an icon. */
+  text?: string;
+  /** Which typeface, by id from FONTS. */
+  font?: string;
+  bold?: boolean;
+  /** The colour text is printed in, as #rrggbb. */
+  color?: string;
   /** Centre of the icon, mm from the holder's left edge. */
   x: number;
   /** Centre of the icon, mm up from the holder's bottom edge. */
   y: number;
-  /** Longest side of the icon, in mm. */
+  /** Longest side of the icon, in mm; for text, the height of the letters' em. */
   size: number;
   /** Turn, in degrees clockwise as seen from the front. */
   rotation: number;
@@ -55,6 +62,18 @@ export type DecorGeom = {
   frontZ: number;
   lip: number;
 };
+
+/** Typefaces for text: what every device has, so a design looks the same wherever it is opened. */
+export const FONTS: { id: string; label: string; css: string }[] = [
+  { id: "sans", label: "Sans", css: '"Segoe UI", Arial, Helvetica, sans-serif' },
+  { id: "serif", label: "Serif", css: 'Georgia, "Times New Roman", serif' },
+  { id: "mono", label: "Mono", css: '"Courier New", Courier, monospace' },
+  { id: "display", label: "Display", css: 'Impact, "Arial Black", "Helvetica Neue", sans-serif' },
+  { id: "script", label: "Script", css: '"Brush Script MT", "Segoe Script", "Comic Sans MS", cursive' },
+];
+
+/** Whether a decoration is words rather than an icon. */
+export const isText = (d: Decoration) => typeof d.text === "string";
 
 /** How heights follow the icon's own colours. */
 export type ReliefMode = "flat" | "lightHigher" | "darkHigher";

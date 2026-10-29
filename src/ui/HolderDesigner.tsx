@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { OVERHANG_MM, type Decoration } from "../core/decor";
-import { CATEGORIES, HAS_MORE, iconsIn, loadIcon } from "./decorIcons";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { OVERHANG_MM, isText, type Decoration } from "../core/decor";
+import { decorationBox, drawDecoration, loadIcon } from "./decorIcons";
 
 type Rect = { x0: number; x1: number; y0: number; y1: number };
 
@@ -20,35 +20,37 @@ type Props = {
   onSelect: (index: number | null) => void;
 };
 
-/** Width of the canvas on screen, in CSS pixels. */
-const VIEW_PX = 330;
-
 /** The frame is drawn with this much around it when the view is reset. */
 const REST_MARGIN_MM = 14;
 
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 14;
+const ZOOM_MIN = 0.4;
+const ZOOM_MAX = 16;
 
-/** How far the turn handle floats above the selected icon's box, in px. */
-const TURN_HANDLE_PX = 22;
+/** How far the turn handle floats above the selected decoration's box, in px. */
+const TURN_HANDLE_PX = 24;
+
+/** Radius of a handle's grab area, in px. */
+const GRAB_PX = 11;
 
 type View = { zoom: number; cx: number; cy: number };
 
 type Drag =
   | { kind: "move"; index: number; dx: number; dy: number }
-  | { kind: "size"; index: number }
+  | { kind: "size"; index: number; startSize: number; startDist: number }
   | { kind: "turn"; index: number }
   | { kind: "pan"; x: number; y: number; cx: number; cy: number };
 
 /**
- * The holder seen from the front, with the decorations on it.
+ * The holder seen from the front, large, with the decorations on it.
  *
- * Pick an icon from the palette to put it on the frame and drag it into place.
- * The selected icon has a handle at its corner for size, one above it for turn
- * and a cross to take it away, so all three are done on the icon itself; the wheel zooms the view, and
- * dragging the empty background moves it. What is drawn here is what gets
- * raised: the window is an opening because anything over it is taken away, and
- * an icon may be taken past the frame's edge, where it hangs over.
+ * The selected decoration has a handle at its corner for size, one above it for
+ * turn, and a cross to take it away, so all three are done on the thing itself;
+ * the wheel zooms about the pointer and dragging the background moves the view.
+ * What is drawn here is what gets built: the window is an opening, a
+ * decoration may reach past the frame's edge or over the window, and the red
+ * strip at the bottom is the table, where nothing is raised.
+ *
+ * It fills whatever it is put in.
  */
 export default function HolderDesigner({
   width,
@@ -63,17 +65,19 @@ export default function HolderDesigner({
   onSelect,
 }: Props) {
   const M = OVERHANG_MM;
+  const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<Drag | null>(null);
-  const [category, setCategory] = useState(CATEGORIES[0].id);
+  const [size, setSize] = useState({ w: 480, h: 420 });
 
-  // What is on screen while a drag or a slider is going on. Only this component
-  // is redrawn as it changes; the rest of the page hears of it when it settles,
-  // because redrawing the whole page for every pixel of a drag is what made
-  // this feel stuck.
+  // What is on screen while a drag is going on. Only this component is redrawn
+  // as it changes; the rest of the page hears of it when it settles, because
+  // redrawing the whole page for every pixel of a drag is what made this feel
+  // stuck.
   const [draft, setDraft] = useState<Decoration[] | null>(null);
   const decorations = draft ?? committed;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   const flush = (next: Decoration[]) => {
     clearTimeout(timer.current);
     onChange(next);
@@ -85,24 +89,50 @@ export default function HolderDesigner({
     timer.current = setTimeout(() => flush(next), 300);
   };
 
-  useEffect(() => () => clearTimeout(timer.current), []);
+  // Follow the size of the box it is in.
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const read = () => {
+      const w = Math.max(200, Math.floor(host.clientWidth));
+      const h = Math.max(160, Math.floor(host.clientHeight));
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
 
-  const base = VIEW_PX / (width + 2 * M);
-  const viewH = Math.round((height + 2 * M) * base);
+  const viewW = size.w;
+  const viewH = size.h;
+  const base = Math.min(viewW / (width + 2 * M), viewH / (height + 2 * M));
 
   const rest = (): View => ({
-    zoom: (width + 2 * M) / (width + 2 * REST_MARGIN_MM),
+    zoom: Math.min(viewW / (width + 2 * REST_MARGIN_MM), viewH / (height + 2 * REST_MARGIN_MM)) / base,
     cx: width / 2,
     cy: height / 2,
   });
-  const [view, setView] = useState<View>(rest);
+  const [view, setView] = useState<View>({ zoom: 1, cx: width / 2, cy: height / 2 });
+  const framed = useRef(false);
+  useEffect(() => {
+    // The first time the real size is known, show the frame properly.
+    if (!framed.current && size.w > 0) {
+      framed.current = true;
+      setView({
+        zoom: Math.min(viewW / (width + 2 * REST_MARGIN_MM), viewH / (height + 2 * REST_MARGIN_MM)) / base,
+        cx: width / 2,
+        cy: height / 2,
+      });
+    }
+  }, [size, viewW, viewH, width, height, base]);
   const viewRef = useRef(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
 
   const s = base * view.zoom;
-  const toX = (x: number, v: View = view) => VIEW_PX / 2 + (x - v.cx) * base * v.zoom;
+  const toX = (x: number, v: View = view) => viewW / 2 + (x - v.cx) * base * v.zoom;
   const toY = (y: number, v: View = view) => viewH / 2 - (y - v.cy) * base * v.zoom;
 
   // Redrawn whenever anything it shows changes. Icons are loaded once and
@@ -114,18 +144,20 @@ export default function HolderDesigner({
 
     (async () => {
       const dpr = Math.min(devicePixelRatio || 1, 2);
-      canvas.width = Math.round(VIEW_PX * dpr);
+      canvas.width = Math.round(viewW * dpr);
       canvas.height = Math.round(viewH * dpr);
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      const images = await Promise.all(decorations.map((d) => loadIcon(d.icon).catch(() => null)));
+      const images = await Promise.all(
+        decorations.map((d) => (isText(d) ? null : loadIcon(d.icon).catch(() => null))),
+      );
       if (!live) return;
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, VIEW_PX, viewH);
+      ctx.clearRect(0, 0, viewW, viewH);
       ctx.fillStyle = "#0f172a";
-      ctx.fillRect(0, 0, VIEW_PX, viewH);
+      ctx.fillRect(0, 0, viewW, viewH);
 
       const rect = (r: Rect) =>
         [toX(r.x0), toY(r.y1), (r.x1 - r.x0) * s, (r.y1 - r.y0) * s] as const;
@@ -146,66 +178,66 @@ export default function HolderDesigner({
 
       // Below the frame's underside is the table: nothing is raised there.
       ctx.fillStyle = "rgba(220,38,38,0.18)";
-      ctx.fillRect(0, toY(0), VIEW_PX, Math.max(0, viewH - toY(0)));
+      ctx.fillRect(0, toY(0), viewW, Math.max(0, viewH - toY(0)));
       ctx.strokeStyle = "rgba(248,113,113,0.7)";
       ctx.beginPath();
       ctx.moveTo(0, toY(0));
-      ctx.lineTo(VIEW_PX, toY(0));
+      ctx.lineTo(viewW, toY(0));
       ctx.stroke();
 
-      // Where nothing is cut, below the rail the legs stand on.
+      // Where nothing is cut: the rail the legs stand on.
       ctx.fillStyle = "rgba(0,0,0,0.12)";
       ctx.fillRect(toX(0), toY(rail), width * s, rail * s);
 
       decorations.forEach((d, i) => {
-        const img = images[i];
-        if (!img) return;
-        const px = d.size * s;
         ctx.save();
+        ctx.translate(toX(d.x), toY(d.y));
+        ctx.rotate((d.rotation * Math.PI) / 180);
         // A cut is drawn as the hole it will be: dark, the frame showing round it.
         if (d.cut) {
           ctx.globalAlpha = 0.55;
           ctx.filter = "brightness(0.15)";
         }
-        ctx.translate(toX(d.x), toY(d.y));
-        ctx.rotate((d.rotation * Math.PI) / 180);
-        ctx.drawImage(img, -px / 2, -px / 2, px, px);
+        // Drawn about its own middle, which the translation above has made the origin.
+        drawDecoration(ctx, images[i], { ...d, x: 0, y: 0, rotation: 0 }, 0, s);
         ctx.restore();
       });
 
       if (selected !== null && decorations[selected]) {
         const d = decorations[selected];
-        const half = (d.size * s) / 2;
+        const box = decorationBox(d);
+        const hw = (box.w * s) / 2;
+        const hh = (box.h * s) / 2;
         ctx.save();
         ctx.translate(toX(d.x), toY(d.y));
         ctx.rotate((d.rotation * Math.PI) / 180);
         ctx.strokeStyle = "#22d3ee";
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(-half, -half, half * 2, half * 2);
+        ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
 
         ctx.beginPath();
-        ctx.moveTo(0, -half);
-        ctx.lineTo(0, -half - TURN_HANDLE_PX);
+        ctx.moveTo(0, -hh);
+        ctx.lineTo(0, -hh - TURN_HANDLE_PX);
         ctx.stroke();
 
         ctx.fillStyle = "#22d3ee";
         ctx.beginPath();
-        ctx.arc(0, -half - TURN_HANDLE_PX, 5, 0, Math.PI * 2);
+        ctx.arc(0, -hh - TURN_HANDLE_PX, 6, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillRect(half - 5, half - 5, 10, 10);
+        ctx.fillRect(hw - 6, hh - 6, 12, 12);
 
-        // The cross in the top corner takes the icon away.
+        // The cross in the top corner takes it away.
         ctx.fillStyle = "#ef4444";
         ctx.beginPath();
-        ctx.arc(half, -half, 8, 0, Math.PI * 2);
+        ctx.arc(hw, -hh, 9, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1.8;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(half - 3.5, -half - 3.5);
-        ctx.lineTo(half + 3.5, -half + 3.5);
-        ctx.moveTo(half + 3.5, -half - 3.5);
-        ctx.lineTo(half - 3.5, -half + 3.5);
+        ctx.moveTo(hw - 4, -hh - 4);
+        ctx.lineTo(hw + 4, -hh + 4);
+        ctx.moveTo(hw + 4, -hh - 4);
+        ctx.lineTo(hw - 4, -hh + 4);
         ctx.stroke();
         ctx.restore();
       }
@@ -214,7 +246,7 @@ export default function HolderDesigner({
     return () => {
       live = false;
     };
-  }, [decorations, selected, width, height, win, pocket, view, viewH]);
+  }, [decorations, selected, width, height, corner, rail, win, pocket, view, viewW, viewH]);
 
   // The wheel has to be a native listener: React's is passive, and a passive
   // one cannot stop the page scrolling under the pointer.
@@ -225,38 +257,38 @@ export default function HolderDesigner({
       e.preventDefault();
       const v = viewRef.current;
       const box = canvas.getBoundingClientRect();
-      const px = ((e.clientX - box.left) / box.width) * VIEW_PX;
+      const px = ((e.clientX - box.left) / box.width) * viewW;
       const py = ((e.clientY - box.top) / box.height) * viewH;
 
       // The point under the pointer stays under it.
-      const wx = v.cx + (px - VIEW_PX / 2) / (base * v.zoom);
+      const wx = v.cx + (px - viewW / 2) / (base * v.zoom);
       const wy = v.cy - (py - viewH / 2) / (base * v.zoom);
       const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v.zoom * Math.exp(-e.deltaY * 0.0015)));
       setView({
         zoom,
-        cx: wx - (px - VIEW_PX / 2) / (base * zoom),
+        cx: wx - (px - viewW / 2) / (base * zoom),
         cy: wy + (py - viewH / 2) / (base * zoom),
       });
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [base, viewH]);
+  }, [base, viewW, viewH]);
 
   /** Pointer position in canvas pixels. */
   function px(e: React.PointerEvent): { x: number; y: number } {
     const box = canvasRef.current!.getBoundingClientRect();
     return {
-      x: ((e.clientX - box.left) / box.width) * VIEW_PX,
+      x: ((e.clientX - box.left) / box.width) * viewW,
       y: ((e.clientY - box.top) / box.height) * viewH,
     };
   }
 
   /** Pointer position on the holder, in mm. */
   function mm(p: { x: number; y: number }): { x: number; y: number } {
-    return { x: view.cx + (p.x - VIEW_PX / 2) / s, y: view.cy - (p.y - viewH / 2) / s };
+    return { x: view.cx + (p.x - viewW / 2) / s, y: view.cy - (p.y - viewH / 2) / s };
   }
 
-  /** Where a point of the selected icon's own box is on screen, in px. */
+  /** Where a point of the selected decoration's own box is on screen, in px. */
   function boxPoint(d: Decoration, lx: number, ly: number): { x: number; y: number } {
     const a = (d.rotation * Math.PI) / 180;
     return {
@@ -265,17 +297,18 @@ export default function HolderDesigner({
     };
   }
 
-  /** The topmost decoration whose turned square holds the point. */
+  /** The topmost decoration whose turned box holds the point. */
   function hit(p: { x: number; y: number }): number {
     const m = mm(p);
     for (let i = decorations.length - 1; i >= 0; i--) {
       const d = decorations[i];
+      const box = decorationBox(d);
       const a = (d.rotation * Math.PI) / 180;
       const dx = m.x - d.x;
       const dy = -(m.y - d.y);
       const u = dx * Math.cos(a) + dy * Math.sin(a);
       const v = -dx * Math.sin(a) + dy * Math.cos(a);
-      if (Math.abs(u) <= d.size / 2 && Math.abs(v) <= d.size / 2) return i;
+      if (Math.abs(u) <= box.w / 2 && Math.abs(v) <= box.h / 2) return i;
     }
     return -1;
   }
@@ -288,21 +321,28 @@ export default function HolderDesigner({
       // A pointer that has already gone: the drag simply is not captured.
     }
 
-    // The selected icon's handles come first: they stand outside its box.
+    // The selected decoration's handles come first: they stand outside its box.
     if (selected !== null && decorations[selected]) {
       const d = decorations[selected];
-      const half = (d.size * s) / 2;
-      const near = (a: { x: number; y: number }) => Math.hypot(a.x - p.x, a.y - p.y) <= 10;
-      if (Math.hypot(boxPoint(d, half, -half).x - p.x, boxPoint(d, half, -half).y - p.y) <= 10) {
+      const box = decorationBox(d);
+      const hw = (box.w * s) / 2;
+      const hh = (box.h * s) / 2;
+      const near = (a: { x: number; y: number }) => Math.hypot(a.x - p.x, a.y - p.y) <= GRAB_PX;
+      if (near(boxPoint(d, hw, -hh))) {
         flush(decorations.filter((_, i) => i !== selected));
         onSelect(null);
         return;
       }
-      if (near(boxPoint(d, half, half))) {
-        drag.current = { kind: "size", index: selected };
+      if (near(boxPoint(d, hw, hh))) {
+        drag.current = {
+          kind: "size",
+          index: selected,
+          startSize: d.size,
+          startDist: Math.hypot(p.x - toX(d.x), p.y - toY(d.y)),
+        };
         return;
       }
-      if (near(boxPoint(d, 0, -half - TURN_HANDLE_PX))) {
+      if (near(boxPoint(d, 0, -hh - TURN_HANDLE_PX))) {
         drag.current = { kind: "turn", index: selected };
         return;
       }
@@ -338,11 +378,13 @@ export default function HolderDesigner({
         y: Math.max(-M, Math.min(height + M, m.y + d.dy)),
       }));
     } else if (d.kind === "size") {
-      // The handle is a corner of the box, so its distance from the middle is
-      // half the diagonal.
-      patch((it) => ({
-        size: Math.max(3, Math.min(120, Math.round((Math.hypot(p.x - toX(it.x), p.y - toY(it.y)) / s) * Math.SQRT2))),
-      }));
+      // Scaled by how much further from the middle the handle is than it was
+      // when it was taken, which is the same for an icon and for text.
+      patch((it) => {
+        const dist = Math.hypot(p.x - toX(it.x), p.y - toY(it.y));
+        const next = d.startSize * (dist / Math.max(1, d.startDist));
+        return { size: Math.max(2, Math.min(isText(it) ? 80 : 140, Math.round(next * 2) / 2)) };
+      });
     } else {
       patch((it) => {
         const a = Math.atan2(p.y - toY(it.y), p.x - toX(it.x)) * (180 / Math.PI) + 90;
@@ -359,36 +401,14 @@ export default function HolderDesigner({
     if (draft) flush(draft);
   }
 
-  function add(icon: string) {
-    // The top border is the widest strip clear of the window, so new icons
-    // start there and are dragged to where they belong.
-    const next: Decoration = {
-      icon,
-      x: width / 2,
-      y: (win.y1 + height) / 2,
-      size: Math.max(8, Math.min(20, (height - win.y1) * 1.6)),
-      rotation: 0,
-    };
-    flush([...decorations, next]);
-    onSelect(decorations.length);
-  }
-
-  function patchSelected(change: Partial<Decoration>) {
-    if (selected === null) return;
-    preview(decorations.map((d, i) => (i === selected ? { ...d, ...change } : d)));
-  }
-
-  const current = selected !== null ? decorations[selected] : undefined;
-
   return (
-    <div>
+    <div ref={hostRef} style={{ position: "absolute", inset: 0 }}>
       <canvas
         ref={canvasRef}
         style={{
-          width: VIEW_PX,
+          width: viewW,
           height: viewH,
           display: "block",
-          borderRadius: 6,
           touchAction: "none",
           cursor: "grab",
         }}
@@ -397,128 +417,29 @@ export default function HolderDesigner({
         onPointerUp={up}
         onPointerCancel={up}
       />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, opacity: 0.65, marginTop: 4 }}>
+      <div
+        style={{
+          position: "absolute",
+          left: 10,
+          bottom: 8,
+          right: 10,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: 11,
+          color: "rgba(226,232,240,0.7)",
+          pointerEvents: "none",
+        }}
+      >
         <span>Wheel zooms · drag the background to move the view</span>
         <button
           className="btn"
-          style={{ padding: "1px 8px", fontSize: 11 }}
+          style={{ padding: "1px 10px", fontSize: 11, pointerEvents: "auto" }}
           onClick={() => setView(rest())}
         >
           Reset view
         </button>
       </div>
-
-      {current && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-            <button
-              className={`segment ${!current.cut ? "active" : ""}`}
-              style={{ flex: 1 }}
-              onClick={() => patchSelected({ cut: false })}
-              title="Stand out from the frame's front face"
-            >
-              Raised
-            </button>
-            <button
-              className={`segment ${current.cut ? "active" : ""}`}
-              style={{ flex: 1 }}
-              onClick={() => patchSelected({ cut: true })}
-              title="Cut clean through the frame, so light shows through"
-            >
-              Cut out
-            </button>
-          </div>
-          <div className="label-row">
-            <label className="miniLabel">Size: {current.size.toFixed(0)} mm</label>
-          </div>
-          <input
-            className="range"
-            type="range"
-            min={3}
-            max={120}
-            step={1}
-            value={current.size}
-            onChange={(e) => patchSelected({ size: Number(e.target.value) })}
-          />
-          <div className="label-row" style={{ marginTop: 8 }}>
-            <label className="miniLabel">Turn: {current.rotation}°</label>
-          </div>
-          <input
-            className="range"
-            type="range"
-            min={-180}
-            max={180}
-            step={5}
-            value={current.rotation}
-            onChange={(e) => patchSelected({ rotation: Number(e.target.value) })}
-          />
-          <button
-            className="btn"
-            style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-            onClick={() => {
-              flush(decorations.filter((_, i) => i !== selected));
-              onSelect(null);
-            }}
-          >
-            Remove
-          </button>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 }}>
-        {[...CATEGORIES.map((c) => ({ id: c.id, label: c.label })), ...(HAS_MORE ? [{ id: "more", label: "More" }] : [])].map((c) => (
-          <button
-            key={c.id}
-            className={`segment ${category === c.id ? "active" : ""}`}
-            style={{ padding: "4px 8px", fontSize: 12 }}
-            onClick={() => setCategory(c.id)}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(6, 1fr)",
-          gap: 4,
-          marginTop: 8,
-          maxHeight: 250,
-          overflowY: "auto",
-          alignContent: "start",
-        }}
-      >
-        {iconsIn(category).map((icon) => (
-          <button
-            key={icon.id}
-            title={icon.label}
-            onClick={() => add(icon.id)}
-            style={{
-              background: "rgba(255,255,255,0.88)",
-              border: "1px solid rgba(255,255,255,0.25)",
-              borderRadius: 6,
-              padding: 3,
-              cursor: "pointer",
-            }}
-          >
-            <img src={icon.url} alt={icon.label} loading="lazy" style={{ width: "100%", display: "block" }} />
-          </button>
-        ))}
-      </div>
-
-      {decorations.length > 0 && (
-        <button
-          className="btn"
-          style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-          onClick={() => {
-            flush([]);
-            onSelect(null);
-          }}
-        >
-          Clear all
-        </button>
-      )}
     </div>
   );
 }

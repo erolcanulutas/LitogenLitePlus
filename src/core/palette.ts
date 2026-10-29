@@ -459,3 +459,19 @@ export function hexToLab(hex: string): Lab {
   const v = (i: number) => parseInt(hex.slice(i, i + 2), 16) || 0;
   return toLab(v(1), v(3), v(5), [0, 0, 0]);
 }
+
+/** The colour of `palette` nearest to `hex`, as seen in Lab. */
+export function snapToPalette(hex: string, palette: readonly string[]): string {
+  if (palette.length === 0) return hex;
+  const here = hexToLab(hex);
+  let best = palette[0];
+  let bestD = Infinity;
+  for (const c of palette) {
+    const dd = d2(here, hexToLab(c));
+    if (dd < bestD) {
+      bestD = dd;
+      best = c;
+    }
+  }
+  return best;
+}

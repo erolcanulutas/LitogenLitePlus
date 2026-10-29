@@ -211,6 +211,19 @@ function db(): PDO
         'CREATE UNIQUE INDEX IF NOT EXISTS receipt_once ON export_receipts (user_id, ref)'
     );
 
+    // The colours of filament an account owns: a short list of #rrggbb.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS user_filaments (
+            id $auto,
+            user_id INTEGER NOT NULL,
+            colors TEXT NOT NULL,
+            updated_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS filaments_user ON user_filaments (user_id)'
+    );
+
     return $pdo;
 }
 
