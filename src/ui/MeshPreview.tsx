@@ -480,12 +480,12 @@ export default function MeshPreview({
               style={{ padding: "2px 9px", fontSize: 12 }}
               title={
                 v === "fit"
-                  ? "Frame the whole model"
-                  : `Look at it straight from the ${v}`
+                  ? t("Frame the whole model")
+                  : t("Look at it straight from the {v}", { v: t(v) })
               }
               onClick={() => presetRef.current?.(v)}
             >
-              {v === "fit" ? "Fit" : v[0].toUpperCase() + v.slice(1)}
+              {t(v === "fit" ? "Fit" : v[0].toUpperCase() + v.slice(1))}
             </button>
           ))}
         </div>

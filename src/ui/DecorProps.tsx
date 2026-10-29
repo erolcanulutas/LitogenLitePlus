@@ -40,7 +40,7 @@ export default function DecorProps({
       }}
     >
       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
-        {isText(d) ? "Text" : "Icon"} selected
+        {isText(d) ? t("Text selected") : t("Icon selected")}
       </div>
 
       <div style={{ display: "flex", gap: 4 }}>

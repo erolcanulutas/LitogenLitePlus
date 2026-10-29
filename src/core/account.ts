@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { parseFilaments, type Filament } from "./filaments";
 
 /**
@@ -53,7 +54,7 @@ async function call(
       credentials: "same-origin",
     });
   } catch {
-    throw new Error("Could not reach the server");
+    throw new Error(t("Could not reach the server"));
   }
 
   let data: {
@@ -66,10 +67,10 @@ async function call(
   try {
     data = await res.json();
   } catch {
-    throw new Error("The server did not answer properly");
+    throw new Error(t("The server did not answer properly"));
   }
 
-  if (!data.ok) throw new Error(data.error || "Something went wrong");
+  if (!data.ok) throw new Error(t(data.error || "Something went wrong"));
   return data;
 }
 
@@ -85,13 +86,13 @@ export async function whoAmI(): Promise<Account | null> {
 
 export async function signIn(email: string, password: string): Promise<Account> {
   const { user } = await call("login.php", { email, password });
-  if (!user) throw new Error("Signed in, but the server sent no account");
+  if (!user) throw new Error(t("Signed in, but the server sent no account"));
   return user;
 }
 
 export async function signUp(email: string, password: string): Promise<Account> {
   const { user } = await call("register.php", { email, password });
-  if (!user) throw new Error("Created, but the server sent no account");
+  if (!user) throw new Error(t("Created, but the server sent no account"));
   return user;
 }
 
@@ -139,14 +140,14 @@ async function spend(ref?: string): Promise<{ account: Account; again: boolean }
       credentials: "same-origin",
     });
   } catch {
-    throw new Error("Could not reach the server");
+    throw new Error(t("Could not reach the server"));
   }
 
   const data: { ok?: boolean; error?: string; again?: boolean; user?: Account | null } =
     await res.json().catch(() => ({}));
 
   if (res.status === 402) throw new OutOfTokens(data.error || "No tokens left");
-  if (!data.ok || !data.user) throw new Error(data.error || "Could not export");
+  if (!data.ok || !data.user) throw new Error(t(data.error || "Could not export"));
 
   return { account: data.user, again: data.again === true };
 }

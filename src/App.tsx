@@ -2577,7 +2577,7 @@ export default function App() {
       setAutoNote(
         hue.smooth
           ? t("No flat colours in this picture — {n} is a starting point, not a reading.", { n: hue.levels })
-          : `${hue.levels} flat colours, holding ${Math.round(hue.covered * 100)}% of the picture.`,
+          : t("{n} flat colours, holding {p}% of the picture.", { n: hue.levels, p: Math.round(hue.covered * 100) }),
       );
       return;
     }
@@ -2602,7 +2602,7 @@ export default function App() {
     setAutoNote(
       found.smooth
         ? t("No flat tones in this picture — {n} is a starting point, not a reading.", { n: found.levels })
-        : `${found.levels} flat tones, holding ${Math.round(found.covered * 100)}% of the picture.`,
+        : t("{n} flat tones, holding {p}% of the picture.", { n: found.levels, p: Math.round(found.covered * 100) }),
     );
   }
 
@@ -3037,8 +3037,8 @@ export default function App() {
         setStatusMsg({
           type: "success",
           text: download
-            ? `${result.extension.toUpperCase()} Ready! · ${result.previewTriangles.toLocaleString()} tris`
-            : `${result.previewTriangles.toLocaleString()} triangles`,
+            ? t("{ext} ready! · {n} triangles", { ext: result.extension.toUpperCase(), n: result.previewTriangles.toLocaleString() })
+            : t("{n} triangles", { n: result.previewTriangles.toLocaleString() }),
         });
       }
     } catch {
@@ -3056,11 +3056,12 @@ export default function App() {
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
           <div className="brandRow">
             <div className="brand-title">{t("Litogen")}</div>
+            {!account && (
             <select
               className="langPick"
               value={lang}
-              aria-label="Language"
-              title="Language"
+              aria-label={t("Language")}
+              title={t("Language")}
               onChange={(e) => setLang(e.target.value as Lang)}
             >
               {LANGUAGES.map((l) => (
@@ -3069,6 +3070,7 @@ export default function App() {
                 </option>
               ))}
             </select>
+            )}
             {account && (
               <span className={`balance ${unlimited(account) ? "unlimited" : ""}`}>
                 {unlimited(account) ? t("Unlimited") : t("{n} tokens", { n: account.tokens })}
@@ -3966,7 +3968,7 @@ export default function App() {
               >
                 <label
                   className="shadeToggle"
-                  title={`Rotation lands on multiples of ${ROTATION_SNAP_DEG}° — both the crop box's handle and the rotation slider below. Off, either is free.`}
+                  title={t("Rotation lands on multiples of {d}° — both the crop box's handle and the rotation slider below. Off, either is free.", { d: ROTATION_SNAP_DEG })}
                 >
                   <input
                     type="checkbox"
@@ -4051,7 +4053,7 @@ export default function App() {
                 />
               </div>
 
-              <label className="paintSet" title={`Brush and outline width: ${paintSize} px`}>
+              <label className="paintSet" title={t("Brush and outline width: {n} px", { n: paintSize })}>
                 <span className="paintTag">{t("Size")}</span>
                 <input
                   className="range paintRange"
@@ -4065,7 +4067,7 @@ export default function App() {
                 />
               </label>
 
-              <label className="paintSet" title={`How much shows through: ${Math.round(opacity * 100)}%`}>
+              <label className="paintSet" title={t("How much shows through: {n}%", { n: Math.round(opacity * 100) })}>
                 <span className="paintTag">{t("Opacity")}</span>
                 <input
                   className="range paintRange"
@@ -4079,7 +4081,7 @@ export default function App() {
                 />
               </label>
 
-              <label className="paintSet" title={`How far the edge is feathered: ${Math.round(softness * 100)}%`}>
+              <label className="paintSet" title={t("How far the edge is feathered: {n}%", { n: Math.round(softness * 100) })}>
                 <span className="paintTag">{t("Soft")}</span>
                 <input
                   className="range paintRange"
@@ -4093,7 +4095,7 @@ export default function App() {
                 />
               </label>
 
-              <label className="paintSet" title={`How far a fill spreads into neighbouring colours: ${fillTolerance}`}>
+              <label className="paintSet" title={t("How far a fill spreads into neighbouring colours: {n}", { n: fillTolerance })}>
                 <span className="paintTag">{t("Spread")}</span>
                 <input
                   className="range paintRange"
@@ -4127,7 +4129,7 @@ export default function App() {
                 {t(TEXT_TOOL.label)}
               </button>
 
-              <label className="paintSet" title={`Text size: ${fontSize} px`}>
+              <label className="paintSet" title={t("Text size: {n} px", { n: fontSize })}>
                 <span className="paintTag">{t("Size")}</span>
                 <input
                   className="range paintRange"

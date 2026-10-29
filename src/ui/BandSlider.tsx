@@ -127,7 +127,7 @@ export default function BandSlider({
       <div
         className={`bandEnd bandEndTop${frameLayer !== null ? " bandEndFrame" : ""}`}
       >
-        {frameLayer !== null ? "Frame" : "Top"} · layer {totalLayers} ·{" "}
+        {t(frameLayer !== null ? "Frame" : "Top")} · {t("layer")} {totalLayers} ·{" "}
         {mm(totalLayers)} mm
       </div>
 
@@ -157,9 +157,9 @@ export default function BandSlider({
                 value={color}
                 onChange={(e) => onColor(b, e.target.value)}
                 title={
-                  `Band ${b + 1} · layers ${first}-${last} · click to recolour` +
+                  t("Band {n} · layers {a}-{b} · click to recolour", { n: b + 1, a: first, b: last }) +
                   (hidden
-                    ? " · no tone ends inside this band, so its colour cannot show"
+                    ? " · " + t("no tone ends inside this band, so its colour cannot show")
                     : "")
                 }
               />
@@ -187,14 +187,16 @@ export default function BandSlider({
               }}
               role="slider"
               tabIndex={0}
-              aria-label={`Tone ${toneLayers.length - k + 1} height`}
+              aria-label={t("Tone {n} height", { n: toneLayers.length - k + 1 })}
               aria-valuemin={1}
               aria-valuemax={totalLayers}
               aria-valuenow={layer}
-              aria-valuetext={`layer ${layer}, ${mm(layer)} mm`}
-              title={`Tone ${
-                toneLayers.length - k + 1
-              } prints ${mm(layer)} mm thick, topping out on layer ${layer} · drag to change`}
+              aria-valuetext={t("layer {l}, {mm} mm", { l: layer, mm: mm(layer) })}
+              title={t("Tone {n} prints {mm} mm thick, topping out on layer {l} · drag to change", {
+                n: toneLayers.length - k + 1,
+                mm: mm(layer),
+                l: layer,
+              })}
             >
               <span className="toneMarkPill">{mm(layer)} mm</span>
               <span className="toneMarkRule" />
@@ -222,7 +224,7 @@ export default function BandSlider({
               }}
               role="slider"
               tabIndex={0}
-              aria-label={`Band ${i + 1} top layer`}
+              aria-label={t("Band {n} top layer", { n: i + 1 })}
               aria-valuemin={i > 0 ? splitLayers[i - 1] + 1 : 1}
               aria-valuemax={
                 i + 1 < splitLayers.length
@@ -230,7 +232,7 @@ export default function BandSlider({
                   : totalLayers - 1
               }
               aria-valuenow={layer}
-              aria-valuetext={`layer ${layer}, ${mm(layer)} mm`}
+              aria-valuetext={t("layer {l}, {mm} mm", { l: layer, mm: mm(layer) })}
             >
               <span className="bandKnobPill">
                 {layer} · {mm(layer)} mm

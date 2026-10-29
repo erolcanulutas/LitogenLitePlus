@@ -1,4 +1,4 @@
-import { t } from "../i18n";
+import { LANGUAGES, setLang, t, useLang, type Lang } from "../i18n";
 import { useState } from "react";
 import { closeAccount, unlimited, type Account } from "../core/account";
 import type { Filament } from "../core/filaments";
@@ -47,6 +47,7 @@ export default function AccountPanel({
   onSignOut,
   onClosedAccount,
 }: Props) {
+  const lang = useLang();
   const [closing, setClosing] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -130,6 +131,22 @@ export default function AccountPanel({
               onClick={() => onTheme("light")}
             >{t("Light")}</button>
           </div>
+        </div>
+
+        <div className="acctRow" style={{ marginTop: 10 }}>
+          <span>{t("Language")}</span>
+          <select
+            className="langPick"
+            value={lang}
+            aria-label={t("Language")}
+            onChange={(e) => setLang(e.target.value as Lang)}
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="acctRow" style={{ marginTop: 14 }}>
