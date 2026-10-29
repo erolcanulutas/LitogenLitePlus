@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Decoration } from "../core/decor";
-import { ICONS, drawDecoration, loadIcon } from "./decorIcons";
+import { CATEGORIES, HAS_MORE, drawDecoration, iconsIn, loadIcon } from "./decorIcons";
 
 type Rect = { x0: number; x1: number; y0: number; y1: number };
 
@@ -39,6 +39,7 @@ export default function HolderDesigner({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ index: number; dx: number; dy: number } | null>(null);
+  const [category, setCategory] = useState(CATEGORIES[0].id);
 
   const scale = VIEW_PX / width;
   const viewH = Math.round(height * scale);
@@ -236,15 +237,28 @@ export default function HolderDesigner({
         </div>
       )}
 
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 }}>
+        {[...CATEGORIES.map((c) => ({ id: c.id, label: c.label })), ...(HAS_MORE ? [{ id: "more", label: "More" }] : [])].map((c) => (
+          <button
+            key={c.id}
+            className={`segment ${category === c.id ? "active" : ""}`}
+            style={{ padding: "4px 8px", fontSize: 12 }}
+            onClick={() => setCategory(c.id)}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(6, 1fr)",
           gap: 4,
-          marginTop: 10,
+          marginTop: 8,
         }}
       >
-        {ICONS.map((icon) => (
+        {iconsIn(category).map((icon) => (
           <button
             key={icon.id}
             title={icon.label}

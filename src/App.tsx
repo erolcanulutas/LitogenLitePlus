@@ -26,7 +26,9 @@ import {
 } from "./core/holder";
 import type { Decoration } from "./core/decor";
 import type { Mesh } from "./core/mesh";
+import { pictureInPocket } from "./core/pocket";
 import HolderDesigner from "./ui/HolderDesigner";
+import NumField from "./ui/NumField";
 import { makeRelief } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
@@ -1400,13 +1402,18 @@ const HOLDER_PRESETS = {
   wide: { label: "Wide", border: 14, lip: 4 },
 } as const;
 
+/** The lip over the picture's edge, as a share of the frame, within what prints well. */
+const lipFor = (border: number) => Math.min(4, Math.max(2, +(border * 0.3).toFixed(1)));
+
 /** A holder design kept in this browser: the picture's settings and what is on the frame. */
 type SavedDesign = {
   name: string;
   savedAt: number;
   picture: { w: number; h: number; t: number };
   angle: number;
-  preset: keyof typeof HOLDER_PRESETS;
+  /** Frame width in mm. Older saves have a preset name instead. */
+  border?: number;
+  preset?: keyof typeof HOLDER_PRESETS;
   fit: number;
   tealight: number;
   relief: number;
@@ -1778,7 +1785,9 @@ export default function App() {
 
   // The holder and stand are separate parts, made from the picture's size.
   const [holderAngle, setHolderAngle] = useState(90);
-  const [holderPreset, setHolderPreset] = useState<keyof typeof HOLDER_PRESETS>("standard");
+  const [holderBorder, setHolderBorder] = useState(10);
+  const [showPicture, setShowPicture] = useState(true);
+  const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
   const [tealightMm, setTealightMm] = useState(38);
   const [holderFit, setHolderFit] = useState(0.2);
   const [decorations, setDecorations] = useState<Decoration[]>([]);
@@ -1798,17 +1807,16 @@ export default function App() {
   const levels = graphic || inlayMode ? toneLevels : 0;
 
   const holderParams = useMemo(() => {
-    const preset = HOLDER_PRESETS[holderPreset];
     return {
       pictureW: widthMm,
       pictureH: heightMm,
       pictureT: maxT,
-      border: preset.border,
-      lip: preset.lip,
+      border: holderBorder,
+      lip: lipFor(holderBorder),
       fit: holderFit,
       tiltDeg: 90 - holderAngle,
     };
-  }, [holderPreset, widthMm, heightMm, maxT, holderFit, holderAngle]);
+  }, [holderBorder, widthMm, heightMm, maxT, holderFit, holderAngle]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
 
@@ -1836,21 +1844,53 @@ export default function App() {
     if (shapeId !== "rectangle" || curved) return null;
     const plate = buildHolder(holderParams);
     const relief = decorations.length > 0 ? reliefMesh : null;
-    const whole = relief && relief.triangleCount > 0 ? joinMeshes(plate, relief) : plate;
-    const holder = holderInPlace(whole, holderParams.tiltDeg, holderGeom.socketDepth);
+    const frame = relief && relief.triangleCount > 0 ? joinMeshes(plate, relief) : plate;
+
+    // The finished picture, when there is one, rides in the pocket with the
+    // plate and leans with it, so it is turned along with everything else.
+    const pic =
+      showPicture && previewMesh
+        ? pictureInPocket(
+            previewMesh,
+            {
+              x: holderGeom.W / 2,
+              y: (holderGeom.pocket.y0 + holderGeom.pocket.y1) / 2,
+            },
+            holderGeom.pocketDepth - 0.3,
+          )
+        : null;
+
+    const whole = pic ? joinMeshes(frame, pic) : frame;
+    const placed = holderInPlace(whole, holderParams.tiltDeg, holderGeom.socketDepth);
     const stand = buildStand({ tealight: tealightMm });
-    const positions = new Float32Array(holder.positions.length + stand.positions.length);
-    positions.set(holder.positions, 0);
-    positions.set(stand.positions, holder.positions.length);
+    const positions = new Float32Array(placed.positions.length + stand.positions.length);
+    positions.set(placed.positions, 0);
+    positions.set(stand.positions, placed.positions.length);
+
+    const frameTris = frame.triangleCount;
+    const bandStarts = [0];
+    const colors = ["#e2c28b"];
+    if (pic) {
+      for (let b = 0; b < pic.bandStarts.length; b++) {
+        bandStarts.push(frameTris + pic.bandStarts[b]);
+        colors.push(pic.colors[b] ?? "#d8dee9");
+      }
+    }
+    bandStarts.push(placed.triangleCount);
+    colors.push("#9fb4c8");
+
     const tilt = (holderParams.tiltDeg * Math.PI) / 180;
     return {
       positions,
-      triangleCount: holder.triangleCount + stand.triangleCount,
-      bandStarts: [0, holder.triangleCount],
-      colors: ["#e2c28b", "#9fb4c8"],
+      triangleCount: placed.triangleCount + stand.triangleCount,
+      bandStarts,
+      colors,
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
-  }, [shapeId, curved, holderParams, reliefMesh, decorations.length, tealightMm]);
+  }, [
+    shapeId, curved, holderParams, holderGeom, reliefMesh, decorations.length,
+    tealightMm, showPicture, previewMesh,
+  ]);
 
   /**
    * Where an inlay's tones sit in colour. The same fit that colours the panel,
@@ -1959,7 +1999,6 @@ export default function App() {
   const buildHeightMm = buildWidthMm / cropRatio;
   const [flatHintOpen, setFlatHintOpen] = useState(false);
 
-  const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
 
   // The preview shows whatever was generated last. Without tracking which
   // settings produced it, changing the crop and switching tabs shows the old
@@ -2382,7 +2421,7 @@ export default function App() {
       savedAt: Date.now(),
       picture: { w: +widthMm.toFixed(1), h: +heightMm.toFixed(1), t: maxT },
       angle: holderAngle,
-      preset: holderPreset,
+      border: holderBorder,
       fit: holderFit,
       tealight: tealightMm,
       relief: reliefMm,
@@ -2397,7 +2436,7 @@ export default function App() {
 
   function loadDesign(d: SavedDesign) {
     setHolderAngle(d.angle);
-    setHolderPreset(d.preset in HOLDER_PRESETS ? d.preset : "standard");
+    setHolderBorder(d.border ?? (d.preset && HOLDER_PRESETS[d.preset]?.border) ?? 10);
     setHolderFit(d.fit);
     setTealightMm(d.tealight);
     setReliefMm(d.relief);
@@ -3774,54 +3813,65 @@ export default function App() {
               />
 
               <div className="label-row" style={{ marginTop: 12 }}>
-                <label className="miniLabel">Frame</label>
-                <InfoIcon text="How wide the frame is round the picture. Slim shows more of it, Wide is sturdier." />
+                <label className="miniLabel">Frame width (mm)</label>
+                <InfoIcon text="How wide the frame is round the picture, as wide as you like from 5 to 30 mm. Slim shows more of the picture, Wide is sturdier and leaves more room for decorations. The lip over the picture's edge follows the width." />
               </div>
-              <select
-                className="spinInput"
-                value={holderPreset}
-                onChange={(e) => setHolderPreset(e.target.value as keyof typeof HOLDER_PRESETS)}
-              >
-                {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
-                  <option key={id} value={id}>
-                    {v.label} ({v.border} mm)
+              <div style={{ display: "flex", gap: 6 }}>
+                <NumField value={holderBorder} min={5} max={30} step={0.5} onChange={setHolderBorder} />
+                <select
+                  className="spinInput"
+                  value={
+                    Object.entries(HOLDER_PRESETS).find(([, v]) => v.border === holderBorder)?.[0] ?? "custom"
+                  }
+                  onChange={(e) => {
+                    const v = HOLDER_PRESETS[e.target.value as keyof typeof HOLDER_PRESETS];
+                    if (v) setHolderBorder(v.border);
+                  }}
+                >
+                  {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
+                    <option key={id} value={id}>
+                      {v.label}
+                    </option>
+                  ))}
+                  <option value="custom" disabled>
+                    Custom
                   </option>
-                ))}
-              </select>
+                </select>
+              </div>
 
               <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Fit (mm)</label>
                 <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
               </div>
-              <input
-                className="spinInput"
-                type="number"
-                min={0}
-                max={0.6}
-                step={0.05}
-                value={holderFit}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!Number.isNaN(v)) setHolderFit(Math.max(0, Math.min(0.6, v)));
-                }}
-              />
+              <NumField value={holderFit} min={0} max={0.6} step={0.05} onChange={setHolderFit} />
 
               <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Tealight diameter (mm)</label>
-                <InfoIcon text="The cup in the stand is this wide plus a few millimetres of room. A standard tealight is 38 mm." />
+                <InfoIcon text="The width of the tealight. The cup in the stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm." />
               </div>
-              <input
-                className="spinInput"
-                type="number"
-                min={30}
-                max={60}
-                step={1}
-                value={tealightMm}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!Number.isNaN(v)) setTealightMm(Math.max(30, Math.min(60, v)));
-                }}
-              />
+              <NumField value={tealightMm} min={30} max={80} step={1} onChange={setTealightMm} />
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                Cup inside: {tealightMm + 4} mm
+              </div>
+
+              <label className="shadeToggle" style={{ marginTop: 12, display: "flex" }}>
+                <input
+                  type="checkbox"
+                  checked={showPicture}
+                  onChange={(e) => setShowPicture(e.target.checked)}
+                />
+                Show the picture in the frame
+              </label>
+              {showPicture && !previewMesh && (
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                  Press <strong>Preview in 3D</strong> in the side panel to build the picture, and it appears here.
+                </div>
+              )}
+              {showPicture && previewMesh && previewStale && (
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                  The picture shown is from before your last change. Press Preview in 3D to update it.
+                </div>
+              )}
 
               <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
                 Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.

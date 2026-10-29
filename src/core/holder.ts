@@ -335,7 +335,9 @@ export function holderInPlace(mesh: Mesh, tiltDeg: number, socketDepth: number):
   for (let i = 0; i < out.length; i += 3) {
     const y = src[i + 1];
     const z = src[i + 2];
-    out[i] = src[i] - mid;
+    // Seen from the front, the plate's right-hand side is the world's
+    // left, so x turns over; without it the holder would be its own mirror.
+    out[i] = mid - src[i];
     out[i + 1] = z * ct - y * st + edge;
     out[i + 2] = y * ct + z * st;
   }
@@ -358,18 +360,21 @@ export function holderStanding(mesh: Mesh, tiltDeg: number): Mesh {
   const src = mesh.positions;
   const out = new Float32Array(mesh.triangleCount * 9);
 
+  let minX = Infinity;
   let minY = Infinity;
   let minZ = Infinity;
   for (let i = 0; i < out.length; i += 3) {
     const y = src[i + 1];
     const z = src[i + 2];
-    out[i] = src[i];
+    out[i] = -src[i];
     out[i + 1] = z * ct - y * st;
     out[i + 2] = y * ct + z * st;
+    if (out[i] < minX) minX = out[i];
     if (out[i + 1] < minY) minY = out[i + 1];
     if (out[i + 2] < minZ) minZ = out[i + 2];
   }
   for (let i = 0; i < out.length; i += 3) {
+    out[i] -= minX;
     out[i + 1] -= minY;
     out[i + 2] -= minZ;
   }

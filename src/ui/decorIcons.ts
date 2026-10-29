@@ -109,3 +109,54 @@ export async function makeRelief(
   const { mask, w, h } = await renderMask(decorations, widthMm, heightMm, window);
   return buildRelief(mask, w, h, widthMm, heightMm, baseZ, height);
 }
+
+/**
+ * The icons by subject, for the palette. Anything not named here still shows,
+ * under "More", so a new file dropped in the folder is never lost.
+ */
+export const CATEGORIES: { id: string; label: string; icons: string[] }[] = [
+  {
+    id: "beach",
+    label: "Beach & travel",
+    icons: [
+      "palm-tree", "cocktail", "umbrella-beach", "sun", "wave", "seashell", "beach-ball",
+      "sailboat", "ship", "anchor", "airplane", "tent", "camera", "tropical-fish", "compass",
+      "luggage", "globe", "palm-sunglasses", "ice-cream", "watermelon", "bicycle",
+    ],
+  },
+  {
+    id: "halloween",
+    label: "Halloween",
+    icons: ["pumpkin", "ghost", "bat", "spider-web", "skull", "candy", "candle"],
+  },
+  {
+    id: "party",
+    label: "Party & holidays",
+    icons: [
+      "party-popper", "cake", "gift", "balloon", "fireworks", "sparkles", "christmas-tree",
+      "snowflake", "bell", "crown", "star",
+    ],
+  },
+  {
+    id: "nature",
+    label: "Nature & love",
+    icons: [
+      "heart", "flower", "rose", "tulip", "sunflower", "clover", "butterfly", "rainbow",
+      "mountain", "cat", "dog", "paw-prints", "bone",
+    ],
+  },
+];
+
+/** Icons in a category, in its order, then any the categories do not name. */
+export function iconsIn(categoryId: string): Icon[] {
+  if (categoryId === "more") {
+    const named = new Set(CATEGORIES.flatMap((c) => c.icons));
+    return ICONS.filter((i) => !named.has(i.id));
+  }
+  const cat = CATEGORIES.find((c) => c.id === categoryId);
+  if (!cat) return [];
+  return cat.icons.map((id) => byId.get(id)).filter((i): i is Icon => i !== undefined);
+}
+
+/** Whether any icon falls outside the named categories. */
+export const HAS_MORE = iconsIn("more").length > 0;
