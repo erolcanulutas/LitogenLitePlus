@@ -2599,7 +2599,7 @@ export default function App() {
     }
 
     if (!account) {
-      setAccountError("Sign in to download the holder. New accounts get 50 tokens.");
+      setAccountError("Sign in to download the frame. New accounts get 50 tokens.");
       setAccountOpen(true);
       return;
     }
@@ -2650,12 +2650,12 @@ export default function App() {
         [frameColour, ...bodies.map((b) => b.color)],
       );
       if (await payForHolder(ref)) {
-        downloadArrayBuffer(file, `litogen-holder-${holderAngle}deg.3mf`);
+        downloadArrayBuffer(file, `litogen-frame-${holderAngle}deg.3mf`);
       }
       return;
     }
     if (await payForHolder(ref)) {
-      downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
+      downloadArrayBuffer(writeBinarySTL(out), `litogen-frame-${holderAngle}deg.stl`);
     }
   }
 
@@ -3301,8 +3301,8 @@ export default function App() {
           </div>
 
           <div className="label-row">
-            <label className="miniLabel">Frame (mm)</label>
-            <InfoIcon text="The thickness of the frame surrounding the model." />
+            <label className="miniLabel">Outline (mm)</label>
+            <InfoIcon text="The thickness of the outline surrounding the model." />
           </div>
 
           <div className="spinRow">
@@ -3854,7 +3854,7 @@ export default function App() {
                 className={`viewTab ${view === "holder" ? "active" : ""}`}
                 onClick={() => setView("holder")}
               >
-                Holder &amp; Stand
+                Frame &amp; Stand
               </button>
             </div>
 
@@ -4231,7 +4231,7 @@ export default function App() {
                   <div style={{ overflowY: "auto", padding: "0 14px 16px", flex: 1, minHeight: 0 }}>
                     {!holderUsable ? (
                       <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        The holder is made for flat, rectangular pictures. Pick the
+                        The frame is made for flat, rectangular pictures. Pick the
                         rectangle shape and turn the curve off to use it.
                       </div>
                     ) : (
@@ -4240,15 +4240,15 @@ export default function App() {
                           <>
                             <div className="label-row">
                               <div className="sectionTitle">Frame &amp; stand</div>
-                              <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The holder is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the holder prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
+                              <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
                             </div>
                             <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
-                              Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
+                              Frame for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
                             </div>
 
                             <div className="label-row">
                               <label className="miniLabel">Panel angle: {holderAngle}°</label>
-                              <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the holder's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them." />
+                              <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them." />
                             </div>
                             <input
                               className="range"
@@ -4293,6 +4293,15 @@ export default function App() {
                             </div>
                             <NumField value={holderCorner} min={0} max={30} step={1} onChange={setHolderCorner} />
 
+                            <label className="shadeToggle" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                              Frame colour
+                              <input
+                                type="color"
+                                value={frameColour}
+                                onChange={(e) => setFrameColour(e.target.value)}
+                              />
+                            </label>
+
                             <div className="label-row" style={{ marginTop: 12 }}>
                               <label className="miniLabel">Fit (mm)</label>
                               <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
@@ -4333,7 +4342,7 @@ export default function App() {
                           <>
                             <div className="label-row">
                               <div className="sectionTitle">Decorate</div>
-                              <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the holder's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the holder standing up." />
+                              <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the frame's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the frame standing up." />
                             </div>
 
                             {decorSelected !== null && decorations[decorSelected] ? (
@@ -4383,23 +4392,6 @@ export default function App() {
                                   value={reliefMm}
                                   onChange={(e) => setReliefMm(Number(e.target.value))}
                                 />
-                              </>
-                            )}
-                          </>
-                        )}
-
-                        {holderSub === "colours" && (
-                          <>
-                            <div className="sectionTitle" style={{ marginBottom: 10 }}>Colours</div>
-
-                            <label className="shadeToggle" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              Frame colour
-                              <input
-                                type="color"
-                                value={frameColour}
-                                onChange={(e) => setFrameColour(e.target.value)}
-                              />
-                            </label>
 
                             <label className="shadeToggle" style={{ marginTop: 14, display: "flex" }}>
                               <input
@@ -4418,8 +4410,22 @@ export default function App() {
                                 <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
                               </>
                             )}
+                              </>
+                            )}
+                          </>
+                        )}
 
-                            <div className="label-row" style={{ marginTop: 14 }}>
+                        {holderSub === "colours" && (
+                          <>
+                            <div className="sectionTitle" style={{ marginBottom: 10 }}>Colours</div>
+                            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
+                              The frame&apos;s own colour is on the Frame tab, and printing decorations in their
+                              own colours is on the Decorate tab.
+                            </div>
+
+
+
+                            <div className="label-row">
                               <label className="miniLabel">My filaments</label>
                               <InfoIcon text="Add the colours of filament you have and tick the ones to print with. Every colour of a decoration is then printed in the nearest ticked one, whatever it was drawn in, so nothing needs a colour you do not own. Nothing is used unless it is ticked, so decorations keep their own colours by default." />
                             </div>
@@ -4437,8 +4443,8 @@ export default function App() {
                             <div className="sectionTitle" style={{ marginBottom: 10 }}>Print</div>
 
                             <div className="label-row">
-                              <label className="miniLabel">Print the holder</label>
-                              <InfoIcon text="Front face down lies the holder flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees." />
+                              <label className="miniLabel">Print the frame</label>
+                              <InfoIcon text="Front face down lies the frame flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees." />
                             </div>
                             <select
                               className="spinInput"
@@ -4460,8 +4466,8 @@ export default function App() {
                               onClick={() => downloadHolderPart("holder")}
                             >
                               {(iconColours > 0 && decorations.some((d) => !d.cut)
-                                ? "Download holder (3MF, colours)"
-                                : "Download holder (STL)") +
+                                ? "Download frame (3MF, colours)"
+                                : "Download frame (STL)") +
                                 (unlimited(account) ? " · included" : " · 1 token")}
                             </button>
                             <button
@@ -4472,7 +4478,7 @@ export default function App() {
                               Download stand (STL) · free
                             </button>
                             <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
-                              Downloading the same holder design again is free.
+                              Downloading the same frame design again is free.
                             </div>
                             {holderNote && (
                               <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>
@@ -4480,7 +4486,7 @@ export default function App() {
 
                             <div className="label-row" style={{ marginTop: 18 }}>
                               <label className="miniLabel">Saved designs</label>
-                              <InfoIcon text="A design holds the holder's settings and what is on the frame, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first." />
+                              <InfoIcon text="A design holds the frame's settings and what is on it, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first." />
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <input

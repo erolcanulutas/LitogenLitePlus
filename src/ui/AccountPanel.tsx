@@ -122,7 +122,7 @@ export default function AccountPanel({
         <p className="acctNote">
           The colours of filament you have. Tick the ones to print with: an Inlay
           is divided into the ticked colours, Layered colours are moved to the
-          nearest of them, and decorations on a holder are printed in them.
+          nearest of them, and decorations on a frame are printed in them.
           Nothing is used unless it is ticked. The list is kept in your account,
           so it follows you to another device.
         </p>
