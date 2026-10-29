@@ -243,9 +243,11 @@ export async function renderMask(
     }
   }
 
-  // What fills a recess is grown by a pixel, so that it overlaps the frame round
-  // it rather than meeting it, and a hair of gap cannot be left open. The pixels
-  // it gains take the colour of the one they grew from.
+  // What fills a recess is a pixel smaller than it. A fill that overlapped the
+  // frame round it put two solids in the same space, which a viewer shows as a
+  // ragged outline and a slicer may colour either way; one that is smaller meets
+  // the frame only along the floor and leaves a hair of clearance all round, which
+  // is what an inlay wants anyway, since printed parts swell.
   const colours = new Uint8ClampedArray(w * h * 4);
   for (let i = 0; i < w * h; i++) {
     if (onFrame[i] || beyond[i]) {
@@ -257,30 +259,19 @@ export async function renderMask(
       }
     }
   }
-  const flushBody = new Uint8Array(flush);
+  const flushBody = new Uint8Array(w * h);
   if (fd) {
-    for (let i = 0; i < w * h; i++) {
-      if (flush[i]) {
-        colours[i * 4] = fd[i * 4];
-        colours[i * 4 + 1] = fd[i * 4 + 1];
-        colours[i * 4 + 2] = fd[i * 4 + 2];
-      }
-    }
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
-        if (flush[i] || cutOut[i]) continue;
-        const from =
-          x > 0 && flush[i - 1] ? i - 1
-          : x < w - 1 && flush[i + 1] ? i + 1
-          : y > 0 && flush[i - w] ? i - w
-          : y < h - 1 && flush[i + w] ? i + w
-          : -1;
-        if (from < 0) continue;
-        flushBody[i] = 1;
-        colours[i * 4] = colours[from * 4];
-        colours[i * 4 + 1] = colours[from * 4 + 1];
-        colours[i * 4 + 2] = colours[from * 4 + 2];
+        if (!flush[i]) continue;
+        // Kept only if the pixel and all four beside it are part of the recess.
+        if (flush[i - 1] && flush[i + 1] && flush[i - w] && flush[i + w]) {
+          flushBody[i] = 1;
+          colours[i * 4] = fd[i * 4];
+          colours[i * 4 + 1] = fd[i * 4 + 1];
+          colours[i * 4 + 2] = fd[i * 4 + 2];
+        }
       }
     }
   }

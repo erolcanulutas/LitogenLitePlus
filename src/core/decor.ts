@@ -134,7 +134,7 @@ export type DecorMask = {
   cutOut: Uint8Array;
   /** Pixels to sink into the frame's face: where a flush decoration is, over the frame. */
   flush: Uint8Array;
-  /** The same grown by a pixel, which is what fills it: a little over, so nothing is left open. */
+  /** The same shrunk by a pixel, which is what fills it: a hair of clearance, and no overlap. */
   flushBody: Uint8Array;
   /** Which body each raised pixel belongs to: a height step, or one of the icons' colours. */
   group: Uint8Array;
