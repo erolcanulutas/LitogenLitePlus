@@ -220,24 +220,47 @@ export function buildHolder(
   wall(mb, atZ(pocket, 0), atZ(pocket, pocketDepth), false);
   cap(mb, atZ(pocket, pocketDepth), [atZ(window, pocketDepth)], [0, 0, -1]);
   wall(mb, atZ(window, pocketDepth), atZ(window, T), false);
-  const pockets = recess?.outer ?? [];
+  // The loops of a recess nest: a pocket in the face, an island of face standing
+  // in it, a pocket sunk in that island, and so on. How deep one is decides what
+  // it is: even is a pocket, odd is an island. Each is bounded by the loops
+  // directly inside it, which come out of it as holes.
+  const loops: CutLoop[] = recess ? [...recess.outer, ...recess.islands] : [];
+  const sizeOf = (l: CutLoop) => {
+    let a = 0;
+    for (let k = 0; k < l.length; k++) {
+      const m = (k + 1) % l.length;
+      a += l[k][0] * l[m][1] - l[m][0] * l[k][1];
+    }
+    return Math.abs(a / 2);
+  };
+  const areas = loops.map(sizeOf);
+  const parent = loops.map((l, k) => {
+    let best = -1;
+    for (let m = 0; m < loops.length; m++) {
+      if (m !== k && inLoop(l[0], loops[m]) && (best < 0 || areas[m] < areas[best])) best = m;
+    }
+    return best;
+  });
+  const depth = (k: number): number => (parent[k] < 0 ? 0 : depth(parent[k]) + 1);
+  const level = loops.map((_, k) => depth(k));
+  const pockets = loops.filter((_, k) => level[k] === 0);
+
   cap(mb, outerFront, [atZ(window, T), ...cuts.map((c) => atZ(c, T)), ...pockets.map((c) => atZ(c, T))], [0, 0, 1]);
   wall(mb, outerBack, outerFront, true);
   for (const c of cuts) holeWall(mb, c, 0, T);
 
-  // Pockets for flush decorations: the walls down, a floor, and any island of
-  // frame left standing in one with its own sides and top.
-  if (recess && pockets.length > 0) {
+  if (recess && loops.length > 0) {
     const floor = T - recess.depth;
-    for (const pocketLoop of pockets) {
-      const mine = recess.islands.filter((i) => inLoop(i[0], pocketLoop));
-      holeWall(mb, pocketLoop, floor, T);
-      cap(mb, atZ(pocketLoop, floor), mine.map((i) => atZ(i, floor)), [0, 0, 1]);
-      for (const island of mine) {
-        holeWall(mb, island, floor, T, "out");
-        cap(mb, atZ(island, T), [], [0, 0, 1]);
+    loops.forEach((loop, k) => {
+      const inside = loops.filter((_, m) => parent[m] === k);
+      if (level[k] % 2 === 0) {
+        holeWall(mb, loop, floor, T);
+        cap(mb, atZ(loop, floor), inside.map((c) => atZ(c, floor)), [0, 0, 1]);
+      } else {
+        holeWall(mb, loop, floor, T, "out");
+        cap(mb, atZ(loop, T), inside.map((c) => atZ(c, T)), [0, 0, 1]);
       }
-    }
+    });
   }
 
   if (p.clips) {

@@ -6,6 +6,7 @@ import {
   OVERHANG_MM,
   recessLoops,
   stepHeights,
+  traceFlush,
   type DecorGeom,
   type DecorMask,
   type Decoration,
@@ -243,38 +244,20 @@ export async function renderMask(
     }
   }
 
-  // What fills a recess is a pixel smaller than it. A fill that overlapped the
-  // frame round it put two solids in the same space, which a viewer shows as a
-  // ragged outline and a slicer may colour either way; one that is smaller meets
-  // the frame only along the floor and leaves a hair of clearance all round, which
-  // is what an inlay wants anyway, since printed parts swell.
+  // What fills a recess is the recess: the same pixels, traced once, so the fill
+  // and the pocket it goes in share their vertices and meet without a gap or an
+  // overlap.
   const colours = new Uint8ClampedArray(w * h * 4);
   for (let i = 0; i < w * h; i++) {
-    if (onFrame[i] || beyond[i]) {
-      const src = rd && rd[i * 4 + 3] >= 128 ? rd : fd;
-      if (src) {
-        colours[i * 4] = src[i * 4];
-        colours[i * 4 + 1] = src[i * 4 + 1];
-        colours[i * 4 + 2] = src[i * 4 + 2];
-      }
+    const src = onFrame[i] || beyond[i] ? (rd && rd[i * 4 + 3] >= 128 ? rd : fd) : flush[i] ? fd : null;
+    if (src) {
+      colours[i * 4] = src[i * 4];
+      colours[i * 4 + 1] = src[i * 4 + 1];
+      colours[i * 4 + 2] = src[i * 4 + 2];
     }
   }
-  const flushBody = new Uint8Array(w * h);
-  if (fd) {
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const i = y * w + x;
-        if (!flush[i]) continue;
-        // Kept only if the pixel and all four beside it are part of the recess.
-        if (flush[i - 1] && flush[i + 1] && flush[i - w] && flush[i + w]) {
-          flushBody[i] = 1;
-          colours[i * 4] = fd[i * 4];
-          colours[i * 4 + 1] = fd[i * 4 + 1];
-          colours[i * 4 + 2] = fd[i * 4 + 2];
-        }
-      }
-    }
-  }
+  closeDiagonals(flush, w, h);
+  const flushBody = new Uint8Array(flush);
 
   const { group, groupFrac, groupColors } = groupRaised(onFrame, beyond, flushBody, colours, look);
 
@@ -294,6 +277,36 @@ export async function renderMask(
     spanX: W + 2 * M,
     spanY: H + 2 * M,
   };
+}
+
+/**
+ * Takes out every place where two pixels of a mask meet only at a corner.
+ *
+ * Traced, such a place is a point where the outline touches itself, or touches
+ * another outline, and a face cannot be cut round a point that is two edges at
+ * once. A pixel of the gap is filled, which joins the two squarely; one pixel,
+ * a sixth of a millimetre, is nothing to the shape.
+ */
+function closeDiagonals(mask: Uint8Array, w: number, h: number) {
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (let y = 0; y + 1 < h; y++) {
+      for (let x = 0; x + 1 < w; x++) {
+        const a = mask[y * w + x];
+        const b = mask[y * w + x + 1];
+        const c = mask[(y + 1) * w + x];
+        const d = mask[(y + 1) * w + x + 1];
+        if (a && d && !b && !c) {
+          mask[y * w + x + 1] = 1;
+          changed = true;
+        } else if (b && c && !a && !d) {
+          mask[y * w + x] = 1;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
 }
 
 /** Brightness of a #rrggbb colour, 0 to 1. */
@@ -509,9 +522,10 @@ export async function makeDecor(
   look: ReliefLook,
 ): Promise<{ relief: Relief; cuts: [number, number][][]; recess: Recess | null }> {
   const mask = await renderMask(decorations, geom, look);
-  const sunk = recessLoops(mask);
+  const flushRegions = traceFlush(mask);
+  const sunk = recessLoops(mask, flushRegions);
   return {
-    relief: buildRelief(mask, geom.frontZ, height, geom.lip),
+    relief: buildRelief(mask, geom.frontZ, height, geom.lip, flushRegions),
     cuts: cutLoops(mask),
     recess: sunk.outer.length > 0 ? { ...sunk, depth: FLUSH_DEPTH_MM } : null,
   };

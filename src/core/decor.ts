@@ -134,7 +134,7 @@ export type DecorMask = {
   cutOut: Uint8Array;
   /** Pixels to sink into the frame's face: where a flush decoration is, over the frame. */
   flush: Uint8Array;
-  /** The same shrunk by a pixel, which is what fills it: a hair of clearance, and no overlap. */
+  /** The same pixels, which is what fills it: traced once with it, so the two fit. */
   flushBody: Uint8Array;
   /** Which body each raised pixel belongs to: a height step, or one of the icons' colours. */
   group: Uint8Array;
@@ -151,6 +151,34 @@ export type DecorMask = {
   spanX: number;
   spanY: number;
 };
+
+type Regions = ReturnType<typeof vectorise>["regions"];
+
+/**
+ * What is sunk into the frame, traced once, a region for each body.
+ *
+ * The same trace gives both the fill and the recess it goes in, which is what
+ * makes them fit: the recess is the outline of all the regions together, taken
+ * from the very vertices the regions are made of.
+ */
+export function traceFlush(mask: DecorMask): Regions | null {
+  const count = mask.groupFrac.length;
+  let any = false;
+  for (let i = 0; i < mask.flushBody.length; i++) {
+    if (mask.flushBody[i]) {
+      any = true;
+      break;
+    }
+  }
+  if (!any || count === 0) return null;
+
+  const { w, h } = mask;
+  const floorPx = (MIN_FEATURE_MM * MASK_PX_PER_MM) ** 2;
+  return vectorise(
+    new Float64Array(w * h), w, h, mask.groupFrac.map((_, k) => k), 1.2, mask.flushBody, floorPx,
+    undefined, 2, mask.group,
+  ).regions;
+}
 
 /** The raised shapes, and which run of triangles is which body. */
 export type Relief = {
@@ -172,6 +200,7 @@ export function buildRelief(
   frontZ: number,
   height: number,
   rootDepth: number,
+  flushRegions: Regions | null = null,
 ): Relief {
   const mb = new MeshBuilder(256);
   const groups: Relief["groups"] = [];
@@ -209,23 +238,6 @@ export function buildRelief(
       lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, where, floorPx, undefined, 2, mask.group,
     );
     traced.push({ regions: vec.regions });
-  }
-
-  // What is sunk into the frame is traced on its own, in the same bodies: its
-  // top is the frame's face, so it is flush, and it fills the recess the frame
-  // was given.
-  let anyFlush = false;
-  for (let i = 0; i < mask.flushBody.length; i++) {
-    if (mask.flushBody[i]) {
-      anyFlush = true;
-      break;
-    }
-  }
-  let flushRegions: ReturnType<typeof vectorise>["regions"] | null = null;
-  if (anyFlush && count > 0) {
-    flushRegions = vectorise(
-      lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, mask.flushBody, floorPx, undefined, 2, mask.group,
-    ).regions;
   }
 
   // Then body by body, so that each is one run of triangles.
@@ -333,40 +345,133 @@ function wobble(a: number, b: number): number {
  * The islands stay: they are joined to the frame by what is under the recess,
  * so nothing floats, and they are what makes the letter read as a letter.
  */
-export function recessLoops(mask: DecorMask): {
+export function recessLoops(
+  mask: DecorMask,
+  regions: Regions | null,
+): {
   outer: [number, number][][];
   islands: [number, number][][];
 } {
   const none = { outer: [], islands: [] };
-  let any = false;
-  for (let i = 0; i < mask.flush.length; i++) {
-    if (mask.flush[i]) {
-      any = true;
-      break;
+  if (!regions) return none;
+
+  // The outline of all the bodies together. Two bodies side by side share the
+  // line between them, one walking it each way, so an edge that appears in both
+  // directions is inside and goes; what is left is the outer boundary and the
+  // islands, and being the bodies' own vertices it fits them exactly.
+  const key = (x: number, y: number) => `${x.toFixed(10)},${y.toFixed(10)}`;
+  const edges = new Map<string, [number, number, number, number]>();
+  let sign = 0;
+  for (const region of regions) {
+    for (const ring of region.rings) {
+      const n = ring.x.length;
+      if (sign === 0 && ring.area > 0) {
+        let a2 = 0;
+        for (let i = 0; i < n; i++) {
+          const j = (i + 1) % n;
+          a2 += ring.x[i] * ring.y[j] - ring.x[j] * ring.y[i];
+        }
+        sign = Math.sign(a2) * Math.sign(ring.area);
+      }
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const ka = key(ring.x[i], ring.y[i]);
+        const kb = key(ring.x[j], ring.y[j]);
+        if (ka === kb) continue;
+        if (edges.delete(`${kb}>${ka}`)) continue;
+        edges.set(`${ka}>${kb}`, [ring.x[i], ring.y[i], ring.x[j], ring.y[j]]);
+      }
     }
   }
-  if (!any) return none;
 
-  const { w, h } = mask;
-  const floorPx = (MIN_FEATURE_MM * MASK_PX_PER_MM) ** 2;
-  const vec = vectorise(
-    new Float64Array(w * h), w, h, [0, 1], 1.2, undefined, floorPx, undefined, 2, mask.flush,
-  );
+  const from = new Map<string, string[]>();
+  for (const [id] of edges) {
+    const start = id.slice(0, id.indexOf(">"));
+    const list = from.get(start);
+    if (list) list.push(id);
+    else from.set(start, [id]);
+  }
 
   const outer: [number, number][][] = [];
   const islands: [number, number][][] = [];
-  for (const ring of vec.regions[1]?.rings ?? []) {
-    if (ring.x.length < 3) continue;
-    const loop: [number, number][] = [];
-    for (let i = 0; i < ring.x.length; i++) {
-      loop.push([
-        mask.originX + ring.x[i] * mask.spanX,
-        mask.originY + (1 - ring.y[i]) * mask.spanY,
-      ]);
+  const used = new Set<string>();
+
+  /** Files a finished loop under outer or islands, by which way round it goes. */
+  const file = (pts: [number, number][]) => {
+    if (pts.length < 3) return;
+    let a2 = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i + 1) % pts.length;
+      a2 += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1];
     }
+    const loop: [number, number][] = pts.map(([x, y]) => [
+      mask.originX + x * mask.spanX,
+      mask.originY + (1 - y) * mask.spanY,
+    ]);
     const tidy = clean(loop);
-    if (tidy.length < 3) continue;
-    (ring.area > 0 ? outer : islands).push(tidy);
+    if (tidy.length < 3) return;
+    (Math.sign(a2) * sign > 0 ? outer : islands).push(tidy);
+  };
+
+  for (const [firstId, first] of edges) {
+    if (used.has(firstId)) continue;
+    const pts: [number, number][] = [];
+    const at = new Map<string, number>();
+    let id = firstId;
+    let e = first;
+    const startKey = firstId.slice(0, firstId.indexOf(">"));
+    for (let guard = 0; guard < 1e6; guard++) {
+      used.add(id);
+      const here = key(e[0], e[1]);
+      // Two loops that touch at a point share it, and a walk that comes back to a
+      // point it has already been through has gone round one of them: that one is
+      // its own loop, set aside, and the walk goes on with the other.
+      const seen = at.get(here);
+      if (seen !== undefined) {
+        file(pts.splice(seen));
+        for (const k of [...at.keys()]) if ((at.get(k) as number) >= seen) at.delete(k);
+      }
+      at.set(here, pts.length);
+      pts.push([e[0], e[1]]);
+      const endKey = id.slice(id.indexOf(">") + 1);
+      if (endKey === startKey) break;
+      const next = (from.get(endKey) ?? []).find((c) => !used.has(c));
+      if (!next) break;
+      id = next;
+      e = edges.get(next)!;
+    }
+    file(pts);
   }
-  return { outer, islands };
+
+  // A fleck too small to see, or an outline that touches another at a point, is
+  // not worth a face that cannot be cut round it: two loops meeting at a vertex
+  // are two edges at once there, and the face between them is a thread. The
+  // smaller of such a pair, and anything under a quarter of a square millimetre,
+  // is left out; what it would have held is a speck.
+  const all = [...outer.map((l) => ({ l, o: true })), ...islands.map((l) => ({ l, o: false }))];
+  const sizeOf = (l: [number, number][]) => {
+    let a2 = 0;
+    for (let i = 0; i < l.length; i++) {
+      const j = (i + 1) % l.length;
+      a2 += l[i][0] * l[j][1] - l[j][0] * l[i][1];
+    }
+    return Math.abs(a2 / 2);
+  };
+  const areas = all.map((e) => sizeOf(e.l));
+  const drop = new Set<number>();
+  const owner = new Map<string, number>();
+  all.forEach((e, i) => {
+    if (areas[i] < 0.25) drop.add(i);
+    for (const [x, y] of e.l) {
+      const k = `${x.toFixed(2)},${y.toFixed(2)}`;
+      const other = owner.get(k);
+      if (other !== undefined && other !== i) drop.add(areas[other] < areas[i] ? other : i);
+      else owner.set(k, i);
+    }
+  });
+  const keep = all.filter((_, i) => !drop.has(i));
+  return {
+    outer: keep.filter((e) => e.o).map((e) => e.l),
+    islands: keep.filter((e) => !e.o).map((e) => e.l),
+  };
 }
