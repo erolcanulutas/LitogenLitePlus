@@ -159,3 +159,68 @@ export function circle(r: number, segments = 72): [number, number][] {
   }
   return out;
 }
+
+/**
+ * The wall round a hole of any shape, between two heights.
+ *
+ * `wall` decides which way a quad faces from the middle of the loop, which only
+ * holds for a convex one. A cut-out is as awkward as its picture, so this takes
+ * the loop's own winding instead: the solid is outside the loop and the wall
+ * faces in, into the hole.
+ */
+export function holeWall(
+  mb: MeshBuilder,
+  loop: readonly [number, number][],
+  z0: number,
+  z1: number,
+): void {
+  let area = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  // For a counter-clockwise loop the inside is on the left of every edge.
+  const side = area >= 0 ? 1 : -1;
+
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    const into: V3 = [-(b[1] - a[1]) * side, (b[0] - a[0]) * side, 0];
+    const a0: V3 = [a[0], a[1], z0];
+    const b0: V3 = [b[0], b[1], z0];
+    const a1: V3 = [a[0], a[1], z1];
+    const b1: V3 = [b[0], b[1], z1];
+    tri(mb, a0, b0, b1, into);
+    tri(mb, a0, b1, a1, into);
+  }
+}
+
+/** A rectangle with its corners rounded, counter-clockwise from the lower left. */
+export function roundedBox(
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+  radius: number,
+  segments = 10,
+): [number, number][] {
+  const r = Math.max(0, Math.min(radius, (x1 - x0) / 2, (y1 - y0) / 2));
+  if (r < 1e-6) return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+
+  const out: [number, number][] = [];
+  // Each corner's arc, starting where the previous side meets it.
+  const corners: [number, number, number][] = [
+    [x1 - r, y0 + r, -Math.PI / 2],
+    [x1 - r, y1 - r, 0],
+    [x0 + r, y1 - r, Math.PI / 2],
+    [x0 + r, y0 + r, Math.PI],
+  ];
+  for (const [cx, cy, a0] of corners) {
+    for (let i = 0; i <= segments; i++) {
+      const a = a0 + (i / segments) * (Math.PI / 2);
+      out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+    }
+  }
+  return out;
+}

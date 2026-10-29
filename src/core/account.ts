@@ -17,6 +17,9 @@ export type Account = {
   planUntil: string | null;
 };
 
+/** A holder design kept in an account: settings and decorations, never a picture. */
+export type DesignRecord = { name: string; data: unknown; updatedAt: string };
+
 /** Whether this account may export without spending anything. */
 export function unlimited(a: Account | null): boolean {
   return a?.plan === "sub";
@@ -35,7 +38,10 @@ const HEADERS = {
   "X-Litogen": "1",
 };
 
-async function call(path: string, body?: unknown): Promise<{ user?: Account | null }> {
+async function call(
+  path: string,
+  body?: unknown,
+): Promise<{ user?: Account | null; designs?: DesignRecord[] }> {
   let res: Response;
   try {
     res = await fetch(`/api/${path}`, {
@@ -48,7 +54,7 @@ async function call(path: string, body?: unknown): Promise<{ user?: Account | nu
     throw new Error("Could not reach the server");
   }
 
-  let data: { ok?: boolean; error?: string; user?: Account | null } = {};
+  let data: { ok?: boolean; error?: string; user?: Account | null; designs?: DesignRecord[] } = {};
   try {
     data = await res.json();
   } catch {
@@ -120,4 +126,18 @@ export async function spendForExport(): Promise<Account> {
   if (!data.ok || !data.user) throw new Error(data.error || "Could not export");
 
   return data.user;
+}
+
+/** The designs this account has kept. */
+export async function listDesigns(): Promise<DesignRecord[]> {
+  const { designs } = await call("designs.php");
+  return designs ?? [];
+}
+
+export async function saveDesignRemote(name: string, data: unknown): Promise<void> {
+  await call("designs.php", { action: "save", name, data });
+}
+
+export async function deleteDesignRemote(name: string): Promise<void> {
+  await call("designs.php", { action: "delete", name });
 }

@@ -181,6 +181,21 @@ function db(): PDO
         'CREATE UNIQUE INDEX IF NOT EXISTS identity_once ON identities (provider, subject)'
     );
 
+    // Holder designs an account has chosen to keep: settings and decorations,
+    // as JSON, and never a picture.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS holder_designs (
+            id $auto,
+            user_id INTEGER NOT NULL,
+            name VARCHAR(80) NOT NULL,
+            data TEXT NOT NULL,
+            updated_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS design_name ON holder_designs (user_id, name)'
+    );
+
     return $pdo;
 }
 

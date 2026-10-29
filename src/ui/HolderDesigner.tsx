@@ -8,6 +8,10 @@ type Props = {
   /** The holder's front face, in mm. */
   width: number;
   height: number;
+  /** Radius of the frame's outer corners, in mm. */
+  corner: number;
+  /** Height of the rail below which nothing is cut. */
+  rail: number;
   window: Rect;
   pocket: Rect;
   decorations: Decoration[];
@@ -49,6 +53,8 @@ type Drag =
 export default function HolderDesigner({
   width,
   height,
+  corner,
+  rail,
   window: win,
   pocket,
   decorations: committed,
@@ -125,7 +131,10 @@ export default function HolderDesigner({
         [toX(r.x0), toY(r.y1), (r.x1 - r.x0) * s, (r.y1 - r.y0) * s] as const;
 
       ctx.fillStyle = "#d9b77a";
-      ctx.fillRect(...rect({ x0: 0, x1: width, y0: 0, y1: height }));
+      const r = Math.min(corner, width / 2, height / 2) * s;
+      ctx.beginPath();
+      ctx.roundRect(toX(0), toY(height), width * s, height * s, r);
+      ctx.fill();
 
       ctx.setLineDash([4, 3]);
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
@@ -144,21 +153,25 @@ export default function HolderDesigner({
       ctx.lineTo(VIEW_PX, toY(0));
       ctx.stroke();
 
+      // Where nothing is cut, below the rail the legs stand on.
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
+      ctx.fillRect(toX(0), toY(rail), width * s, rail * s);
+
       decorations.forEach((d, i) => {
         const img = images[i];
         if (!img) return;
         const px = d.size * s;
         ctx.save();
+        // A cut is drawn as the hole it will be: dark, the frame showing round it.
+        if (d.cut) {
+          ctx.globalAlpha = 0.55;
+          ctx.filter = "brightness(0.15)";
+        }
         ctx.translate(toX(d.x), toY(d.y));
         ctx.rotate((d.rotation * Math.PI) / 180);
         ctx.drawImage(img, -px / 2, -px / 2, px, px);
         ctx.restore();
       });
-
-      // The window again over the icons: what is drawn here and cut away in
-      // the model are the same thing.
-      ctx.fillStyle = "#1e293b";
-      ctx.fillRect(...rect(win));
 
       if (selected !== null && decorations[selected]) {
         const d = decorations[selected];
@@ -378,6 +391,24 @@ export default function HolderDesigner({
 
       {current && (
         <div style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+            <button
+              className={`segment ${!current.cut ? "active" : ""}`}
+              style={{ flex: 1 }}
+              onClick={() => patchSelected({ cut: false })}
+              title="Stand out from the frame's front face"
+            >
+              Raised
+            </button>
+            <button
+              className={`segment ${current.cut ? "active" : ""}`}
+              style={{ flex: 1 }}
+              onClick={() => patchSelected({ cut: true })}
+              title="Cut clean through the frame, so light shows through"
+            >
+              Cut out
+            </button>
+          </div>
           <div className="label-row">
             <label className="miniLabel">Size: {current.size.toFixed(0)} mm</label>
           </div>

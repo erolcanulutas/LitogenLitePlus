@@ -24,16 +24,18 @@ import {
   holderLayout,
   holderStanding,
 } from "./core/holder";
-import type { Decoration, ReliefMode } from "./core/decor";
+import type { DecorGeom, Decoration, ReliefMode } from "./core/decor";
+import type { CutLoop } from "./core/holder";
 import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
 import HolderDesigner from "./ui/HolderDesigner";
 import NumField from "./ui/NumField";
-import { makeRelief } from "./ui/decorIcons";
+import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
-  OutOfTokens, signIn, signOut, signUp, spendForExport, unlimited, whoAmI,
+  OutOfTokens, deleteDesignRemote, listDesigns, saveDesignRemote, signIn, signOut,
+  signUp, spendForExport, unlimited, whoAmI,
   type Account,
 } from "./core/account";
 import { drawGoogleButton, signInOutcome } from "./core/google";
@@ -1413,6 +1415,7 @@ type SavedDesign = {
   angle: number;
   /** Frame width in mm. Older saves have a preset name instead. */
   border?: number;
+  corner?: number;
   preset?: keyof typeof HOLDER_PRESETS;
   fit: number;
   tealight: number;
@@ -1787,6 +1790,7 @@ export default function App() {
   // The holder and stand are separate parts, made from the picture's size.
   const [holderAngle, setHolderAngle] = useState(85);
   const [holderBorder, setHolderBorder] = useState(10);
+  const [holderCorner, setHolderCorner] = useState(0);
   const [showPicture, setShowPicture] = useState(true);
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
   const [tealightMm, setTealightMm] = useState(38);
@@ -1798,9 +1802,12 @@ export default function App() {
   // How the holder lies on the bed. Raised decorations are on the front face,
   // so with any the holder has to be printed standing.
   const [holderPose, setHolderPose] = useState<"face" | "standing">("face");
-  const [reliefMesh, setReliefMesh] = useState<Mesh | null>(null);
+  const [decor, setDecor] = useState<{ relief: Mesh; cuts: CutLoop[] } | null>(null);
   const [designName, setDesignName] = useState("");
   const [designs, setDesigns] = useState<SavedDesign[]>(readDesigns);
+  /** The same, as the account keeps them: filled in once somebody is signed in. */
+  const [cloudDesigns, setCloudDesigns] = useState<SavedDesign[]>([]);
+  const [designNote, setDesignNote] = useState<string | null>(null);
   const [pictureLayers, setPictureLayers] = useState(4);
 
   const [toneLevels, setToneLevels] = useState(2);
@@ -1819,13 +1826,29 @@ export default function App() {
       lip: lipFor(holderBorder),
       fit: holderFit,
       tiltDeg: 90 - holderAngle,
+      corner: holderCorner,
     };
-  }, [holderBorder, widthMm, heightMm, maxT, holderFit, holderAngle]);
+  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderAngle]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
 
-  // The raised shapes need icons loaded and drawn, which takes a moment; a
-  // newer request makes an older one that is still working irrelevant.
+  const decorGeom = useMemo<DecorGeom>(
+    () => ({
+      W: holderGeom.W,
+      H: holderGeom.H,
+      corner: holderGeom.corner,
+      window: holderGeom.window,
+      pocket: holderGeom.pocket,
+      rail: holderGeom.rail,
+      frontZ: holderGeom.T,
+      lip: holderGeom.T - holderGeom.pocketDepth,
+    }),
+    [holderGeom],
+  );
+
+  // The raised shapes and the cuts need icons loaded and drawn, which takes a
+  // moment; a newer request makes an older one that is still working
+  // irrelevant.
   //
   // Tracing the icons takes a good fraction of a second, so it waits until the
   // settings have been still for a moment: a slider dragged across its range is
@@ -1834,29 +1857,21 @@ export default function App() {
     let live = true;
     if (decorations.length === 0) return;
     const timer = setTimeout(() => {
-      makeRelief(
-        decorations,
-        holderGeom.W,
-        holderGeom.H,
-        holderGeom.window,
-        holderGeom.T,
-        reliefMm,
-        reliefMode,
-      )
-        .then((m) => live && setReliefMesh(m))
-        .catch(() => live && setReliefMesh(null));
+      makeDecor(decorations, decorGeom, reliefMm, reliefMode)
+        .then((d) => live && setDecor(d))
+        .catch(() => live && setDecor(null));
     }, 300);
     return () => {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, holderGeom, reliefMm, reliefMode]);
+  }, [decorations, decorGeom, reliefMm, reliefMode]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
-    const plate = buildHolder(holderParams);
-    const relief = decorations.length > 0 ? reliefMesh : null;
-    const frame = relief && relief.triangleCount > 0 ? joinMeshes(plate, relief) : plate;
+    const made = decorations.length > 0 ? decor : null;
+    const plate = buildHolder(holderParams, made?.cuts ?? []);
+    const frame = made && made.relief.triangleCount > 0 ? joinMeshes(plate, made.relief) : plate;
 
     const placed = holderInPlace(frame, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
     const stand = buildStand({ tealight: tealightMm });
@@ -1872,7 +1887,7 @@ export default function App() {
       colors: ["#e2c28b", "#9fb4c8"],
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
-  }, [shapeId, curved, holderParams, holderGeom, reliefMesh, decorations.length, tealightMm]);
+  }, [shapeId, curved, holderParams, holderGeom, decor, decorations.length, tealightMm]);
 
   // The finished picture is its own model, which can have millions of
   // triangles. It is placed in the pocket by a matrix, so changing the angle or
@@ -2420,19 +2435,12 @@ export default function App() {
       return;
     }
 
-    const plate = buildHolder(holderParams);
-    let whole = plate;
+    let whole: Mesh;
     if (decorations.length > 0) {
-      const relief = await makeRelief(
-        decorations,
-        holderGeom.W,
-        holderGeom.H,
-        holderGeom.window,
-        holderGeom.T,
-        reliefMm,
-        reliefMode,
-      );
-      whole = joinMeshes(plate, relief);
+      const made = await makeDecor(decorations, decorGeom, reliefMm, reliefMode);
+      whole = joinMeshes(buildHolder(holderParams, made.cuts), made.relief);
+    } else {
+      whole = buildHolder(holderParams);
     }
     const out =
       holderPose === "standing"
@@ -2440,6 +2448,35 @@ export default function App() {
         : holderForPrinting(whole);
     downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
   }
+
+  const signedInAs = account?.email ?? null;
+  useEffect(() => {
+    if (!signedInAs) return;
+    let live = true;
+    listDesigns()
+      .then((list) => {
+        if (!live) return;
+        setCloudDesigns(
+          list
+            .map((r) => r.data as SavedDesign)
+            .filter((d) => d && typeof d.name === "string" && Array.isArray(d.decorations)),
+        );
+      })
+      .catch(() => {
+        // Nothing to show if the account cannot be reached: the local ones remain.
+      });
+    return () => {
+      live = false;
+    };
+  }, [signedInAs]);
+
+  /** What is listed: the account's designs when signed in, and any kept only here. */
+  const shownDesigns: (SavedDesign & { cloud: boolean })[] = signedInAs
+    ? [
+        ...cloudDesigns.map((d) => ({ ...d, cloud: true })),
+        ...designs.filter((d) => !cloudDesigns.some((c) => c.name === d.name)).map((d) => ({ ...d, cloud: false })),
+      ]
+    : designs.map((d) => ({ ...d, cloud: false }));
 
   function saveDesign() {
     const name = designName.trim() || `Design ${designs.length + 1}`;
@@ -2449,6 +2486,7 @@ export default function App() {
       picture: { w: +widthMm.toFixed(1), h: +heightMm.toFixed(1), t: maxT },
       angle: holderAngle,
       border: holderBorder,
+      corner: holderCorner,
       fit: holderFit,
       tealight: tealightMm,
       relief: reliefMm,
@@ -2460,11 +2498,19 @@ export default function App() {
     setDesigns(next);
     writeDesigns(next);
     setDesignName("");
+    setDesignNote(null);
+
+    if (signedInAs) {
+      saveDesignRemote(name, entry)
+        .then(() => setCloudDesigns((prev) => [entry, ...prev.filter((d) => d.name !== name)]))
+        .catch((e: Error) => setDesignNote(`Saved here, but not to your account: ${e.message}`));
+    }
   }
 
   function loadDesign(d: SavedDesign) {
     setHolderAngle(d.angle);
     setHolderBorder(d.border ?? (d.preset && HOLDER_PRESETS[d.preset]?.border) ?? 10);
+    setHolderCorner(d.corner ?? 0);
     setHolderFit(d.fit);
     setTealightMm(d.tealight);
     setReliefMm(d.relief);
@@ -2478,6 +2524,11 @@ export default function App() {
     const next = designs.filter((d) => d.name !== name);
     setDesigns(next);
     writeDesigns(next);
+    if (signedInAs && cloudDesigns.some((d) => d.name === name)) {
+      deleteDesignRemote(name)
+        .then(() => setCloudDesigns((prev) => prev.filter((d) => d.name !== name)))
+        .catch((e: Error) => setDesignNote(`Could not delete it from your account: ${e.message}`));
+    }
   }
 
   async function generate(download = true) {
@@ -3898,6 +3949,12 @@ export default function App() {
               </div>
 
               <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Corner radius (mm)</label>
+                <InfoIcon text="Rounds the frame's outer corners, from 0 (square) to 30 mm. The picture's pocket keeps square corners, since the picture itself is a rectangle; the rounding stops short of the legs." />
+              </div>
+              <NumField value={holderCorner} min={0} max={30} step={1} onChange={setHolderCorner} />
+
+              <div className="label-row" style={{ marginTop: 12 }}>
                 <label className="miniLabel">Fit (mm)</label>
                 <InfoIcon text="The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
               </div>
@@ -3937,11 +3994,13 @@ export default function App() {
 
               <div className="label-row" style={{ marginTop: 16 }}>
                 <label className="miniLabel">Decorations</label>
-                <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the holder's front face and may hang over its edge; anything over the picture's window is cut away so nothing stands in front of it. Because they are on the front, print the holder standing up." />
+                <InfoIcon text="Pick an icon to put it on the frame, then drag it into place. The selected icon has a square handle at its corner for size and a round one above it for turn; the wheel zooms the view and dragging the background moves it. Icons are raised on the holder's front face and may hang over its edge or over the picture's window, where they stand in front of the picture without ever reaching behind the face it rests against. Switch an icon to Cut out to cut its shape clean through the frame instead, so light shows through; a piece that would be left floating inside it, like the middle of an O, is joined back by a narrow bridge. Raised icons are on the front, so print the holder standing up." />
               </div>
               <HolderDesigner
                 width={holderGeom.W}
                 height={holderGeom.H}
+                corner={holderGeom.corner}
+                rail={holderGeom.rail}
                 window={holderGeom.window}
                 pocket={holderGeom.pocket}
                 decorations={decorations}
@@ -4009,7 +4068,7 @@ export default function App() {
 
               <div className="label-row" style={{ marginTop: 16 }}>
                 <label className="miniLabel">Saved designs</label>
-                <InfoIcon text="Designs are kept in this browser only, on this device. They hold the holder's settings and what is on the frame, never the picture itself, which is not stored anywhere. To use one again, load the same picture first." />
+                <InfoIcon text="A design holds the holder's settings and what is on the frame, never the picture itself, which is not stored anywhere. Signed out, designs are kept in this browser on this device. Signed in, they are also kept in your account, so they follow you to another device. To use one again, load the same picture first." />
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <input
@@ -4023,12 +4082,13 @@ export default function App() {
                   Save
                 </button>
               </div>
-              {designs.map((d) => (
+              {shownDesigns.map((d) => (
                 <div
                   key={d.name}
                   style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13 }}
                 >
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {d.cloud && <span title="Kept in your account"> ☁ </span>}
                     {d.name}
                     <span style={{ opacity: 0.6 }}>
                       {" "}· {d.picture.w}×{d.picture.h}
@@ -4042,6 +4102,9 @@ export default function App() {
                   </button>
                 </div>
               ))}
+              {designNote && (
+                <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>{designNote}</div>
+              )}
 
               <button
                 className="btn"

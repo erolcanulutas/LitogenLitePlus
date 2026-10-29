@@ -1,5 +1,5 @@
 import { MeshBuilder, type Mesh } from "./mesh";
-import { atY, atZ, cap, frustum, wall, type V3 } from "./solids";
+import { atY, atZ, cap, frustum, holeWall, roundedBox, wall, type V3 } from "./solids";
 import { PRONG, armAngle } from "./prong";
 import { STAND_DEFAULTS } from "./stand";
 
@@ -67,7 +67,16 @@ export type HolderParams = {
 
   /** How far the plate leans back from upright, 0 to 45 degrees. */
   tiltDeg: number;
+
+  /** Radius the frame's outer corners are rounded to, in mm. 0 leaves them square. */
+  corner: number;
 };
+
+/** A hole cut clean through the frame, as a closed outline in front-face mm. */
+export type CutLoop = [number, number][];
+
+/** How close a cut-out may come to the frame's edge and to the pocket, in mm. */
+export const CUT_MARGIN_MM = 1.2;
 
 export const HOLDER_DEFAULTS: HolderParams = {
   pictureW: 100,
@@ -87,6 +96,7 @@ export const HOLDER_DEFAULTS: HolderParams = {
   taperDeg: PRONG.taperDeg,
   fit: 0.2,
   tiltDeg: 0,
+  corner: 0,
 };
 
 /**
@@ -131,12 +141,16 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   const pocketH = p.pictureH + 2 * p.pocketPlay;
   const H = rail + pocketH + p.border - p.pocketPlay;
 
+  // Rounding cannot take more than half of either side, and the legs stand on
+  // the rail, so it stops short of them.
+  const corner = Math.max(0, Math.min(p.corner, W / 2 - 2, H / 2 - 2, 30));
+
   const winW = p.pictureW - 2 * p.lip;
   const winH = p.pictureH - 2 * p.lip;
   const winY = rail + pocketH / 2;
 
   return {
-    p, tilt, T, pocketDepth, W, H, rail,
+    p, tilt, T, pocketDepth, W, H, rail, corner,
     pocketW, pocketH,
     socketDepth, legW, h1, h2, top, half, armWide,
     /** The window the picture shows through, in the front face's terms. */
@@ -146,9 +160,9 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   };
 }
 
-export function buildHolder(input: Partial<HolderParams> = {}): Mesh {
+export function buildHolder(input: Partial<HolderParams> = {}, cuts: readonly CutLoop[] = []): Mesh {
   const L = holderLayout(input);
-  const { p, T, pocketDepth, W, H, rail, pocketW, pocketH } = L;
+  const { p, T, pocketDepth, W, H, rail, corner, pocketW, pocketH } = L;
   const mb = new MeshBuilder(2048);
 
   const st = Math.sin(L.tilt);
@@ -172,20 +186,25 @@ export function buildHolder(input: Partial<HolderParams> = {}): Mesh {
   const pocket = box(L.pocket.x0, L.pocket.x1, L.pocket.y0, L.pocket.y1);
   const window = box(L.window.x0, L.window.x1, L.window.y0, L.window.y1);
 
-  const outerBack = atZ(box(0, W, 0, H), 0);
+  const outline = roundedBox(0, W, 0, H, corner);
+  const outerBack = atZ(outline, 0);
   // The front face's lower edge reaches down to the table plane, so the whole
-  // underside of the plate lies on it.
-  const outerFront = atZ(box(0, W, 0, H), T).map(
-    (v, i): V3 => (i < 2 ? [v[0], -T * tt, v[2]] : v),
-  );
+  // underside of the plate lies on it; round a corner and the arc rises from
+  // that edge by the same amount it climbs.
+  const outerFront = atZ(outline, T).map((v): V3 => {
+    const k = v[1] <= 1e-9 ? 1 : corner > 0 && v[1] < corner ? 1 - v[1] / corner : 0;
+    return [v[0], v[1] - T * tt * k, v[2]];
+  });
 
-  // The plate: one shell, stepped from the pocket to the window.
-  cap(mb, outerBack, [atZ(pocket, 0)], [0, 0, -1]);
+  // The plate: one shell, stepped from the pocket to the window, with any
+  // cut-outs going clean through it.
+  cap(mb, outerBack, [atZ(pocket, 0), ...cuts.map((c) => atZ(c, 0))], [0, 0, -1]);
   wall(mb, atZ(pocket, 0), atZ(pocket, pocketDepth), false);
   cap(mb, atZ(pocket, pocketDepth), [atZ(window, pocketDepth)], [0, 0, -1]);
   wall(mb, atZ(window, pocketDepth), atZ(window, T), false);
-  cap(mb, outerFront, [atZ(window, T)], [0, 0, 1]);
+  cap(mb, outerFront, [atZ(window, T), ...cuts.map((c) => atZ(c, T))], [0, 0, 1]);
   wall(mb, outerBack, outerFront, true);
+  for (const c of cuts) holeWall(mb, c, 0, T);
 
   if (p.clips) {
     const x0 = W / 2 - pocketW / 2;

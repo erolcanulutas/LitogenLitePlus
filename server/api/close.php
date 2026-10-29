@@ -34,6 +34,7 @@ if ($typed !== strtolower((string) $user['email'])) {
 
 $id = (int) $user['id'];
 
+$db->prepare('DELETE FROM holder_designs WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM identities WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM token_ledger WHERE user_id = ?')->execute([$id]);
 $db->prepare('DELETE FROM pending_credits WHERE email = ?')->execute([$user['email']]);
