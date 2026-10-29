@@ -1,12 +1,14 @@
 name: Deploy to litogen.app
 
-# By hand, never on a push.
+# Every push to main goes live, and it can still be run by hand.
 #
-# Pushing already publishes to GitHub Pages, which is where a change gets
-# looked at. This is the other end of that: the live site moves when someone
-# decides it should, not because a commit landed. Run it from the Actions tab —
-# the branch or tag picker there chooses what goes out.
+# Pushing also publishes to GitHub Pages (deploy.yml). This is the other end of
+# that: the same commit is built and sent to litogen.app over FTP. Run it from
+# the Actions tab to put a different branch or tag out — the picker there
+# chooses what goes.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       note:
