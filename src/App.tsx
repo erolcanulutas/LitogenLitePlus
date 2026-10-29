@@ -1424,11 +1424,34 @@ type SavedDesign = {
   reliefMode?: ReliefMode;
   iconColours?: number;
   frameColour?: string;
+  filaments?: string[];
   pose: "face" | "standing";
   decorations: Decoration[];
 };
 
 const DESIGNS_KEY = "litogen.holderDesigns";
+const FILAMENTS_KEY = "litogen.filaments";
+
+/** The colours of filament the person has said they own, kept in this browser. */
+function readFilaments(): string[] {
+  try {
+    const raw = localStorage.getItem(FILAMENTS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list)
+      ? list.filter((c): c is string => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFilaments(list: string[]) {
+  try {
+    localStorage.setItem(FILAMENTS_KEY, JSON.stringify(list));
+  } catch {
+    // Storage blocked: they are kept for this visit only.
+  }
+}
 
 function readDesigns(): SavedDesign[] {
   try {
@@ -1805,6 +1828,13 @@ export default function App() {
   /** Print the icons in their own colours, up to this many; 0 prints them all in one. */
   const [iconColours, setIconColours] = useState(0);
   const [frameColour, setFrameColour] = useState("#e2c28b");
+  /** Filament colours to hand; icon colours are printed in the nearest. Empty uses the icons' own. */
+  const [filaments, setFilamentsState] = useState<string[]>(readFilaments);
+  const setFilaments = (next: string[]) => {
+    setFilamentsState(next);
+    writeFilaments(next);
+  };
+  const [holderNote, setHolderNote] = useState<string | null>(null);
   // How the holder lies on the bed. Raised decorations are on the front face,
   // so with any the holder has to be printed standing.
   const [holderPose, setHolderPose] = useState<"face" | "standing">("face");
@@ -1863,7 +1893,7 @@ export default function App() {
     let live = true;
     if (decorations.length === 0) return;
     const timer = setTimeout(() => {
-      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours })
+      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours, palette: filaments })
         .then((d) => live && setDecor(d))
         .catch(() => live && setDecor(null));
     }, 300);
@@ -1871,7 +1901,7 @@ export default function App() {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours]);
+  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, filaments]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
@@ -2444,13 +2474,29 @@ export default function App() {
     }
   };
 
-  /** Holder or stand, sized to the picture, straight to a file. */
+  /**
+   * Holder or stand, sized to the picture, straight to a file.
+   *
+   * The stand is free. The holder costs a token like any other export, spent
+   * after it is built and before it is handed over, and the server decides.
+   */
   async function downloadHolderPart(part: "holder" | "stand") {
+    setHolderNote(null);
     if (part === "stand") {
       downloadArrayBuffer(
         writeBinarySTL(buildStand({ tealight: tealightMm })),
         "litogen-stand.stl",
       );
+      return;
+    }
+
+    if (!account) {
+      setAccountError("Sign in to download the holder. New accounts get 50 tokens.");
+      setAccountOpen(true);
+      return;
+    }
+    if (!unlimited(account) && account.tokens < 1) {
+      setHolderNote("Out of tokens. Top up, or subscribe for unlimited exports.");
       return;
     }
 
@@ -2460,6 +2506,7 @@ export default function App() {
       const made = await makeDecor(decorations, decorGeom, reliefMm, {
         mode: reliefMode,
         colours: iconColours,
+        palette: filaments,
       });
       const plate = buildHolder(holderParams, made.cuts);
       whole = joinMeshes(plate, made.relief.mesh);
@@ -2487,10 +2534,31 @@ export default function App() {
         },
         [frameColour, ...bodies.map((b) => b.color)],
       );
-      downloadArrayBuffer(file, `litogen-holder-${holderAngle}deg.3mf`);
+      if (await payForHolder()) {
+        downloadArrayBuffer(file, `litogen-holder-${holderAngle}deg.3mf`);
+      }
       return;
     }
-    downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
+    if (await payForHolder()) {
+      downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
+    }
+  }
+
+  /** Spends the token for a holder; false, with the reason shown, if it could not. */
+  async function payForHolder(): Promise<boolean> {
+    try {
+      setAccount(await spendForExport());
+      return true;
+    } catch (e) {
+      setHolderNote(
+        e instanceof OutOfTokens
+          ? "Out of tokens. Top up, or subscribe for unlimited exports."
+          : e instanceof Error
+            ? e.message
+            : "Could not download",
+      );
+      return false;
+    }
   }
 
   const signedInAs = account?.email ?? null;
@@ -2537,6 +2605,7 @@ export default function App() {
       reliefMode,
       iconColours,
       frameColour,
+      filaments,
       pose: holderPose,
       decorations,
     };
@@ -2563,6 +2632,7 @@ export default function App() {
     setReliefMode(d.reliefMode ?? "flat");
     setIconColours(d.iconColours ?? 0);
     setFrameColour(d.frameColour ?? "#e2c28b");
+    if (d.filaments) setFilaments(d.filaments.filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12));
     setHolderPose(d.pose);
     setDecorations(d.decorations);
     setDecorSelected(null);
@@ -2784,7 +2854,7 @@ export default function App() {
         <div className="section">
           <div className="label-row">
             <div className="sectionTitle">Surface</div>
-            <InfoIcon text="Photo samples the picture as a continuous surface. Graphic quantises it into tones and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped. Use Graphic for logos, text and line art. Switching also moves the print orientation to the one that suits it — upright for a photograph, flat for a graphic, where colour bands cost one filament change each instead of one per layer. Change it back underneath if you would rather not." />
+            <InfoIcon text="Lithophane samples the picture as a continuous surface, thicker where it is dark, the way a photograph wants. Layered quantises it into tones, each standing at its own height, and cuts the mesh along the picture's own contours, so hard edges come out exactly straight instead of stair-stepped; use it for logos, text and line art. Inlay keeps the top flat and sets the picture's colours into it side by side, for coasters and signs. Switching also moves the print orientation to the one that suits it — upright for a lithophane, flat for the others, where colour bands cost one filament change each instead of one per layer. Change it back underneath if you would rather not." />
           </div>
 
           <div className="segmented">
@@ -2800,7 +2870,7 @@ export default function App() {
                 setColors([BAND_PALETTE[0]]);
               }}
             >
-              Photo
+              Lithophane
             </button>
             {/* Only on an actual change of surface: pressing the one that
                 is already on leaves the tone count and the orientation
@@ -2815,7 +2885,7 @@ export default function App() {
                 restoreGraphicBands();
               }}
             >
-              Graphic
+              Layered
             </button>
             <button
               className={`segment ${inlayMode ? "active" : ""}`}
@@ -4100,10 +4170,61 @@ export default function App() {
                   {iconColours > 0 && (
                     <>
                       <div className="label-row" style={{ marginTop: 8 }}>
-                        <label className="miniLabel">Colours, at most</label>
-                        <InfoIcon text="Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour. With a colour per body the file is a 3MF; a plain STL cannot carry them." />
+                        <label className="miniLabel">Reduce colours to at most</label>
+                        <InfoIcon text="Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them." />
                       </div>
                       <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
+
+                      <div className="label-row" style={{ marginTop: 10 }}>
+                        <label className="miniLabel">My filaments</label>
+                        <InfoIcon text="Add the colours of filament you have. Every colour of an icon is then printed in the nearest of these, whatever the icon was drawn in, so nothing needs a colour you do not own. Leave it empty to use the icons' own colours. Kept in this browser." />
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                        {filaments.map((c, i) => (
+                          <span key={i} style={{ position: "relative", display: "inline-flex" }}>
+                            <input
+                              type="color"
+                              value={c}
+                              onChange={(e) =>
+                                setFilaments(filaments.map((f, j) => (j === i ? e.target.value : f)))
+                              }
+                              style={{ width: 34, height: 28, padding: 0 }}
+                            />
+                            <button
+                              type="button"
+                              title="Remove this filament"
+                              onClick={() => setFilaments(filaments.filter((_, j) => j !== i))}
+                              style={{
+                                position: "absolute",
+                                top: -6,
+                                right: -6,
+                                width: 16,
+                                height: 16,
+                                lineHeight: "14px",
+                                padding: 0,
+                                borderRadius: 8,
+                                border: "1px solid rgba(255,255,255,0.35)",
+                                background: "rgba(15,23,42,0.92)",
+                                color: "#e2e8f0",
+                                fontSize: 10,
+                                cursor: "pointer",
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                        {filaments.length < 12 && (
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ padding: "2px 10px" }}
+                            onClick={() => setFilaments([...filaments, frameColour])}
+                          >
+                            + Add
+                          </button>
+                        )}
+                      </div>
                     </>
                   )}
 
@@ -4186,17 +4307,21 @@ export default function App() {
                 style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                 onClick={() => downloadHolderPart("holder")}
               >
-                {iconColours > 0 && decorations.some((d) => !d.cut)
+                {(iconColours > 0 && decorations.some((d) => !d.cut)
                   ? "Download holder (3MF, colours)"
-                  : "Download holder (STL)"}
+                  : "Download holder (STL)") +
+                  (unlimited(account) ? " · included" : " · 1 token")}
               </button>
               <button
                 className="btn"
                 style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                 onClick={() => downloadHolderPart("stand")}
               >
-                Download stand (STL)
+                Download stand (STL) · free
               </button>
+              {holderNote && (
+                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>
+              )}
             </>
           )}
         </div>

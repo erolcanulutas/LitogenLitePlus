@@ -453,3 +453,9 @@ export function labelPixels(data: ArrayLike<number>, centres: readonly Lab[]): U
   }
   return out;
 }
+
+/** A #rrggbb colour in Lab. */
+export function hexToLab(hex: string): Lab {
+  const v = (i: number) => parseInt(hex.slice(i, i + 2), 16) || 0;
+  return toLab(v(1), v(3), v(5), [0, 0, 0]);
+}

@@ -10,7 +10,7 @@ import {
   type Relief,
   type ReliefMode,
 } from "../core/decor";
-import { clusterColors, labelPixels, type Lab } from "../core/palette";
+import { clusterColors, hexToLab, labelPixels, type Lab } from "../core/palette";
 
 /** Every icon in the assets folder, found by Vite at build time. */
 const files = import.meta.glob("../assets/icons/*.svg", {
@@ -72,9 +72,6 @@ type Rect = { x0: number; x1: number; y0: number; y1: number };
 /** How close a cut may come to the frame's edge and to the pocket, in mm. */
 const CUT_MARGIN_MM = 1.2;
 
-/** How far a part with nothing under it is carried onto the frame, in px. */
-const OVERLAP_PX = 6;
-
 /** Half the width of the bridge that joins a floating piece back, in px. */
 const BRIDGE_RADIUS_PX = 3;
 
@@ -92,6 +89,11 @@ export type ReliefLook = {
   mode: ReliefMode;
   /** The most colours the icons are printed in; 0 prints them all in one. */
   colours: number;
+  /**
+   * The colours of filament to hand. When there are any, each colour of an icon
+   * is printed in the nearest of these, whatever the icons were drawn in.
+   */
+  palette?: readonly string[];
 };
 
 /** Colours closer than this are one colour of filament. */
@@ -173,12 +175,6 @@ export async function renderMask(
 
   if (cd) joinFloating(cutOut, border, w, h);
 
-  // A part with nothing under it has to be joined to the frame by more than
-  // a face that touches it: a slicer joins what overlaps, and a mesh tool
-  // sees two solids that merely meet. So it is carried a little way onto the
-  // frame, where its lower part sits inside the frame's own material.
-  overlapOnto(beyond, onFrame, w, h, OVERLAP_PX);
-
   // What is cut is not also raised.
   for (let i = 0; i < onFrame.length; i++) {
     if (cutOut[i]) {
@@ -253,6 +249,20 @@ function groupRaised(
   });
   const img = { width: raised.length, height: 1, data: sample } as unknown as ImageData;
 
+  // With filaments named, the colours are theirs and nothing is looked for.
+  const given = (look.palette ?? []).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
+  if (given.length > 0) {
+    const label = labelPixels(sample, given.map(hexToLab));
+    raised.forEach((p, k) => {
+      group[p] = label[k];
+    });
+    return {
+      group,
+      groupFrac: given.map((c) => (look.mode === "flat" ? 1 : fracs[stepOf(brightness(c))])),
+      groupColors: given.map((c) => c.toLowerCase()),
+    };
+  }
+
   const found = clusterColors(img, Math.max(2, look.colours), COLOUR_GAP);
 
   // Centres too near one another are one colour: keep the first of each.
@@ -278,47 +288,6 @@ function groupRaised(
     groupFrac: colours.map((c) => (look.mode === "flat" ? 1 : fracs[stepOf(brightness(c))])),
     groupColors: colours,
   };
-}
-
-/**
- * Takes the pixels of `onto` within `reach` of `from` into `from`.
- *
- * Only the edge of `from` has anything to give, so only its edge is walked.
- */
-function overlapOnto(from: Uint8Array, onto: Uint8Array, w: number, h: number, reach: number) {
-  const edge: number[] = [];
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (!from[i]) continue;
-      if (
-        (x > 0 && onto[i - 1]) || (x < w - 1 && onto[i + 1]) ||
-        (y > 0 && onto[i - w]) || (y < h - 1 && onto[i + w])
-      ) {
-        edge.push(i);
-      }
-    }
-  }
-
-  const take: number[] = [];
-  for (const i of edge) {
-    const x = i % w;
-    const y = (i - x) / w;
-    for (let dy = -reach; dy <= reach; dy++) {
-      for (let dx = -reach; dx <= reach; dx++) {
-        if (dx * dx + dy * dy > reach * reach) continue;
-        const xx = x + dx;
-        const yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-        const q = yy * w + xx;
-        if (onto[q]) take.push(q);
-      }
-    }
-  }
-  for (const q of take) {
-    onto[q] = 0;
-    from[q] = 1;
-  }
 }
 
 /**

@@ -65,8 +65,8 @@ export const MASK_PX_PER_MM = 6;
 /** How far past the frame an icon may be taken, on every side, in mm. */
 export const OVERHANG_MM = 40;
 
-/** How far a raised shape sinks into the face it stands on, so the two overlap, in mm. */
-const EMBED_MM = 0.3;
+/** How far above the lip's underside a shape starts, so its bottom is not coplanar with it, in mm. */
+const ROOT_CLEARANCE_MM = 0.2;
 
 /** Steps a colour-following relief is made of. */
 export const RELIEF_STEPS = 3;
@@ -156,36 +156,35 @@ export function buildRelief(
     y: mask.originY + (1 - v) * mask.spanY,
   });
 
-  // On the frame the shapes stand on its face; with nothing under them they
-  // start back in the front layer, so that they are joined to the frame.
-  const layers: [Uint8Array, number][] = [
-    [mask.onFrame, frontZ - EMBED_MM],
-    [mask.beyond, frontZ - rootDepth],
-  ];
-
-  // Each layer is traced once, all its bodies together, so that two bodies side
-  // by side share the line between them.
-  const traced: { baseZ: number; regions: ReturnType<typeof vectorise>["regions"] }[] = [];
-  for (const [where, baseZ] of layers) {
-    let any = false;
-    for (let i = 0; i < where.length; i++) {
-      if (where[i]) {
-        any = true;
-        break;
-      }
+  // Over the frame and over nothing are one shape, traced once. They used to be
+  // traced apart, and where an icon crossed the frame's edge each half was
+  // rounded and trimmed on its own, which left a gap in every line that crossed
+  // it. All of it starts in the frame's front layer: over the frame that is
+  // inside its own material, where it overlaps the frame and so is joined to
+  // it, and over the window or past the edge it is the lowest a part can start
+  // without passing behind the face the picture rests against.
+  const where = new Uint8Array(w * h);
+  let any = false;
+  for (let i = 0; i < where.length; i++) {
+    if (mask.onFrame[i] || mask.beyond[i]) {
+      where[i] = 1;
+      any = true;
     }
-    if (!any || count === 0) continue;
+  }
+  const baseZ = frontZ - rootDepth + ROOT_CLEARANCE_MM;
 
+  const traced: { regions: ReturnType<typeof vectorise>["regions"] }[] = [];
+  if (any && count > 0) {
     const vec = vectorise(
       lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, where, floorPx, undefined, 2, mask.group,
     );
-    traced.push({ baseZ, regions: vec.regions });
+    traced.push({ regions: vec.regions });
   }
 
   // Then body by body, so that each is one run of triangles.
   for (let g = 0; g < count; g++) {
     const start = mb.triangleCount;
-    for (const { baseZ, regions } of traced) {
+    for (const { regions } of traced) {
       const region = regions[g];
       if (!region || region.rings.length === 0) continue;
       extrudeRegion(mb, region.rings, place, baseZ, frontZ + height * mask.groupFrac[g]);

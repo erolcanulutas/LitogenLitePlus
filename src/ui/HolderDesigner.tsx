@@ -44,8 +44,8 @@ type Drag =
  * The holder seen from the front, with the decorations on it.
  *
  * Pick an icon from the palette to put it on the frame and drag it into place.
- * The selected icon has a handle at its corner for size and one above it for
- * turn, so both are set on the icon itself; the wheel zooms the view, and
+ * The selected icon has a handle at its corner for size, one above it for turn
+ * and a cross to take it away, so all three are done on the icon itself; the wheel zooms the view, and
  * dragging the empty background moves it. What is drawn here is what gets
  * raised: the window is an opening because anything over it is taken away, and
  * an icon may be taken past the frame's edge, where it hangs over.
@@ -193,6 +193,20 @@ export default function HolderDesigner({
         ctx.arc(0, -half - TURN_HANDLE_PX, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillRect(half - 5, half - 5, 10, 10);
+
+        // The cross in the top corner takes the icon away.
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(half, -half, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(half - 3.5, -half - 3.5);
+        ctx.lineTo(half + 3.5, -half + 3.5);
+        ctx.moveTo(half + 3.5, -half - 3.5);
+        ctx.lineTo(half - 3.5, -half + 3.5);
+        ctx.stroke();
         ctx.restore();
       }
     })();
@@ -279,6 +293,11 @@ export default function HolderDesigner({
       const d = decorations[selected];
       const half = (d.size * s) / 2;
       const near = (a: { x: number; y: number }) => Math.hypot(a.x - p.x, a.y - p.y) <= 10;
+      if (Math.hypot(boxPoint(d, half, -half).x - p.x, boxPoint(d, half, -half).y - p.y) <= 10) {
+        flush(decorations.filter((_, i) => i !== selected));
+        onSelect(null);
+        return;
+      }
       if (near(boxPoint(d, half, half))) {
         drag.current = { kind: "size", index: selected };
         return;
