@@ -17,7 +17,17 @@ import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
 import { DEFAULT_GAP, clusterColors, suggestColourLevels } from "./core/palette";
-import { buildHolder, holderForPrinting, holderInPlace } from "./core/holder";
+import {
+  buildHolder,
+  holderForPrinting,
+  holderInPlace,
+  holderLayout,
+  holderStanding,
+} from "./core/holder";
+import type { Decoration } from "./core/decor";
+import type { Mesh } from "./core/mesh";
+import HolderDesigner from "./ui/HolderDesigner";
+import { makeRelief } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
@@ -1390,6 +1400,47 @@ const HOLDER_PRESETS = {
   wide: { label: "Wide", border: 14, lip: 4 },
 } as const;
 
+/** A holder design kept in this browser: the picture's settings and what is on the frame. */
+type SavedDesign = {
+  name: string;
+  savedAt: number;
+  picture: { w: number; h: number; t: number };
+  angle: number;
+  preset: keyof typeof HOLDER_PRESETS;
+  fit: number;
+  tealight: number;
+  relief: number;
+  pose: "face" | "standing";
+  decorations: Decoration[];
+};
+
+const DESIGNS_KEY = "litogen.holderDesigns";
+
+function readDesigns(): SavedDesign[] {
+  try {
+    const raw = localStorage.getItem(DESIGNS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDesigns(list: SavedDesign[]) {
+  try {
+    localStorage.setItem(DESIGNS_KEY, JSON.stringify(list));
+  } catch {
+    // Storage blocked or full: the design stays in the page, it just is not kept.
+  }
+}
+
+function joinMeshes(a: Mesh, b: Mesh): Mesh {
+  const positions = new Float32Array(a.positions.length + b.positions.length);
+  positions.set(a.positions, 0);
+  positions.set(b.positions, a.positions.length);
+  return { positions, triangleCount: a.triangleCount + b.triangleCount };
+}
+
 function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
   const blob = new Blob([buf], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
@@ -1730,6 +1781,15 @@ export default function App() {
   const [holderPreset, setHolderPreset] = useState<keyof typeof HOLDER_PRESETS>("standard");
   const [tealightMm, setTealightMm] = useState(38);
   const [holderFit, setHolderFit] = useState(0.2);
+  const [decorations, setDecorations] = useState<Decoration[]>([]);
+  const [decorSelected, setDecorSelected] = useState<number | null>(null);
+  const [reliefMm, setReliefMm] = useState(1);
+  // How the holder lies on the bed. Raised decorations are on the front face,
+  // so with any the holder has to be printed standing.
+  const [holderPose, setHolderPose] = useState<"face" | "standing">("face");
+  const [reliefMesh, setReliefMesh] = useState<Mesh | null>(null);
+  const [designName, setDesignName] = useState("");
+  const [designs, setDesigns] = useState<SavedDesign[]>(readDesigns);
   const [pictureLayers, setPictureLayers] = useState(4);
 
   const [toneLevels, setToneLevels] = useState(2);
@@ -1737,26 +1797,52 @@ export default function App() {
   const [colorGap, setColorGap] = useState<number>(DEFAULT_GAP);
   const levels = graphic || inlayMode ? toneLevels : 0;
 
+  const holderParams = useMemo(() => {
+    const preset = HOLDER_PRESETS[holderPreset];
+    return {
+      pictureW: widthMm,
+      pictureH: heightMm,
+      pictureT: maxT,
+      border: preset.border,
+      lip: preset.lip,
+      fit: holderFit,
+      tiltDeg: 90 - holderAngle,
+    };
+  }, [holderPreset, widthMm, heightMm, maxT, holderFit, holderAngle]);
+
+  const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
+
+  // The raised shapes need icons loaded and drawn, which takes a moment; a
+  // newer request makes an older one that is still working irrelevant.
+  useEffect(() => {
+    let live = true;
+    if (decorations.length === 0) return;
+    makeRelief(
+      decorations,
+      holderGeom.W,
+      holderGeom.H,
+      holderGeom.window,
+      holderGeom.T,
+      reliefMm,
+    )
+      .then((m) => live && setReliefMesh(m))
+      .catch(() => live && setReliefMesh(null));
+    return () => {
+      live = false;
+    };
+  }, [decorations, holderGeom, reliefMm]);
+
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
-    const preset = HOLDER_PRESETS[holderPreset];
-    const holder = holderInPlace(
-      buildHolder({
-        pictureW: widthMm,
-        pictureH: heightMm,
-        pictureT: maxT,
-        border: preset.border,
-        lip: preset.lip,
-        fit: holderFit,
-        tiltDeg: 90 - holderAngle,
-      }),
-      90 - holderAngle,
-    );
+    const plate = buildHolder(holderParams);
+    const relief = decorations.length > 0 ? reliefMesh : null;
+    const whole = relief && relief.triangleCount > 0 ? joinMeshes(plate, relief) : plate;
+    const holder = holderInPlace(whole, holderParams.tiltDeg);
     const stand = buildStand({ tealight: tealightMm });
     const positions = new Float32Array(holder.positions.length + stand.positions.length);
     positions.set(holder.positions, 0);
     positions.set(stand.positions, holder.positions.length);
-    const tilt = ((90 - holderAngle) * Math.PI) / 180;
+    const tilt = (holderParams.tiltDeg * Math.PI) / 180;
     return {
       positions,
       triangleCount: holder.triangleCount + stand.triangleCount,
@@ -1764,7 +1850,7 @@ export default function App() {
       colors: ["#e2c28b", "#9fb4c8"],
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
-  }, [shapeId, curved, holderPreset, widthMm, heightMm, maxT, holderFit, holderAngle, tealightMm]);
+  }, [shapeId, curved, holderParams, reliefMesh, decorations.length, tealightMm]);
 
   /**
    * Where an inlay's tones sit in colour. The same fit that colours the panel,
@@ -2260,7 +2346,7 @@ export default function App() {
   };
 
   /** Holder or stand, sized to the picture, straight to a file. */
-  function downloadHolderPart(part: "holder" | "stand") {
+  async function downloadHolderPart(part: "holder" | "stand") {
     if (part === "stand") {
       downloadArrayBuffer(
         writeBinarySTL(buildStand({ tealight: tealightMm })),
@@ -2269,20 +2355,61 @@ export default function App() {
       return;
     }
 
-    const preset = HOLDER_PRESETS[holderPreset];
-    const mesh = buildHolder({
-      pictureW: widthMm,
-      pictureH: heightMm,
-      pictureT: maxT,
-      border: preset.border,
-      lip: preset.lip,
+    const plate = buildHolder(holderParams);
+    let whole = plate;
+    if (decorations.length > 0) {
+      const relief = await makeRelief(
+        decorations,
+        holderGeom.W,
+        holderGeom.H,
+        holderGeom.window,
+        holderGeom.T,
+        reliefMm,
+      );
+      whole = joinMeshes(plate, relief);
+    }
+    const out =
+      holderPose === "standing"
+        ? holderStanding(whole, holderParams.tiltDeg)
+        : holderForPrinting(whole);
+    downloadArrayBuffer(writeBinarySTL(out), `litogen-holder-${holderAngle}deg.stl`);
+  }
+
+  function saveDesign() {
+    const name = designName.trim() || `Design ${designs.length + 1}`;
+    const entry: SavedDesign = {
+      name,
+      savedAt: Date.now(),
+      picture: { w: +widthMm.toFixed(1), h: +heightMm.toFixed(1), t: maxT },
+      angle: holderAngle,
+      preset: holderPreset,
       fit: holderFit,
-      tiltDeg: 90 - holderAngle,
-    });
-    downloadArrayBuffer(
-      writeBinarySTL(holderForPrinting(mesh)),
-      `litogen-holder-${holderAngle}deg.stl`,
-    );
+      tealight: tealightMm,
+      relief: reliefMm,
+      pose: holderPose,
+      decorations,
+    };
+    const next = [entry, ...designs.filter((d) => d.name !== name)];
+    setDesigns(next);
+    writeDesigns(next);
+    setDesignName("");
+  }
+
+  function loadDesign(d: SavedDesign) {
+    setHolderAngle(d.angle);
+    setHolderPreset(d.preset in HOLDER_PRESETS ? d.preset : "standard");
+    setHolderFit(d.fit);
+    setTealightMm(d.tealight);
+    setReliefMm(d.relief);
+    setHolderPose(d.pose);
+    setDecorations(d.decorations);
+    setDecorSelected(null);
+  }
+
+  function deleteDesign(name: string) {
+    const next = designs.filter((d) => d.name !== name);
+    setDesigns(next);
+    writeDesigns(next);
   }
 
   async function generate(download = true) {
@@ -3618,7 +3745,7 @@ export default function App() {
                     />
                   </React.Suspense>
                 </div>
-                <div style={{ width: 300, overflowY: "auto", padding: "0 14px" }}>
+                <div style={{ width: 360, overflowY: "auto", padding: "0 14px" }}>
         <div className="section">
           <div className="label-row">
             <div className="sectionTitle">Settings</div>
@@ -3699,6 +3826,100 @@ export default function App() {
               <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
                 Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
               </div>
+
+              <div className="label-row" style={{ marginTop: 16 }}>
+                <label className="miniLabel">Decorations</label>
+                <InfoIcon text="Pick an icon to put it on the frame, then drag it into place and set its size and turn. Icons are raised on the holder's front face; anything over the picture's window is cut away so nothing stands in front of it. Because they are on the front, print the holder standing up." />
+              </div>
+              <HolderDesigner
+                width={holderGeom.W}
+                height={holderGeom.H}
+                window={holderGeom.window}
+                pocket={holderGeom.pocket}
+                decorations={decorations}
+                onChange={(next) => {
+                  if (next.length > 0 && decorations.length === 0) setHolderPose("standing");
+                  setDecorations(next);
+                }}
+                selected={decorSelected}
+                onSelect={setDecorSelected}
+              />
+
+              <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>
+                Icons: Fluent Emoji by Microsoft, MIT licence.
+              </div>
+
+              {decorations.length > 0 && (
+                <>
+                  <div className="label-row" style={{ marginTop: 12 }}>
+                    <label className="miniLabel">Relief height: {reliefMm.toFixed(1)} mm</label>
+                    <InfoIcon text="How far the icons stand out from the front face. About 1 mm reads clearly and prints without trouble; much more takes longer and stands out to be knocked." />
+                  </div>
+                  <input
+                    className="range"
+                    type="range"
+                    min={0.4}
+                    max={3}
+                    step={0.2}
+                    value={reliefMm}
+                    onChange={(e) => setReliefMm(Number(e.target.value))}
+                  />
+                </>
+              )}
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Print the holder</label>
+                <InfoIcon text="Front face down lies the holder flat on its front, so the pocket opens upwards. Standing prints it the way it will be used, with the front a vertical wall, which is what decorations need. Leaned back, the overhang is the lean, at most 45 degrees." />
+              </div>
+              <select
+                className="spinInput"
+                value={holderPose}
+                onChange={(e) => setHolderPose(e.target.value as "face" | "standing")}
+              >
+                <option value="face">Front face down</option>
+                <option value="standing">Standing up</option>
+              </select>
+              {holderPose === "face" && decorations.length > 0 && (
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+                  The decorations would be underneath. Print standing up.
+                </div>
+              )}
+
+              <div className="label-row" style={{ marginTop: 16 }}>
+                <label className="miniLabel">Saved designs</label>
+                <InfoIcon text="Designs are kept in this browser only, on this device. They hold the holder's settings and what is on the frame, never the picture itself, which is not stored anywhere. To use one again, load the same picture first." />
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  className="spinInput"
+                  type="text"
+                  placeholder="Name"
+                  value={designName}
+                  onChange={(e) => setDesignName(e.target.value)}
+                />
+                <button className="btn" onClick={saveDesign}>
+                  Save
+                </button>
+              </div>
+              {designs.map((d) => (
+                <div
+                  key={d.name}
+                  style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13 }}
+                >
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {d.name}
+                    <span style={{ opacity: 0.6 }}>
+                      {" "}· {d.picture.w}×{d.picture.h}
+                    </span>
+                  </span>
+                  <button className="btn" onClick={() => loadDesign(d)}>
+                    Load
+                  </button>
+                  <button className="btn" onClick={() => deleteDesign(d.name)} title="Delete">
+                    ✕
+                  </button>
+                </div>
+              ))}
 
               <button
                 className="btn"
