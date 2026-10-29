@@ -17,6 +17,9 @@ import type { Quality } from "./core/quality";
 import type { ShapeId } from "./core/types";
 import { suggestToneLevels } from "./core/tones";
 import { clusterColors, suggestColourLevels } from "./core/palette";
+import { buildHolder, holderForPrinting } from "./core/holder";
+import { buildStand } from "./core/stand";
+import { writeBinarySTL } from "./core/stl_writer";
 import {
   OutOfTokens, signIn, signOut, signUp, spendForExport, unlimited, whoAmI,
   type Account,
@@ -1380,6 +1383,13 @@ const BAND_PALETTE = [
   "#047857", "#b45309", "#6d28d9", "#0f172a",
 ];
 
+/** Frame widths for the holder: the border round the picture, and how far the lip covers its edge. */
+const HOLDER_PRESETS = {
+  slim: { label: "Slim", border: 7, lip: 2.5 },
+  standard: { label: "Standard", border: 10, lip: 3 },
+  wide: { label: "Wide", border: 14, lip: 4 },
+} as const;
+
 function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
   const blob = new Blob([buf], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
@@ -1714,6 +1724,12 @@ export default function App() {
    */
   const traceDetail = vector && (inlayMode || graphic) ? 1600 * 1390 : 900 * 780;
   const [baseLayers, setBaseLayers] = useState(6);
+
+  // The holder and stand are separate parts, made from the picture's size.
+  const [holderAngle, setHolderAngle] = useState(90);
+  const [holderPreset, setHolderPreset] = useState<keyof typeof HOLDER_PRESETS>("standard");
+  const [tealightMm, setTealightMm] = useState(38);
+  const [holderFit, setHolderFit] = useState(0.2);
   const [pictureLayers, setPictureLayers] = useState(4);
 
   const [toneLevels, setToneLevels] = useState(2);
@@ -2211,6 +2227,32 @@ export default function App() {
       }
     }
   };
+
+  /** Holder or stand, sized to the picture, straight to a file. */
+  function downloadHolderPart(part: "holder" | "stand") {
+    if (part === "stand") {
+      downloadArrayBuffer(
+        writeBinarySTL(buildStand({ tealight: tealightMm })),
+        "litogen-stand.stl",
+      );
+      return;
+    }
+
+    const preset = HOLDER_PRESETS[holderPreset];
+    const mesh = buildHolder({
+      pictureW: widthMm,
+      pictureH: heightMm,
+      pictureT: maxT,
+      border: preset.border,
+      lip: preset.lip,
+      fit: holderFit,
+      tiltDeg: 90 - holderAngle,
+    });
+    downloadArrayBuffer(
+      writeBinarySTL(holderForPrinting(mesh)),
+      `litogen-holder-${holderAngle}deg.stl`,
+    );
+  }
 
   async function generate(download = true) {
     if (!imgData || isGenerating) return;
@@ -3141,6 +3183,105 @@ export default function App() {
             </div>
           </>
 
+        </div>
+
+        <div className="section">
+          <div className="label-row">
+            <div className="sectionTitle">Holder &amp; Stand</div>
+            <InfoIcon text="A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The holder is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the holder prints front face down. Use an LED tealight: the printed plastic cannot take a flame." />
+          </div>
+
+          {shapeId !== "rectangle" || curved ? (
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              The holder is made for flat, rectangular pictures. Pick the
+              rectangle shape and turn the curve off to use it.
+            </div>
+          ) : (
+            <>
+              <div className="label-row">
+                <label className="miniLabel">Panel angle: {holderAngle}°</label>
+                <InfoIcon text="How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand's prongs stay upright, so the holder's sockets lean with the panel and its underside is cut to rest flat on the table; the rail under the picture grows to carry the legs when it leans." />
+              </div>
+              <input
+                className="range"
+                type="range"
+                min={45}
+                max={90}
+                step={5}
+                value={holderAngle}
+                onChange={(e) => setHolderAngle(Number(e.target.value))}
+              />
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Frame</label>
+                <InfoIcon text="How wide the frame is round the picture. Slim shows more of it, Wide is sturdier." />
+              </div>
+              <select
+                className="spinInput"
+                value={holderPreset}
+                onChange={(e) => setHolderPreset(e.target.value as keyof typeof HOLDER_PRESETS)}
+              >
+                {Object.entries(HOLDER_PRESETS).map(([id, v]) => (
+                  <option key={id} value={id}>
+                    {v.label} ({v.border} mm)
+                  </option>
+                ))}
+              </select>
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Fit (mm)</label>
+                <InfoIcon text="The gap between each prong and its socket. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble." />
+              </div>
+              <input
+                className="spinInput"
+                type="number"
+                min={0}
+                max={0.6}
+                step={0.05}
+                value={holderFit}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setHolderFit(Math.max(0, Math.min(0.6, v)));
+                }}
+              />
+
+              <div className="label-row" style={{ marginTop: 12 }}>
+                <label className="miniLabel">Tealight diameter (mm)</label>
+                <InfoIcon text="The cup in the stand is this wide plus a few millimetres of room. A standard tealight is 38 mm." />
+              </div>
+              <input
+                className="spinInput"
+                type="number"
+                min={30}
+                max={60}
+                step={1}
+                value={tealightMm}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setTealightMm(Math.max(30, Math.min(60, v)));
+                }}
+              />
+
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 10 }}>
+                Holder for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
+              </div>
+
+              <button
+                className="btn"
+                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                onClick={() => downloadHolderPart("holder")}
+              >
+                Download holder (STL)
+              </button>
+              <button
+                className="btn"
+                style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                onClick={() => downloadHolderPart("stand")}
+              >
+                Download stand (STL)
+              </button>
+            </>
+          )}
         </div>
 
         <div style={{ padding: "10px 0" }}>
