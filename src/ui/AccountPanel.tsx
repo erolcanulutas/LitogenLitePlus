@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { closeAccount, unlimited, type Account } from "../core/account";
+import type { Filament } from "../core/filaments";
 import FilamentEditor from "./FilamentEditor";
 
 /**
@@ -17,8 +18,8 @@ type Props = {
   theme: "dark" | "light";
   onTheme: (t: "dark" | "light") => void;
   /** The colours of filament this person owns, kept in the account. */
-  filaments: string[];
-  onFilaments: (next: string[]) => void;
+  filaments: Filament[];
+  onFilaments: (next: Filament[]) => void;
   onClose: () => void;
   onSignOut: () => void;
   onClosedAccount: () => void;
@@ -119,10 +120,11 @@ export default function AccountPanel({
 
         <h3 className="acctHeading">My filaments</h3>
         <p className="acctNote">
-          The colours of filament you have. An Inlay is divided into these
-          colours, Layered colours are moved to the nearest of them, and
-          decorations on a holder are printed in them. They are kept in your
-          account, so they follow you to another device.
+          The colours of filament you have. Tick the ones to print with: an Inlay
+          is divided into the ticked colours, Layered colours are moved to the
+          nearest of them, and decorations on a holder are printed in them.
+          Nothing is used unless it is ticked. The list is kept in your account,
+          so it follows you to another device.
         </p>
         <FilamentEditor value={filaments} onChange={onFilaments} />
 

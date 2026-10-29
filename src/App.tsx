@@ -35,6 +35,7 @@ import HolderDesigner from "./ui/HolderDesigner";
 import IconPalette from "./ui/IconPalette";
 import DecorProps from "./ui/DecorProps";
 import FilamentEditor from "./ui/FilamentEditor";
+import { activeColours, parseFilaments, type Filament } from "./core/filaments";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
@@ -1430,7 +1431,6 @@ type SavedDesign = {
   reliefMode?: ReliefMode;
   iconColours?: number;
   frameColour?: string;
-  filaments?: string[];
   pose: "face" | "standing";
   decorations: Decoration[];
 };
@@ -1438,20 +1438,17 @@ type SavedDesign = {
 const DESIGNS_KEY = "litogen.holderDesigns";
 const FILAMENTS_KEY = "litogen.filaments";
 
-/** The colours of filament the person has said they own, kept in this browser. */
-function readFilaments(): string[] {
+/** The filaments the person has said they own, and which are ticked, kept in this browser. */
+function readFilaments(): Filament[] {
   try {
     const raw = localStorage.getItem(FILAMENTS_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list)
-      ? list.filter((c): c is string => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12)
-      : [];
+    return parseFilaments(raw ? JSON.parse(raw) : []);
   } catch {
     return [];
   }
 }
 
-function writeFilaments(list: string[]) {
+function writeFilaments(list: Filament[]) {
   try {
     localStorage.setItem(FILAMENTS_KEY, JSON.stringify(list));
   } catch {
@@ -1853,10 +1850,12 @@ export default function App() {
   const [iconColours, setIconColours] = useState(0);
   const [frameColour, setFrameColour] = useState("#e2c28b");
   /** Filament colours to hand; icon colours are printed in the nearest. Empty uses the icons' own. */
-  const [filaments, setFilamentsState] = useState<string[]>(readFilaments);
+  const [filaments, setFilamentsState] = useState<Filament[]>(readFilaments);
+  /** The ones ticked: the colours prints are made in. Nothing is used unless it is ticked. */
+  const activeFilaments = useMemo(() => activeColours(filaments), [filaments]);
   const filamentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** The filament colours, kept here and, when signed in, in the account. */
-  const setFilaments = (next: string[]) => {
+  const setFilaments = (next: Filament[]) => {
     setFilamentsState(next);
     writeFilaments(next);
     clearTimeout(filamentTimer.current);
@@ -1892,12 +1891,12 @@ export default function App() {
    * ever asked for a colour that is not to hand.
    */
   const filamentTones = useMemo(() => {
-    if (!inlayMode || filaments.length < 2) return null;
-    const lab = filaments.map((c) => ({ c, lab: hexToLab(c) }));
+    if (!inlayMode || activeFilaments.length < 2) return null;
+    const lab = activeFilaments.map((c) => ({ c, lab: hexToLab(c) }));
     lab.sort((a, b) => a.lab[0] - b.lab[0]);
     const kept = lab.slice(0, 16);
     return { hex: kept.map((k) => k.c), lab: kept.map((k) => k.lab) };
-  }, [inlayMode, filaments]);
+  }, [inlayMode, activeFilaments]);
 
   const levels = graphic || inlayMode ? (filamentTones ? filamentTones.hex.length : toneLevels) : 0;
 
@@ -1988,7 +1987,7 @@ export default function App() {
     let live = true;
     if (decorations.length === 0) return;
     const timer = setTimeout(() => {
-      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours, palette: filaments })
+      makeDecor(decorations, decorGeom, reliefMm, { mode: reliefMode, colours: iconColours, palette: activeFilaments })
         .then((d) => live && setDecor(d))
         .catch(() => live && setDecor(null));
     }, 300);
@@ -1996,7 +1995,7 @@ export default function App() {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, filaments]);
+  }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, activeFilaments]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
     if (shapeId !== "rectangle" || curved) return null;
@@ -2463,7 +2462,7 @@ export default function App() {
     } else {
       applyToneBands(
         found.levels,
-        filaments.length > 0 ? found.colors.map((c) => snapToPalette(c, filaments)) : found.colors,
+        activeFilaments.length > 0 ? found.colors.map((c) => snapToPalette(c, activeFilaments)) : found.colors,
       );
     }
 
@@ -2611,7 +2610,7 @@ export default function App() {
       const made = await makeDecor(decorations, decorGeom, reliefMm, {
         mode: reliefMode,
         colours: iconColours,
-        palette: filaments,
+        palette: activeFilaments,
       });
       const plate = buildHolder(holderParams, made.cuts);
       whole = joinMeshes(plate, made.relief.mesh);
@@ -2683,9 +2682,8 @@ export default function App() {
     if (!signedInAs) return;
     let live = true;
     loadFilaments()
-      .then((list) => {
+      .then((clean) => {
         if (!live) return;
-        const clean = list.filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12);
         if (clean.length > 0) {
           setFilamentsState(clean);
           writeFilaments(clean);
@@ -2738,7 +2736,6 @@ export default function App() {
       reliefMode,
       iconColours,
       frameColour,
-      filaments,
       pose: holderPose,
       decorations,
     };
@@ -2765,7 +2762,6 @@ export default function App() {
     setReliefMode(d.reliefMode ?? "flat");
     setIconColours(d.iconColours ?? 0);
     setFrameColour(d.frameColour ?? "#e2c28b");
-    if (d.filaments) setFilaments(d.filaments.filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 12));
     setHolderPose(d.pose);
     setDecorations(d.decorations);
     setDecorSelected(null);
@@ -3448,22 +3444,22 @@ export default function App() {
             <>
               <div className="label-row">
                 <label className="miniLabel">My filaments</label>
-                <InfoIcon text="The colours of filament you have. In an Inlay the tones are these colours, darkest first: the picture is divided by which of them each part is nearest. In Layered, the colours found in the picture are moved to the nearest of them. Leave it empty to use the picture's own colours. Kept in your account when you are signed in, and in this browser." />
+                <InfoIcon text="The colours of filament you have. Tick the ones to print with: in an Inlay the tones are the ticked colours, darkest first, and the picture is divided by which of them each part is nearest; in Layered, the colours found in the picture are moved to the nearest of them. Nothing is used unless it is ticked, so the picture's own colours are used by default. Kept in your account when you are signed in, and in this browser." />
               </div>
               <FilamentEditor value={filaments} onChange={setFilaments} addAs={colors[1] ?? "#cccccc"} />
-              {graphic && filaments.length > 0 && (
+              {graphic && activeFilaments.length > 0 && (
                 <button
                   className="btn"
                   style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
-                  onClick={() => setColors(colors.map((c) => snapToPalette(c, filaments)))}
-                  title="Move every band colour to the nearest of your filaments"
+                  onClick={() => setColors(colors.map((c) => snapToPalette(c, activeFilaments)))}
+                  title="Move every band colour to the nearest of your ticked filaments"
                 >
-                  Snap colours to my filaments
+                  Snap colours to my ticked filaments
                 </button>
               )}
               {inlayMode && filamentTones && (
                 <div className="bandHint" style={{ marginTop: 8 }}>
-                  Tones follow your filaments, so the tone count and colours are theirs.
+                  Tones follow your ticked filaments, so the tone count and colours are theirs.
                 </div>
               )}
               <div style={{ height: 12 }} />
@@ -4420,13 +4416,13 @@ export default function App() {
 
                             <div className="label-row" style={{ marginTop: 14 }}>
                               <label className="miniLabel">My filaments</label>
-                              <InfoIcon text="Add the colours of filament you have. Every colour of an icon is then printed in the nearest of these, whatever the icon was drawn in, so nothing needs a colour you do not own. Leave it empty to use the icons' own colours. Kept in this browser." />
+                              <InfoIcon text="Add the colours of filament you have and tick the ones to print with. Every colour of a decoration is then printed in the nearest ticked one, whatever it was drawn in, so nothing needs a colour you do not own. Nothing is used unless it is ticked, so decorations keep their own colours by default." />
                             </div>
                             <FilamentEditor value={filaments} onChange={setFilaments} addAs={frameColour} />
-                            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 6 }}>
+                            <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>
                               {account
-                                ? "Kept in your account, and used for Inlay and Layered too."
-                                : "Kept in this browser; sign in to keep them in your account. Used for Inlay and Layered too."}
+                                ? "Kept in your account, and the same list as for Inlay and Layered."
+                                : "Kept in this browser; sign in to keep them in your account. The same list as for Inlay and Layered."}
                             </div>
                           </>
                         )}

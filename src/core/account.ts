@@ -1,3 +1,5 @@
+import { parseFilaments, type Filament } from "./filaments";
+
 /**
  * Talking to the membership endpoints.
  *
@@ -41,7 +43,7 @@ const HEADERS = {
 async function call(
   path: string,
   body?: unknown,
-): Promise<{ user?: Account | null; designs?: DesignRecord[]; filaments?: string[] }> {
+): Promise<{ user?: Account | null; designs?: DesignRecord[]; filaments?: unknown[] }> {
   let res: Response;
   try {
     res = await fetch(`/api/${path}`, {
@@ -59,7 +61,7 @@ async function call(
     error?: string;
     user?: Account | null;
     designs?: DesignRecord[];
-    filaments?: string[];
+    filaments?: unknown[];
   } = {};
   try {
     data = await res.json();
@@ -164,11 +166,11 @@ export async function deleteDesignRemote(name: string): Promise<void> {
 }
 
 /** The filament colours this account has kept. */
-export async function loadFilaments(): Promise<string[]> {
+export async function loadFilaments(): Promise<Filament[]> {
   const { filaments } = await call("filaments.php");
-  return filaments ?? [];
+  return parseFilaments(filaments);
 }
 
-export async function storeFilaments(list: string[]): Promise<void> {
+export async function storeFilaments(list: Filament[]): Promise<void> {
   await call("filaments.php", { filaments: list });
 }

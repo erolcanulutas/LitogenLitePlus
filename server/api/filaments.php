@@ -22,11 +22,30 @@ if (!$user) {
 
 $id = (int) $user['id'];
 
+/**
+ * A list as it may have been kept or sent: each a colour and whether it is
+ * ticked, or, from before ticking existed, a bare colour, which is unticked.
+ */
+function tidy(mixed $in): array
+{
+    $out = [];
+    foreach (is_array($in) ? $in : [] as $item) {
+        $c = is_array($item) ? ($item['c'] ?? null) : $item;
+        $on = is_array($item) && ($item['on'] ?? false) === true;
+        if (is_string($c) && preg_match('/^#[0-9a-fA-F]{6}$/', $c) === 1) {
+            $out[] = ['c' => strtolower($c), 'on' => $on];
+        }
+        if (count($out) >= MAX_FILAMENTS) {
+            break;
+        }
+    }
+    return $out;
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
     $q = $db->prepare('SELECT colors FROM user_filaments WHERE user_id = ?');
     $q->execute([$id]);
-    $list = json_decode((string) ($q->fetchColumn() ?: '[]'), true);
-    reply(['ok' => true, 'filaments' => is_array($list) ? array_values($list) : []]);
+    reply(['ok' => true, 'filaments' => tidy(json_decode((string) ($q->fetchColumn() ?: '[]'), true))]);
 }
 
 require_post();
@@ -36,16 +55,7 @@ if (!is_array($in)) {
     fail('Nothing to save');
 }
 
-$clean = [];
-foreach ($in as $c) {
-    if (is_string($c) && preg_match('/^#[0-9a-fA-F]{6}$/', $c) === 1) {
-        $clean[] = strtolower($c);
-    }
-    if (count($clean) >= MAX_FILAMENTS) {
-        break;
-    }
-}
-
+$clean = tidy($in);
 $json = json_encode($clean);
 $now = gmdate('Y-m-d H:i:s');
 $update = $db->prepare('UPDATE user_filaments SET colors = ?, updated_at = ? WHERE user_id = ?');
