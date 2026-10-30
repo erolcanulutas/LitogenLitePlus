@@ -1860,7 +1860,7 @@ export default function App() {
   const [tealightMm, setTealightMm] = useState(38);
   const [holderFit, setHolderFit] = useState(0.2);
   /** Room round the picture in its pocket, each side, in mm. */
-  const [holderPlay, setHolderPlay] = useState(0.2);
+  const [holderPlay, setHolderPlay] = useState(0.08);
   const [decorations, setDecorations] = useState<Decoration[]>([]);
   const [decorSelected, setDecorSelected] = useState<number | null>(null);
   const [reliefMm, setReliefMm] = useState(1);
@@ -4406,7 +4406,7 @@ export default function App() {
                               <label className="miniLabel">{t("Picture play (mm)")}</label>
                               <InfoIcon text={t("Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.")} />
                             </div>
-                            <NumField value={holderPlay} min={0} max={0.5} step={0.05} onChange={setHolderPlay} />
+                            <NumField value={holderPlay} min={0} max={0.5} step={0.01} onChange={setHolderPlay} />
 
                             <div className="label-row" style={{ marginTop: 12 }}>
                               <label className="miniLabel">{t("Tealight diameter (mm)")}</label>

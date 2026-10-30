@@ -109,7 +109,7 @@ export const HOLDER_DEFAULTS: HolderParams = {
   pictureT: 3,
   border: 10,
   lip: 3,
-  pocketPlay: 0.2,
+  pocketPlay: 0.08,
   lipThickness: 2,
   clips: true,
   legWidth: 10,
@@ -339,7 +339,9 @@ export function buildHolder(
     const x0 = W / 2 - pocketW / 2;
     const x1 = W / 2 + pocketW / 2;
     const half = 5;
-    const bump = 0.4;
+    // The catch stands out by the play plus a fixed 0.15 mm, so the squeeze on
+    // the picture is the same however snug the pocket is.
+    const bump = p.pocketPlay + 0.15;
     // A catch, not a bump: a gentle ramp the picture rides over on its way in,
     // then a steep face behind which its back edge settles. The picture sits
     // at pocketDepth - pictureT = 0.9 from the back, just clear of that face.
