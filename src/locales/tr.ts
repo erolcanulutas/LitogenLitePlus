@@ -410,4 +410,5 @@ export const tr: Record<string, string> = {
   "Science & space": "Bilim ve uzay",
   "Money & office": "Para ve ofis",
   "This curve is too deep to lean that far: the frame stands at {a}°.": "Bu kıvrım o kadar yatmaya izin vermiyor: çerçeve {a}°'de duruyor.",
+  "This will use 1 token (you have {n}). Continue?": "Bu işlem 1 jeton harcar (elinizde {n} var). Devam edilsin mi?",
 };

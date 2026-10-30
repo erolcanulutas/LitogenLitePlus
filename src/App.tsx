@@ -2817,10 +2817,31 @@ export default function App() {
    * Spends the token for a holder, unless this design has been paid for before;
    * false, with the reason shown, if it could not.
    */
+  /** Whether the person agrees to spend a token; asked only when one will be spent. */
+  function agreeToSpend(): boolean {
+    if (!account || unlimited(account)) return true;
+    return window.confirm(
+      t("This will use 1 token (you have {n}). Continue?", { n: account.tokens }),
+    );
+  }
+
   async function payForHolder(ref: string): Promise<boolean> {
+    // A frame already paid for is free to download again, so it is not asked about.
+    let paidBefore: string[] = [];
+    try {
+      paidBefore = JSON.parse(localStorage.getItem("litogen.paidFrames") ?? "[]");
+    } catch {
+      /* storage may be blocked */
+    }
+    if (!paidBefore.includes(ref) && !agreeToSpend()) return false;
     try {
       const paid = await spendForHolder(ref);
       setAccount(paid.account);
+      try {
+        localStorage.setItem("litogen.paidFrames", JSON.stringify([...paidBefore, ref].slice(-200)));
+      } catch {
+        /* storage may be blocked */
+      }
       if (paid.again) setHolderNote(t("You have downloaded this design before, so this one is free."));
       return true;
     } catch (e) {
@@ -2959,6 +2980,7 @@ export default function App() {
         });
         return;
       }
+      if (!agreeToSpend()) return;
     }
 
     setIsGenerating(true);

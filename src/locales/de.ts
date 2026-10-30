@@ -410,4 +410,5 @@ export const de: Record<string, string> = {
   "Science & space": "Wissenschaft & Weltraum",
   "Money & office": "Geld & Büro",
   "This curve is too deep to lean that far: the frame stands at {a}°.": "Diese Krümmung ist zu tief, um so weit zu neigen: der Rahmen steht bei {a}°.",
+  "This will use 1 token (you have {n}). Continue?": "Das verbraucht 1 Token (du hast {n}). Fortfahren?",
 };
