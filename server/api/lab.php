@@ -121,10 +121,12 @@ if ($action === 'save_model') {
     }
 
     $list = array_values(array_filter(lab_read($manifestPath), static fn($m) => (int) ($m['slot'] ?? 0) !== $slot));
+    $color = (string) ($in['color'] ?? '');
     $list[] = [
         'slot' => $slot,
         'file' => "models/slot-$slot.stl",
         'caption' => $caption !== '' ? $caption : "Model $slot",
+        'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : '#d9b77a',
         'updated' => gmdate('Y-m-d H:i:s'),
     ];
     usort($list, static fn($a, $b) => $a['slot'] <=> $b['slot']);

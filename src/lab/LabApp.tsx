@@ -30,11 +30,15 @@ type Settings = {
   curveDeg: number;
   border: number;
   angle: number;
+  /** Radius of the outer corners, in mm; only a rectangle has any. */
+  corner: number;
+  /** The frame's colour, as #rrggbb. */
+  color: string;
   caption: string;
 };
-const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, caption: "" };
+const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", caption: "" };
 
-type ModelEntry = { slot: number; file: string; caption: string; updated: string };
+type ModelEntry = { slot: number; file: string; caption: string; updated: string; color?: string };
 type TemplateEntry = { id: string; name: string; items: TemplateItem[]; updated: string };
 
 type Area = { kind: "slot"; n: number } | { kind: "templates" } | { kind: "photos" };
@@ -135,14 +139,14 @@ export default function LabApp() {
       fit: 0.2,
       pocketPlay: 0.05,
       tiltDeg: 90 - settings.angle,
-      corner: 0,
+      corner: settings.corner,
       outline,
       bend: frameRadius,
     };
     let lean = b.tiltDeg;
     if (frameRadius > 0) while (lean > 0 && !holderLayout({ ...b, tiltDeg: lean }).shearOk) lean -= 1;
     return { ...b, tiltDeg: lean };
-  }, [settings.widthMm, settings.border, settings.angle, height, outline, frameRadius, pictureRadius]);
+  }, [settings.widthMm, settings.border, settings.angle, settings.corner, height, outline, frameRadius, pictureRadius]);
 
   const spacing = useMemo(() => legSpacingFor(outline, base), [outline, base]);
   const params = useMemo(() => ({ ...base, prongSpacing: spacing }), [base, spacing]);
@@ -187,11 +191,11 @@ export default function LabApp() {
       positions,
       triangleCount: placed.triangleCount + stand.triangleCount,
       bandStarts: [0, placed.triangleCount],
-      colors: ["#d9b77a", "#9fb4c8"],
+      colors: [settings.color, "#9fb4c8"],
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
     return mesh;
-  }, [params, decor, L.socketDepth, L.W, spacing]);
+  }, [params, decor, L.socketDepth, L.W, spacing, settings.color]);
 
   // -- decorations ------------------------------------------------------------
   const add = (d: Decoration) => {
@@ -251,6 +255,7 @@ export default function LabApp() {
         action: "save_model",
         slot: area.n,
         caption: settings.caption,
+        color: settings.color,
         stl: toBase64(stl),
         design: { settings, decorations },
       });
@@ -402,6 +407,12 @@ export default function LabApp() {
               </label>
               <label style={cell}>Frame width (mm)
                 <input className="spinInput" type="number" min={5} max={30} value={settings.border} onChange={(e) => setSettings({ ...settings, border: +e.target.value || 10 })} />
+              </label>
+              <label style={cell}>Corner radius (mm){settings.shape !== "rectangle" ? " — rectangle only" : ""}
+                <input className="spinInput" type="number" min={0} max={30} value={settings.corner} disabled={settings.shape !== "rectangle"} onChange={(e) => setSettings({ ...settings, corner: Math.max(0, Math.min(30, +e.target.value || 0)) })} />
+              </label>
+              <label style={cell}>Frame colour
+                <input type="color" value={settings.color} onChange={(e) => setSettings({ ...settings, color: e.target.value })} style={{ width: "100%", height: 38, padding: 0, background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8 }} />
               </label>
               <label style={cell}>Panel angle
                 <input className="spinInput" type="number" min={45} max={90} step={5} value={settings.angle} onChange={(e) => setSettings({ ...settings, angle: +e.target.value || 85 })} />
