@@ -21,11 +21,13 @@ import {
   DEFAULT_GAP, clusterColors, hexToLab, snapToPalette, suggestColourLevels, type Lab,
 } from "./core/palette";
 import {
+  assembleHolder,
   buildHolder,
   holderForPrinting,
   holderInPlace,
   holderLayout,
   holderStanding,
+  PICTURE_SEAT_MM,
 } from "./core/holder";
 import type { DecorGeom, Decoration, Relief, ReliefMode } from "./core/decor";
 import { writeColored3MF } from "./core/3mf_writer";
@@ -33,6 +35,7 @@ import type { CutLoop, Recess } from "./core/holder";
 import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
 import { shapeOutline, type OutlineShape } from "./core/outline";
+import { bendRadius } from "./core/bend";
 import HolderDesigner from "./ui/HolderDesigner";
 import IconPalette from "./ui/IconPalette";
 import DecorProps from "./ui/DecorProps";
@@ -1490,13 +1493,6 @@ function writeDesigns(list: SavedDesign[]) {
   }
 }
 
-function joinMeshes(a: Mesh, b: Mesh): Mesh {
-  const positions = new Float32Array(a.positions.length + b.positions.length);
-  positions.set(a.positions, 0);
-  positions.set(b.positions, a.positions.length);
-  return { positions, triangleCount: a.triangleCount + b.triangleCount };
-}
-
 /**
  * A short fingerprint of a design: what it is made of, not how it was asked for.
  * The same holder always gives the same one, which is how a second download is
@@ -1921,23 +1917,31 @@ export default function App() {
 
   const levels = graphic || inlayMode ? (filamentTones ? filamentTones.hex.length : toneLevels) : 0;
 
+  // A curved picture's frame is wrapped round the same cylinder, a little
+  // smaller because the picture sits PICTURE_SEAT_MM in from the plate's back.
+  const pictureRadius = curved ? bendRadius(widthMm, curveDeg) : 0;
+  const frameRadius = pictureRadius > PICTURE_SEAT_MM + 5 ? pictureRadius - PICTURE_SEAT_MM : 0;
   const holderParams = useMemo(() => {
     return {
-      pictureW: widthMm,
+      // Along the curve the plate's flat width wraps at its own radius, which is
+      // less than the picture's, so the pocket is made that much shorter to
+      // give the picture the same arc.
+      pictureW: frameRadius > 0 ? widthMm * (frameRadius / pictureRadius) : widthMm,
       pictureH: heightMm,
       pictureT: maxT,
       border: holderBorder,
       lip: lipFor(holderBorder),
       fit: holderFit,
       pocketPlay: holderPlay,
-      tiltDeg: 90 - holderAngle,
+      tiltDeg: frameRadius > 0 ? 0 : 90 - holderAngle,
       corner: holderCorner,
       outline: shapeId === "rectangle" ? null : shapeOutline(shapeId as OutlineShape, widthMm, heightMm),
+      bend: frameRadius,
     };
-  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderPlay, holderAngle, shapeId]);
+  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderPlay, holderAngle, shapeId, frameRadius, pictureRadius]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
-  const holderUsable = !curved;
+  const holderUsable = !curved || (shapeId === "rectangle" && frameRadius > 0);
 
   /**
    * Every change to the decorations goes through here, so each can be undone.
@@ -2137,11 +2141,11 @@ export default function App() {
   }, [decorations, decorGeom, reliefMm, reliefMode, iconColours, activeFilaments, flushClearance]);
 
   const holderMesh = useMemo<PreviewMesh | null>(() => {
-    if (curved) return null;
+    if (!holderUsable) return null;
     const made = decorations.length > 0 ? decor : null;
-    const plate = buildHolder(holderParams, made?.cuts ?? [], made?.recess ?? null);
-    const raised = made && made.relief.mesh.triangleCount > 0 ? made.relief : null;
-    const frame = raised ? joinMeshes(plate, raised.mesh) : plate;
+    const built = assembleHolder(holderParams, made?.cuts ?? [], made?.recess ?? null, made?.relief ?? null);
+    const raised = built.bodies.length > 0 ? built : null;
+    const frame = built.mesh;
 
     const placed = holderInPlace(frame, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
     const stand = buildStand({ tealight: tealightMm });
@@ -2153,8 +2157,8 @@ export default function App() {
     const bandStarts = [0];
     const colors = [frameColour];
     if (raised) {
-      for (const g of raised.groups) {
-        bandStarts.push(plate.triangleCount + g.start);
+      for (const g of raised.bodies) {
+        bandStarts.push(g.start);
         colors.push(g.color || frameColour);
       }
     }
@@ -2169,25 +2173,25 @@ export default function App() {
       colors,
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
-  }, [shapeId, curved, holderParams, holderGeom, decor, decorations.length, tealightMm, frameColour]);
+  }, [shapeId, curved, holderUsable, holderParams, holderGeom, decor, decorations.length, tealightMm, frameColour]);
 
   // The finished picture is its own model, which can have millions of
   // triangles. It is placed in the pocket by a matrix, so changing the angle or
   // dragging a decoration never copies it.
   const holderPicture = useMemo<PreviewOverlay | null>(() => {
-    if (curved || !showPicture || !previewMesh) return null;
+    if (!holderUsable || !showPicture || !previewMesh) return null;
     return {
       mesh: previewMesh,
       matrix: pictureMatrix(
         previewMesh,
         { x: holderGeom.W / 2, y: (holderGeom.pocket.y0 + holderGeom.pocket.y1) / 2 },
-        holderGeom.pocketDepth - 0.3,
+        holderGeom.pocketDepth - 0.3 + holderGeom.lift,
         holderParams.tiltDeg,
         holderGeom.socketDepth,
         holderGeom.W / 2,
       ),
     };
-  }, [shapeId, curved, showPicture, previewMesh, holderGeom, holderParams.tiltDeg]);
+  }, [shapeId, curved, holderUsable, showPicture, previewMesh, holderGeom, holderParams.tiltDeg]);
 
   /**
    * Where an inlay's tones sit in colour. The same fit that colours the panel,
@@ -2751,12 +2755,9 @@ export default function App() {
         colours: iconColours,
         palette: activeFilaments,
       }, flushClearance);
-      const plate = buildHolder(holderParams, made.cuts, made.recess);
-      whole = joinMeshes(plate, made.relief.mesh);
-      bodies = made.relief.groups.map((g) => ({
-        start: plate.triangleCount + g.start,
-        color: g.color || frameColour,
-      }));
+      const built = assembleHolder(holderParams, made.cuts, made.recess, made.relief);
+      whole = built.mesh;
+      bodies = built.bodies.map((g) => ({ start: g.start, color: g.color || frameColour }));
     } else {
       whole = buildHolder(holderParams);
     }
@@ -4331,7 +4332,7 @@ export default function App() {
 
                   <div style={{ overflowY: "auto", padding: "0 14px 16px", flex: 1, minHeight: 0 }}>
                     {!holderUsable ? (
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("The frame is made for flat pictures. Turn the curve off to use it.")}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.")}</div>
                     ) : (
                       <>
                         {holderSub === "frame" && (
@@ -4345,7 +4346,7 @@ export default function App() {
                             </div>
 
                             <div className="label-row">
-                              <label className="miniLabel">Panel angle: {holderAngle}°</label>
+                              <label className="miniLabel">{frameRadius > 0 ? t("Panel angle: 90° (a curved frame stands upright)") : t("Panel angle: {a}°", { a: holderAngle })}</label>
                               <InfoIcon text={t("How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.")} />
                             </div>
                             <input
@@ -4354,7 +4355,8 @@ export default function App() {
                               min={45}
                               max={90}
                               step={5}
-                              value={holderAngle}
+                              value={frameRadius > 0 ? 90 : holderAngle}
+                              disabled={frameRadius > 0}
                               onChange={(e) => setHolderAngle(Number(e.target.value))}
                             />
 

@@ -132,7 +132,7 @@ export const es: Record<string, string> = {
   "Decorate": "Decorar",
   "Colours": "Colores",
   "Print": "Imprimir",
-  "The frame is made for flat pictures. Turn the curve off to use it.": "El marco está hecho para imágenes planas. Desactiva la curva para usarlo.",
+  "A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.": "Una imagen curva solo tiene marco curvo en la forma rectángulo. Elige el rectángulo o desactiva la curva para usarlo.",
   "Frame & stand": "Marco y soporte",
   "A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.": "Un marco en el que la litofanía terminada se desliza desde atrás, y un soporte que sostiene una vela detrás. El marco se dimensiona con el ancho, alto y grosor de esta imagen. El soporte se imprime plano y sin soportes; el marco con la cara frontal hacia abajo. Usa una vela LED: el plástico impreso no aguanta una llama.",
   "How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.": "Cuánto se inclina la imagen hacia atrás desde la vertical. 90° la deja recta, 45° muy echada atrás. El soporte sigue plano, así que los canales del marco quedan verticales y su parte inferior se corta para apoyar plana en la mesa. Una placa inclinada sobresale de lo que hay detrás, así que las patas van más atrás y el riel bajo la imagen crece para sostenerlas.",
@@ -369,4 +369,6 @@ export const es: Record<string, string> = {
   "No tokens left": "No quedan tokens",
   "Picture play (mm)": "Holgura de la imagen (mm)",
   "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Holgura alrededor de la imagen en su bolsillo, por lado. La imagen se sujeta con dos pequeños topes en cada pared lateral, así que esto fija lo ajustada que queda: bájala si la imagen queda floja en el marco, súbela si no entra. Los bolsillos impresos suelen salir algo grandes.",
+  "Panel angle: {a}°": "Ángulo del panel: {a}°",
+  "Panel angle: 90° (a curved frame stands upright)": "Ángulo del panel: 90° (un marco curvo va derecho)",
 };

@@ -132,7 +132,7 @@ export const fr: Record<string, string> = {
   "Decorate": "Décorer",
   "Colours": "Couleurs",
   "Print": "Imprimer",
-  "The frame is made for flat pictures. Turn the curve off to use it.": "Le cadre est fait pour des images plates. Désactivez la courbe pour l'utiliser.",
+  "A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.": "Une image courbe n'a un cadre courbe que sur la forme rectangle. Choisissez le rectangle ou désactivez la courbe pour l'utiliser.",
   "Frame & stand": "Cadre et support",
   "A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.": "Un cadre dans lequel la lithophanie finie glisse par l'arrière, et un support qui tient une bougie derrière. Le cadre est dimensionné d'après la largeur, la hauteur et l'épaisseur de cette image. Le support s'imprime à plat sans supports ; le cadre face avant vers le bas. Utilisez une bougie LED : le plastique imprimé ne supporte pas une flamme.",
   "How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.": "De combien l'image penche en arrière depuis la verticale. 90° la dresse droite, 45° la couche bien en arrière. Le support reste plat, les canaux du cadre restent donc verticaux et son dessous est coupé pour reposer à plat sur la table. Une plaque inclinée déborde de ce qu'il y a derrière, les pieds sont donc plus en arrière et le rail sous l'image s'agrandit pour les porter.",
@@ -369,4 +369,6 @@ export const fr: Record<string, string> = {
   "No tokens left": "Plus de jetons",
   "Picture play (mm)": "Jeu de l'image (mm)",
   "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Jeu autour de l'image dans sa poche, de chaque côté. L'image est maintenue par deux petits crans dans chaque paroi latérale, ceci règle donc son serrage : baissez-le si l'image bouge dans le cadre, augmentez-le si elle n'entre pas. Les poches imprimées sortent souvent un peu grandes.",
+  "Panel angle: {a}°": "Angle du panneau : {a}°",
+  "Panel angle: 90° (a curved frame stands upright)": "Angle du panneau : 90° (un cadre courbe se tient droit)",
 };

@@ -132,7 +132,7 @@ export const de: Record<string, string> = {
   "Decorate": "Dekorieren",
   "Colours": "Farben",
   "Print": "Drucken",
-  "The frame is made for flat pictures. Turn the curve off to use it.": "Der Rahmen ist für flache Bilder gemacht. Schalte die Krümmung aus, um ihn zu nutzen.",
+  "A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.": "Ein gekrümmtes Bild bekommt nur bei der Rechteckform einen gekrümmten Rahmen. Wähle das Rechteck oder schalte die Krümmung aus.",
   "Frame & stand": "Rahmen & Ständer",
   "A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.": "Ein Rahmen, in den die fertige Lithophane von hinten gleitet, und ein Ständer, der dahinter ein Teelicht hält. Der Rahmen wird aus Breite, Höhe und Dicke dieses Bildes bemessen. Der Ständer liegt flach und druckt ohne Stützen; der Rahmen druckt mit der Vorderseite nach unten. Nimm ein LED-Teelicht: das gedruckte Plastik hält keine Flamme aus.",
   "How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.": "Wie weit sich das Bild aus der Senkrechten zurücklehnt. 90° stellt es gerade auf, 45° legt es weit zurück. Der Ständer bleibt flach, daher bleiben die Kanäle des Rahmens aufrecht und seine Unterseite wird flach zum Tisch geschnitten. Eine geneigte Platte überragt, was dahinter ist, also sitzen die Beine weiter hinten und die Leiste unter dem Bild wächst, um sie zu tragen.",
@@ -369,4 +369,6 @@ export const de: Record<string, string> = {
   "No tokens left": "Keine Token mehr",
   "Picture play (mm)": "Bildspiel (mm)",
   "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Spiel um das Bild in seiner Tasche, je Seite. Das Bild wird von zwei kleinen Rasten in jeder Seitenwand gehalten, dies bestimmt also den Sitz: senke es, wenn das Bild lose im Rahmen sitzt, erhöhe es, wenn es nicht hineingeht. Gedruckte Taschen werden oft etwas zu groß.",
+  "Panel angle: {a}°": "Plattenwinkel: {a}°",
+  "Panel angle: 90° (a curved frame stands upright)": "Plattenwinkel: 90° (ein gekrümmter Rahmen steht aufrecht)",
 };

@@ -3,6 +3,7 @@ import { atY, atZ, cap, frustum, holeWall, roundedBox, wall, type V3 } from "./s
 import { PRONG, armAngle } from "./prong";
 import { STAND_DEFAULTS } from "./stand";
 import { convexHull, offsetConvex, type Pt } from "./outline";
+import { bendAroundY, stripeX, stripWidth } from "./bend";
 
 /**
  * The frame a lithophane is slid into, and the two legs that stand on the stand.
@@ -78,10 +79,20 @@ export type HolderParams = {
    * ground between the shape and the legs.
    */
   outline?: Pt[] | null;
+
+  /**
+   * Radius the plate is wrapped round, about its vertical axis, for a curved
+   * picture. The frame is built flat and bent at the end, like the picture is;
+   * the legs stay straight. Upright only. 0 or absent is a flat frame.
+   */
+  bend?: number;
 };
 
 /** The loops of a frame that follows a shape, in the front face's terms. */
 export type FramePoly = { outer: Pt[]; window: Pt[]; pocket: Pt[] };
+
+/** How far in from the plate's back face the picture's back sits, in mm. */
+export const PICTURE_SEAT_MM = 0.9;
 
 /** A hole cut clean through the frame, as a closed outline in front-face mm. */
 export type CutLoop = [number, number][];
@@ -134,13 +145,14 @@ export const HOLDER_DEFAULTS: HolderParams = {
 export function holderLayout(input: Partial<HolderParams> = {}) {
   const p = { ...HOLDER_DEFAULTS, ...input };
 
-  const tilt = (Math.min(45, Math.max(0, p.tiltDeg)) * Math.PI) / 180;
+  const bend = p.bend && p.bend > 0 ? p.bend : 0;
+  const tilt = bend > 0 ? 0 : (Math.min(45, Math.max(0, p.tiltDeg)) * Math.PI) / 180;
   const ct = Math.cos(tilt);
   const tt = Math.tan(tilt);
 
   // Just deep enough for the picture and the catch behind it: slack here is
   // the picture rattling front to back.
-  const pocketDepth = p.pictureT + 0.9;
+  const pocketDepth = p.pictureT + PICTURE_SEAT_MM;
   const T = pocketDepth + p.lipThickness;
 
   let W = p.pictureW + 2 * p.border;
@@ -159,6 +171,16 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   // channel's roof its back face has moved back by top * tan(tilt). The prong
   // has to be clear of that, with room for the wall in front of it.
   const socketDepth = Math.max(p.socketDepth, top * tt + half + 4);
+
+  // A curved plate falls away from the legs' plane either side of the middle.
+  // It is set forward until its back face is on that plane where the legs meet
+  // it, and the legs' near face is taken in far enough to reach it across the
+  // leg's width and sink a millimetre into the plate.
+  const sagAt = (dx: number) => (bend > 0 ? bend * (1 - Math.cos(Math.min(dx / bend, 1.5))) : 0);
+  const legAlpha = armAngle(p.prongSpacing, p.prongReach);
+  const legRoot = p.prongSpacing / 2 + socketDepth * Math.tan(legAlpha);
+  const lift = sagAt(legRoot);
+  const zNear = bend > 0 ? lift - sagAt(Math.max(0, legRoot - (Math.cos(legAlpha) * legW) / 2)) + 1 : 0;
 
   // The leg's near face is the plate's own back face, which at the roof's
   // height is top / cos(tilt) up the plate, and the picture starts above that.
@@ -236,7 +258,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   }
 
   return {
-    p, tilt, T, pocketDepth, W, H, rail, corner, poly,
+    p, tilt, T, pocketDepth, W, H, rail, corner, poly, bend, lift, zNear,
     pocketW, pocketH,
     socketDepth, legW, h1, h2, top, half, armWide,
     /** The window the picture shows through, in the front face's terms. */
@@ -254,6 +276,8 @@ export function buildHolder(
   const L = holderLayout(input);
   const { p, T, pocketDepth, W, H, rail, corner, pocketW, pocketH } = L;
   const mb = new MeshBuilder(2048);
+  // The legs are kept apart: a curved plate is bent, and they stay straight.
+  const lb = new MeshBuilder(1024);
 
   const st = Math.sin(L.tilt);
   const ct = Math.cos(L.tilt);
@@ -454,7 +478,7 @@ export function buildHolder(
       foot: [number, number][], head: [number, number][] = foot,
     ) =>
       frustum(
-        mb,
+        lb,
         foot.map(([s, t]) => at(s, t, lo)),
         head.map(([s, t]) => at(s, t, hi)),
       );
@@ -466,7 +490,7 @@ export function buildHolder(
     // plate leans, so at height h that line has moved back by h tan(tilt);
     // the root block's near face follows it, which keeps it flat on the plate.
     const lean = (t: number, h: number) =>
-      (-socketDepth + pv[1] * t + h * Math.tan(L.tilt)) / ca;
+      (-socketDepth + pv[1] * t + h * Math.tan(L.tilt) - L.zNear / ct) / ca;
     const root = (h: number): [number, number][] => [
       [lean(-legW / 2, h), -legW / 2],
       [sNear, -legW / 2],
@@ -495,7 +519,72 @@ export function buildHolder(
     block(h2, top, span(sNear, sFar, -legW / 2, legW / 2));
   }
 
-  return mb.finish();
+  const plate = mb.finish();
+  const legs = lb.finish();
+  const body = L.bend > 0 ? curveFrame(plate, W, L.bend, L.lift) : plate;
+  const positions = new Float32Array(body.positions.length + legs.positions.length);
+  positions.set(body.positions, 0);
+  positions.set(legs.positions, body.positions.length);
+  return { positions, triangleCount: body.triangleCount + legs.triangleCount };
+}
+
+/**
+ * A flat frame, or the raised shapes on it, wrapped round a cylinder of `radius`
+ * about the vertical through the frame's middle, and set forward by `lift`.
+ *
+ * Cut into strips across the bend first, so broad faces follow the arc rather
+ * than crossing it as chords.
+ */
+export function curveFrame(mesh: Mesh, width: number, radius: number, lift: number): Mesh {
+  const n = mesh.triangleCount * 9;
+  const moved = new Float32Array(n);
+  for (let i = 0; i < n; i += 3) {
+    moved[i] = mesh.positions[i] - width / 2;
+    moved[i + 1] = mesh.positions[i + 1];
+    moved[i + 2] = mesh.positions[i + 2];
+  }
+  const strips = stripeX({ positions: moved, triangleCount: mesh.triangleCount }, stripWidth(radius));
+  bendAroundY(strips.positions, strips.triangleCount * 9, radius);
+  for (let i = 0; i < strips.triangleCount * 9; i += 3) {
+    strips.positions[i] += width / 2;
+    strips.positions[i + 2] += lift;
+  }
+  return strips;
+}
+
+/** The frame with its raised shapes, ready to place or print, and where each colour's triangles start. */
+export function assembleHolder(
+  input: Partial<HolderParams>,
+  cuts: readonly CutLoop[] = [],
+  recess: Recess | null = null,
+  relief: { mesh: Mesh; groups: { start: number; end: number; color: string }[] } | null = null,
+): { mesh: Mesh; plateTriangles: number; bodies: { start: number; color: string }[] } {
+  const plate = buildHolder(input, cuts, recess);
+  if (!relief || relief.mesh.triangleCount === 0) return { mesh: plate, plateTriangles: plate.triangleCount, bodies: [] };
+
+  const L = holderLayout(input);
+  const parts: Mesh[] = [];
+  const bodies: { start: number; color: string }[] = [];
+  let used = plate.triangleCount;
+  const cut = (g: { start: number; end: number }): Mesh => ({
+    positions: relief.mesh.positions.subarray(g.start * 9, g.end * 9),
+    triangleCount: g.end - g.start,
+  });
+  const slices = relief.groups.length > 0 ? relief.groups.map(cut) : [relief.mesh];
+  slices.forEach((m, k) => {
+    const done = L.bend > 0 ? curveFrame(m, L.W, L.bend, L.lift) : m;
+    parts.push(done);
+    bodies.push({ start: used, color: relief.groups[k]?.color ?? "" });
+    used += done.triangleCount;
+  });
+  const positions = new Float32Array(used * 9);
+  positions.set(plate.positions, 0);
+  let at = plate.triangleCount * 9;
+  for (const m of parts) {
+    positions.set(m.positions.subarray(0, m.triangleCount * 9), at);
+    at += m.triangleCount * 9;
+  }
+  return { mesh: { positions, triangleCount: used }, plateTriangles: plate.triangleCount, bodies };
 }
 
 /**
