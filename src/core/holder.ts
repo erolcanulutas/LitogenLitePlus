@@ -181,7 +181,18 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   let window = { x0: W / 2 - winW / 2, x1: W / 2 + winW / 2, y0: winY - winH / 2, y1: winY + winH / 2 };
   let pocket = { x0: W / 2 - pocketW / 2, x1: W / 2 + pocketW / 2, y0: rail, y1: rail + pocketH };
   if (p.outline && p.outline.length >= 3) {
-    const baseHalf = p.prongSpacing / 2 + legW / 2 + 1.5;
+    // The legs lean in as they go back, so they are furthest apart where they
+    // meet the plate. Seen from the front they must stay behind it, and the
+    // plate leans too, so at its underside this is what the base has to span.
+    const alpha = armAngle(p.prongSpacing, p.prongReach);
+    let legReach = p.prongSpacing / 2 + legW / 2;
+    for (const t of [-legW / 2, legW / 2]) {
+      for (const h of [0, top]) {
+        const sAlong = (-socketDepth - Math.sin(alpha) * t + h * tt) / Math.cos(alpha);
+        legReach = Math.max(legReach, p.prongSpacing / 2 - Math.sin(alpha) * sAlong + Math.cos(alpha) * t);
+      }
+    }
+    const baseHalf = legReach + 1.5;
     const cy = rail + pocketH / 2;
     // The ring's corners may reach below the table plane; it is cut off there.
     const flat = (pts: Pt[]): Pt[] => {
