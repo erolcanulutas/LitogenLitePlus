@@ -181,7 +181,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   let window = { x0: W / 2 - winW / 2, x1: W / 2 + winW / 2, y0: winY - winH / 2, y1: winY + winH / 2 };
   let pocket = { x0: W / 2 - pocketW / 2, x1: W / 2 + pocketW / 2, y0: rail, y1: rail + pocketH };
   if (p.outline && p.outline.length >= 3) {
-    const baseHalf = p.prongSpacing / 2 + legW / 2 + 2;
+    const baseHalf = p.prongSpacing / 2 + legW / 2 + 1.5;
     const cy = rail + pocketH / 2;
     // The ring's corners may reach below the table plane; it is cut off there.
     const flat = (pts: Pt[]): Pt[] => {
@@ -206,7 +206,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
     // Whatever of the ring is down in the rail is carried on to the table plane,
     // so the underside is one flat edge as wide as the frame.
     const dropped = ring.filter((q) => q[1] <= rail + 1e-6).map(([x]): Pt => [x, 0]);
-    const outer = convexHull([...ring, ...dropped, [cx - baseHalf, 0], [cx + baseHalf, 0], [cx - baseHalf, rail], [cx + baseHalf, rail]]);
+    const outer = convexHull([...ring, ...dropped, [cx - baseHalf, 0], [cx + baseHalf, 0]]);
     const win = at(offsetConvex(p.outline, -p.lip));
     const pock = at(offsetConvex(p.outline, p.pocketPlay));
     H = Math.max(...outer.map((q) => q[1]));
