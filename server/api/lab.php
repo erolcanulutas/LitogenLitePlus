@@ -122,11 +122,21 @@ if ($action === 'save_model') {
 
     $list = array_values(array_filter(lab_read($manifestPath), static fn($m) => (int) ($m['slot'] ?? 0) !== $slot));
     $color = (string) ($in['color'] ?? '');
+
+    // Which run of triangles is which colour, when the decorations have their own.
+    $bands = [];
+    foreach ((array) ($in['bands'] ?? []) as $b) {
+        if (count($bands) < 24 && is_array($b) && isset($b['start']) && is_int($b['start'])
+            && preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($b['color'] ?? ''))) {
+            $bands[] = ['start' => $b['start'], 'color' => $b['color']];
+        }
+    }
     $list[] = [
         'slot' => $slot,
         'file' => "models/slot-$slot.stl",
         'caption' => $caption !== '' ? $caption : "Model $slot",
         'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : '#d9b77a',
+        'bands' => $bands,
         'updated' => gmdate('Y-m-d H:i:s'),
     ];
     usort($list, static fn($a, $b) => $a['slot'] <=> $b['slot']);

@@ -213,20 +213,20 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
   const lang = useLang();
   // The models on show: the built-in ones, with any that were made in the lab
   // standing in for the slot of the same number.
-  const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
+  const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string; bands?: { start: number; color: string }[] }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
   useEffect(() => {
     let live = true;
     fetch(`${import.meta.env.BASE_URL}home/models/manifest.json?${Date.now()}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((list: { slot: number; file: string; caption: string; updated: string; color?: string }[]) => {
+      .then((list: { slot: number; file: string; caption: string; updated: string; color?: string; bands?: { start: number; color: string }[] }[]) => {
         if (!live || !Array.isArray(list) || list.length === 0) return;
         const bySlot = new Map(list.map((m) => [m.slot, m]));
         const merged = SHOWCASE_MODELS.map((d, i) => {
           const m = bySlot.get(i + 1);
-          return m ? { file: m.file, caption: m.caption, v: m.updated, color: m.color } : { ...d, v: "" };
+          return m ? { file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands } : { ...d, v: "" };
         });
         for (const m of list) {
-          if (m.slot > SHOWCASE_MODELS.length) merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color });
+          if (m.slot > SHOWCASE_MODELS.length) merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands });
         }
         setModels(merged);
       })
@@ -360,7 +360,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
             {models.map((m) => (
               <figure key={m.file} style={{ margin: 0 }}>
                 <Suspense fallback={<div className="homePic" style={{ aspectRatio: "4 / 3" }} />}>
-                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={m.color} />
+                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={m.color} bands={m.bands} />
                 </Suspense>
                 <figcaption className="homeCap">{t(m.caption)}</figcaption>
               </figure>

@@ -34,9 +34,11 @@ type Settings = {
   corner: number;
   /** The frame's colour, as #rrggbb. */
   color: string;
+  /** Print the decorations in their own colours, up to this many; 0 prints them in the frame's. */
+  iconColours: number;
   caption: string;
 };
-const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", caption: "" };
+const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, caption: "" };
 
 type ModelEntry = { slot: number; file: string; caption: string; updated: string; color?: string };
 type TemplateEntry = { id: string; name: string; items: TemplateItem[]; updated: string };
@@ -169,7 +171,7 @@ export default function LabApp() {
       return;
     }
     const timer = setTimeout(() => {
-      makeDecor(decorations, geom, 1, { mode: "flat", colours: 0, palette: [] }, 0)
+      makeDecor(decorations, geom, 1, { mode: "flat", colours: settings.iconColours, palette: [] }, 0)
         .then((d) => live && setDecor(d))
         .catch(() => live && setDecor(null));
     }, 250);
@@ -177,10 +179,13 @@ export default function LabApp() {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, geom]);
+  }, [decorations, geom, settings.iconColours]);
 
   const built = useMemo(() => {
     const a = assembleHolder(params, decor?.cuts ?? [], decor?.recess ?? null, decor?.relief ?? null);
+    // The frame, then each colour of the decorations, then the stand.
+    const starts = [0, ...a.bodies.map((b) => b.start), a.mesh.triangleCount];
+    const colours = [settings.color, ...a.bodies.map((b) => b.color || settings.color), settings.color];
     const placed = holderInPlace(a.mesh, params.tiltDeg, L.socketDepth, L.W / 2);
     const stand = buildStand({ tealight: 38, prongSpacing: spacing });
     const positions = new Float32Array(placed.positions.length + stand.positions.length);
@@ -190,8 +195,8 @@ export default function LabApp() {
     const mesh: PreviewMesh = {
       positions,
       triangleCount: placed.triangleCount + stand.triangleCount,
-      bandStarts: [0, placed.triangleCount],
-      colors: [settings.color, "#9fb4c8"],
+      bandStarts: starts,
+      colors: colours,
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
     return mesh;
@@ -256,6 +261,7 @@ export default function LabApp() {
         slot: area.n,
         caption: settings.caption,
         color: settings.color,
+        bands: built.bandStarts.map((start, i) => ({ start, color: built.colors[i] })),
         stl: toBase64(stl),
         design: { settings, decorations },
       });
@@ -413,6 +419,21 @@ export default function LabApp() {
               </label>
               <label style={cell}>Frame colour
                 <input type="color" value={settings.color} onChange={(e) => setSettings({ ...settings, color: e.target.value })} style={{ width: "100%", height: 38, padding: 0, background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8 }} />
+              </label>
+              <label style={cell}>Icons in their own colours
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={settings.iconColours > 0}
+                    onChange={(e) => setSettings({ ...settings, iconColours: e.target.checked ? 4 : 0 })}
+                  />
+                  {settings.iconColours > 0 && (
+                    <>
+                      <span>up to</span>
+                      <input className="spinInput" type="number" min={2} max={8} style={{ width: 70 }} value={settings.iconColours} onChange={(e) => setSettings({ ...settings, iconColours: Math.max(2, Math.min(8, +e.target.value || 4)) })} />
+                    </>
+                  )}
+                </div>
               </label>
               <label style={cell}>Panel angle
                 <input className="spinInput" type="number" min={45} max={90} step={5} value={settings.angle} onChange={(e) => setSettings({ ...settings, angle: +e.target.value || 85 })} />

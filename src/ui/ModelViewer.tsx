@@ -6,6 +6,8 @@ type Props = {
   src: string;
   /** The model's colour. */
   color?: string;
+  /** Which run of triangles is which colour, if the model has more than one. */
+  bands?: { start: number; color: string }[];
 };
 
 /**
@@ -16,7 +18,7 @@ type Props = {
  * while the model has been touched, so scrolling the page past it still scrolls
  * the page; it turns by itself until it is.
  */
-export default function ModelViewer({ src, color = "#d9b77a" }: Props) {
+export default function ModelViewer({ src, color = "#d9b77a", bands }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing">("loading");
 
@@ -55,19 +57,45 @@ export default function ModelViewer({ src, color = "#d9b77a" }: Props) {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(35, 1, radius * 0.05, radius * 40);
         camera.up.set(0, 0, 1);
-        camera.position.set(radius * 2.4, -radius * 3.2, radius * 1.6);
+        // The frames face +y, so that is where to look from.
+        camera.position.set(-radius * 2.2, radius * 4.4, radius * 1.9);
 
         scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1));
         const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-        sun.position.set(radius * 2, -radius * 3, radius * 4);
+        sun.position.set(-radius * 2, radius * 3, radius * 4);
         scene.add(sun);
         const fill = new THREE.DirectionalLight(0x99bbff, 0.6);
-        fill.position.set(-radius * 3, radius * 2, radius);
+        fill.position.set(radius * 3, -radius * 2, radius);
         scene.add(fill);
 
+        // With bands, each run of triangles takes its own colour, a vertex at a time.
+        let coloured = false;
+        if (bands && bands.length > 1) {
+          const triangles = geometry.getAttribute("position").count / 3;
+          const paint = new Float32Array(triangles * 9);
+          const tint = new THREE.Color();
+          bands.forEach((band, i) => {
+            const end = i + 1 < bands.length ? Math.min(bands[i + 1].start, triangles) : triangles;
+            tint.set(band.color);
+            for (let tri = Math.max(0, band.start); tri < end; tri++) {
+              for (let v = 0; v < 3; v++) {
+                paint[tri * 9 + v * 3] = tint.r;
+                paint[tri * 9 + v * 3 + 1] = tint.g;
+                paint[tri * 9 + v * 3 + 2] = tint.b;
+              }
+            }
+          });
+          geometry.setAttribute("color", new THREE.BufferAttribute(paint, 3));
+          coloured = true;
+        }
         const mesh = new THREE.Mesh(
           geometry,
-          new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05 }),
+          new THREE.MeshStandardMaterial({
+            color: coloured ? 0xffffff : color,
+            vertexColors: coloured,
+            roughness: 0.55,
+            metalness: 0.05,
+          }),
         );
         scene.add(mesh);
 
@@ -134,7 +162,7 @@ export default function ModelViewer({ src, color = "#d9b77a" }: Props) {
       live = false;
       stop();
     };
-  }, [src, color]);
+  }, [src, color, bands]);
 
   return (
     <div className="homePic" style={{ aspectRatio: "4 / 3" }}>
