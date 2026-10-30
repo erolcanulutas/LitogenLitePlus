@@ -3129,6 +3129,18 @@ export default function App() {
             setAccountOpen(true);
           }}
           onStudio={() => setInStudio(true)}
+          onOpenModel={async (file) => {
+            // A ready-made model is a picture; it opens as if it had just been uploaded.
+            try {
+              const r = await fetch(`${import.meta.env.BASE_URL}home/${file}`);
+              if (!r.ok) return;
+              const blob = await r.blob();
+              setInStudio(true);
+              pickFile(new File([blob], file, { type: blob.type || "image/jpeg" }));
+            } catch {
+              /* the picture is not there yet */
+            }
+          }}
         />
       )}
 
