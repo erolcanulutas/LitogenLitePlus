@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lab": "vite build --mode lab --outDir dist-lab && vite preview --mode lab --outDir dist-lab --port 5200"
   },
   "dependencies": {
     "jszip": "^3.10.1",

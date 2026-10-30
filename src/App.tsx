@@ -4472,9 +4472,9 @@ export default function App() {
                               </button>
                             </div>
 
-                            {/* Templates are only for whoever runs the app locally (npm run dev): the
+                            {/* Templates are only for whoever runs the app locally (npm run dev or npm run lab): the
                                 lab to make them in, and the list to start from. The live site has neither. */}
-                            {import.meta.env.DEV && (
+                            {(import.meta.env.DEV || import.meta.env.MODE === "lab") && (
                               <>
                                 <div className="label-row">
                                   <label className="miniLabel">{t("Start from a template")}</label>
