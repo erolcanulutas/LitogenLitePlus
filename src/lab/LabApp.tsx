@@ -19,7 +19,7 @@ const MeshPreview = React.lazy(() => import("../ui/MeshPreview"));
 
 /** The temporary home page lab: models, pictures and templates for the front page. */
 
-const SLOTS = 8;
+const SLOTS = 12;
 const HEADERS = { "Content-Type": "application/json", "X-Litogen": "1" };
 
 type Shape = "rectangle" | OutlineShape;
@@ -36,9 +36,23 @@ type Settings = {
   color: string;
   /** Print the decorations in their own colours, up to this many; 0 prints them in the frame's. */
   iconColours: number;
+  /** The tealight the stand takes, in mm. */
+  tealight: number;
+  /** How far the icons stand out, in mm. */
+  relief: number;
+  /** Room between the stand and the legs, in mm. */
+  fit: number;
+  /** Room round the picture in its pocket, each side, in mm. */
+  play: number;
+  /** Room round a flush icon in its recess, in mm. */
+  flushClear: number;
+  /** Whether the model turns by itself on the home page. */
+  rotate: boolean;
+  /** Left off the home page without being deleted. */
+  hidden: boolean;
   caption: string;
 };
-const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, caption: "" };
+const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, caption: "" };
 
 type ModelEntry = { slot: number; file: string; caption: string; updated: string; color?: string };
 type TemplateEntry = { id: string; name: string; items: TemplateItem[]; updated: string };
@@ -87,10 +101,45 @@ export default function LabApp() {
   const [note, setNote] = useState("");
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
-  const [decorations, setDecorations] = useState<Decoration[]>([]);
+  const [decorations, setDecorationsRaw] = useState<Decoration[]>([]);
+  const current = useRef<Decoration[]>([]);
+  current.current = decorations;
+  const past = useRef<Decoration[][]>([]);
+  const future = useRef<Decoration[][]>([]);
+  const [historyTick, setHistoryTick] = useState(0);
+  /** Every change goes through here, so it can be undone. */
+  const setDecorations = useCallback((next: Decoration[] | ((cur: Decoration[]) => Decoration[])) => {
+    const value = typeof next === "function" ? next(current.current) : next;
+    past.current = [...past.current.slice(-99), current.current];
+    future.current = [];
+    setDecorationsRaw(value);
+    setHistoryTick((n) => n + 1);
+  }, []);
+  /** A different set altogether, such as a card being opened: no step back into the last one. */
+  const replaceDecorations = useCallback((value: Decoration[]) => {
+    past.current = [];
+    future.current = [];
+    setDecorationsRaw(value);
+    setHistoryTick((n) => n + 1);
+  }, []);
+  const undo = useCallback(() => {
+    const prev = past.current.pop();
+    if (!prev) return;
+    future.current.push(current.current);
+    setDecorationsRaw(prev);
+    setHistoryTick((n) => n + 1);
+  }, []);
+  const redo = useCallback(() => {
+    const next = future.current.pop();
+    if (!next) return;
+    past.current.push(current.current);
+    setDecorationsRaw(next);
+    setHistoryTick((n) => n + 1);
+  }, []);
   const [selected, setSelected] = useState<number | null>(null);
   const [templateName, setTemplateName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pasteText, setPasteText] = useState("");
 
   useEffect(() => {
     document.title = "Litogen lab";
@@ -138,8 +187,8 @@ export default function LabApp() {
       pictureT: 3,
       border: settings.border,
       lip: Math.min(4, Math.max(2, +(settings.border * 0.3).toFixed(1))),
-      fit: 0.2,
-      pocketPlay: 0.05,
+      fit: settings.fit,
+      pocketPlay: settings.play,
       tiltDeg: 90 - settings.angle,
       corner: settings.corner,
       outline,
@@ -148,7 +197,7 @@ export default function LabApp() {
     let lean = b.tiltDeg;
     if (frameRadius > 0) while (lean > 0 && !holderLayout({ ...b, tiltDeg: lean }).shearOk) lean -= 1;
     return { ...b, tiltDeg: lean };
-  }, [settings.widthMm, settings.border, settings.angle, settings.corner, height, outline, frameRadius, pictureRadius]);
+  }, [settings.widthMm, settings.border, settings.angle, settings.corner, settings.fit, settings.play, height, outline, frameRadius, pictureRadius]);
 
   const spacing = useMemo(() => legSpacingFor(outline, base), [outline, base]);
   const params = useMemo(() => ({ ...base, prongSpacing: spacing }), [base, spacing]);
@@ -171,7 +220,7 @@ export default function LabApp() {
       return;
     }
     const timer = setTimeout(() => {
-      makeDecor(decorations, geom, 1, { mode: "flat", colours: settings.iconColours, palette: [] }, 0)
+      makeDecor(decorations, geom, settings.relief, { mode: "flat", colours: settings.iconColours, palette: [] }, settings.flushClear)
         .then((d) => live && setDecor(d))
         .catch(() => live && setDecor(null));
     }, 250);
@@ -179,7 +228,7 @@ export default function LabApp() {
       live = false;
       clearTimeout(timer);
     };
-  }, [decorations, geom, settings.iconColours]);
+  }, [decorations, geom, settings.iconColours, settings.relief, settings.flushClear]);
 
   const built = useMemo(() => {
     const a = assembleHolder(params, decor?.cuts ?? [], decor?.recess ?? null, decor?.relief ?? null);
@@ -187,7 +236,7 @@ export default function LabApp() {
     const starts = [0, ...a.bodies.map((b) => b.start), a.mesh.triangleCount];
     const colours = [settings.color, ...a.bodies.map((b) => b.color || settings.color), settings.color];
     const placed = holderInPlace(a.mesh, params.tiltDeg, L.socketDepth, L.W / 2);
-    const stand = buildStand({ tealight: 38, prongSpacing: spacing });
+    const stand = buildStand({ tealight: settings.tealight, prongSpacing: spacing });
     const positions = new Float32Array(placed.positions.length + stand.positions.length);
     positions.set(placed.positions, 0);
     positions.set(stand.positions, placed.positions.length);
@@ -200,7 +249,7 @@ export default function LabApp() {
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
     return mesh;
-  }, [params, decor, L.socketDepth, L.W, spacing, settings.color]);
+  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight]);
 
   // -- decorations ------------------------------------------------------------
   const add = (d: Decoration) => {
@@ -240,13 +289,13 @@ export default function LabApp() {
         const d = (await api({ action: "design", slot: next.n })).design as { settings?: Settings; decorations?: Decoration[] } | null;
         if (d?.settings) setSettings({ ...DEFAULTS, ...d.settings });
         else setSettings({ ...DEFAULTS, caption: models.find((m) => m.slot === next.n)?.caption || SHOWCASE_MODELS[next.n - 1]?.caption || "" });
-        setDecorations(d?.decorations ?? []);
+        replaceDecorations(d?.decorations ?? []);
       } catch {
-        setDecorations([]);
+        replaceDecorations([]);
       }
     } else if (next.kind === "templates") {
       setSettings(DEFAULTS);
-      setDecorations([]);
+      replaceDecorations([]);
     }
   };
 
@@ -261,6 +310,8 @@ export default function LabApp() {
         slot: area.n,
         caption: settings.caption,
         color: settings.color,
+        rotate: settings.rotate,
+        hidden: settings.hidden,
         bands: built.bandStarts.map((start, i) => ({ start, color: built.colors[i] })),
         stl: toBase64(stl),
         design: { settings, decorations },
@@ -299,6 +350,86 @@ export default function LabApp() {
   const removeTemplate = async (id: string) => {
     const d = await api({ action: "delete_template", id });
     setTemplates(d.templates as TemplateEntry[]);
+  };
+
+  // -- keys, copies and downloads ---------------------------------------------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (mod && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      } else if (selected !== null && decorations[selected]) {
+        const step = e.shiftKey ? 2 : 0.5;
+        const move = (dx: number, dy: number) => {
+          e.preventDefault();
+          setDecorations((cur) => cur.map((d, i) => (i === selected ? { ...d, x: d.x + dx, y: d.y + dy } : d)));
+        };
+        if (e.key === "ArrowLeft") move(-step, 0);
+        else if (e.key === "ArrowRight") move(step, 0);
+        else if (e.key === "ArrowUp") move(0, step);
+        else if (e.key === "ArrowDown") move(0, -step);
+        else if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault();
+          setDecorations((cur) => cur.filter((_, i) => i !== selected));
+          setSelected(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, decorations, undo, redo, setDecorations]);
+
+  const downloadStl = () => {
+    const stl = writeBinarySTL({ positions: built.positions, triangleCount: built.triangleCount });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([stl], { type: "model/stl" }));
+    a.download = `${(settings.caption || "model").replace(/[^\w-]+/g, "-")}.stl`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  const copyDesign = async () => {
+    const text = JSON.stringify({ settings, decorations });
+    try {
+      await navigator.clipboard.writeText(text);
+      setNote("Design copied.");
+    } catch {
+      setPasteText(text);
+      setNote("Copying was blocked, so it is in the box: select it and copy.");
+    }
+  };
+
+  const pasteDesign = () => {
+    try {
+      const d = JSON.parse(pasteText) as { settings?: Settings; decorations?: Decoration[] };
+      if (d.settings) setSettings({ ...DEFAULTS, ...d.settings });
+      if (Array.isArray(d.decorations)) setDecorations(d.decorations);
+      setNote("Design pasted in.");
+    } catch {
+      setNote("That is not a design.");
+    }
+  };
+
+  const copyFrom = async (n: number) => {
+    try {
+      const d = (await api({ action: "design", slot: n })).design as { settings?: Settings; decorations?: Decoration[] } | null;
+      if (!d) {
+        setNote(`${cardName(n)} has no saved design to copy.`);
+        return;
+      }
+      if (d.settings) setSettings({ ...DEFAULTS, ...d.settings, caption: settings.caption });
+      setDecorations(d.decorations ?? []);
+      setNote(`Copied from ${cardName(n)}.`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Could not copy");
+    }
   };
 
   // -- sign in ----------------------------------------------------------------
@@ -440,6 +571,33 @@ export default function LabApp() {
               </label>
             </div>
 
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: 13, opacity: 0.85 }}>More settings</summary>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, marginTop: 8 }}>
+                <label style={cell}>Tealight diameter (mm)
+                  <input className="spinInput" type="number" min={30} max={80} value={settings.tealight} onChange={(e) => setSettings({ ...settings, tealight: +e.target.value || 38 })} />
+                </label>
+                <label style={cell}>Icon height (mm)
+                  <input className="spinInput" type="number" min={0.4} max={3} step={0.1} value={settings.relief} onChange={(e) => setSettings({ ...settings, relief: +e.target.value || 1 })} />
+                </label>
+                <label style={cell}>Leg fit (mm)
+                  <input className="spinInput" type="number" min={0} max={0.6} step={0.05} value={settings.fit} onChange={(e) => setSettings({ ...settings, fit: +e.target.value })} />
+                </label>
+                <label style={cell}>Picture play (mm)
+                  <input className="spinInput" type="number" min={0} max={0.5} step={0.01} value={settings.play} onChange={(e) => setSettings({ ...settings, play: +e.target.value })} />
+                </label>
+                <label style={cell}>Flush clearance (mm)
+                  <input className="spinInput" type="number" min={0} max={0.2} step={0.05} value={settings.flushClear} onChange={(e) => setSettings({ ...settings, flushClear: +e.target.value })} />
+                </label>
+              </div>
+            </details>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="btn" disabled={past.current.length === 0} onClick={undo} data-tick={historyTick}>↶ Undo</button>
+              <button className="btn" disabled={future.current.length === 0} onClick={redo}>↷ Redo</button>
+              <span style={{ fontSize: 12, opacity: 0.6 }}>Ctrl+Z / Ctrl+Y · arrows nudge the selected icon (Shift: more) · Delete removes it</span>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
               <div style={{ height: 460, position: "relative", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, overflow: "hidden" }}>
                 <HolderDesigner
@@ -496,12 +654,31 @@ export default function LabApp() {
                     <label style={cell}>Caption under the model
                       <input className="spinInput" value={settings.caption} maxLength={60} onChange={(e) => setSettings({ ...settings, caption: e.target.value })} placeholder="Frame with decorations" />
                     </label>
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13 }}>
+                      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input type="checkbox" checked={settings.rotate} onChange={(e) => setSettings({ ...settings, rotate: e.target.checked })} />
+                        Turns by itself
+                      </label>
+                      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input type="checkbox" checked={settings.hidden} onChange={(e) => setSettings({ ...settings, hidden: e.target.checked })} />
+                        Hide from the home page
+                      </label>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button className="btn" disabled={busy} onClick={saveModel} style={{ fontWeight: 700 }}>
                         {busy ? "Saving…" : "Save to the home page"}
                       </button>
                       <button className="btn" onClick={removeModel}>Back to built-in</button>
+                      <button className="btn" onClick={downloadStl}>Download STL</button>
                     </div>
+                    <label style={cell}>Copy the design of another card into this one
+                      <select className="spinInput" value="" onChange={(e) => e.target.value && copyFrom(+e.target.value)}>
+                        <option value="">Choose a card…</option>
+                        {Array.from({ length: SLOTS }, (_, k) => k + 1).filter((n) => !isSlot || n !== (area as { n: number }).n).map((n) => (
+                          <option key={n} value={n}>{cardName(n)}</option>
+                        ))}
+                      </select>
+                    </label>
                   </>
                 ) : null}
 
@@ -519,6 +696,11 @@ export default function LabApp() {
                     <button className="btn" style={{ padding: "2px 8px" }} onClick={() => removeTemplate(tpl.id)}>✕</button>
                   </div>
                 ))}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                  <button className="btn" style={{ padding: "2px 8px" }} onClick={copyDesign}>Copy this design</button>
+                  <button className="btn" style={{ padding: "2px 8px" }} disabled={!pasteText.trim()} onClick={pasteDesign}>Paste a design from the box</button>
+                </div>
+                <textarea className="spinInput" rows={2} value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder="A copied design goes here" style={{ fontFamily: "monospace", fontSize: 11 }} />
                 {note && <div style={{ fontSize: 13, color: "#86efac" }}>{note}</div>}
               </div>
             </div>
@@ -540,6 +722,32 @@ function Photos() {
   const [note, setNote] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const target = useRef("");
+  const [captions, setCaptions] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api({ action: "photos" })
+      .then((d) => setCaptions((d.captions as Record<string, string>) ?? {}))
+      .catch(() => {});
+  }, []);
+
+  const saveCaption = async (name: string, caption: string) => {
+    try {
+      const d = await api({ action: "set_caption", name: name.replace(/\.jpg$/, ""), caption });
+      setCaptions((d.captions as Record<string, string>) ?? {});
+      setNote(`${name} caption saved.`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Could not save");
+    }
+  };
+
+  const remove = async (name: string) => {
+    try {
+      await api({ action: "delete_picture", name });
+      setStamp(Date.now());
+      setNote(`${name} deleted.`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Could not delete");
+    }
+  };
 
   const send = async (file: File) => {
     const img = await createImageBitmap(file);
@@ -562,7 +770,7 @@ function Photos() {
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ fontSize: 18, fontWeight: 600 }}>Photos</div>
       <div style={{ fontSize: 13, opacity: 0.75 }}>
-        hero-1 … hero-5 slide across the top of the home page; model-1 … model-4 are the ready-made models, and open in the editor when clicked.
+        hero-1 … hero-5 slide across the top of the home page; model-1 … model-4 are the ready-made models, and open in the editor when clicked. The name under a ready-made model is saved when you leave its box.
       </div>
       <input
         ref={input}
@@ -581,7 +789,22 @@ function Photos() {
             <div style={{ aspectRatio: "4 / 3", background: "rgba(255,255,255,0.06)", borderRadius: 8, overflow: "hidden", display: "grid", placeItems: "center", fontSize: 12, opacity: 0.9 }}>
               <img src={`/home/${name}?t=${stamp}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
             </div>
-            <button className="btn" onClick={() => { target.current = name; input.current?.click(); }}>{name} — choose…</button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => { target.current = name; input.current?.click(); }}>{name} — choose…</button>
+              <button className="btn" style={{ padding: "2px 8px" }} title="Delete this picture" onClick={() => remove(name)}>✕</button>
+            </div>
+            {name.startsWith("model-") && (
+              <input
+                className="spinInput"
+                placeholder="Name shown under it"
+                maxLength={60}
+                defaultValue={captions[name.replace(/\.jpg$/, "")] ?? ""}
+                key={`${name}-${captions[name.replace(/\.jpg$/, "")] ?? ""}`}
+                onBlur={(e) => {
+                  if (e.target.value !== (captions[name.replace(/\.jpg$/, "")] ?? "")) void saveCaption(name, e.target.value);
+                }}
+              />
+            )}
           </div>
         ))}
       </div>

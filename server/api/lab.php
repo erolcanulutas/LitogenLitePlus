@@ -137,6 +137,8 @@ if ($action === 'save_model') {
         'caption' => $caption !== '' ? $caption : "Model $slot",
         'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : '#d9b77a',
         'bands' => $bands,
+        'rotate' => ($in['rotate'] ?? true) !== false,
+        'hidden' => ($in['hidden'] ?? false) === true,
         'updated' => gmdate('Y-m-d H:i:s'),
     ];
     usort($list, static fn($a, $b) => $a['slot'] <=> $b['slot']);
@@ -170,6 +172,37 @@ if ($action === 'delete_template') {
     $list = array_values(array_filter(lab_read($templatesPath), static fn($t) => ($t['id'] ?? '') !== $id));
     lab_write($templatesPath, $list);
     reply(['ok' => true, 'templates' => $list]);
+}
+
+$photosPath = $models . '/photos.json';
+
+if ($action === 'photos') {
+    reply(['ok' => true, 'captions' => lab_read($photosPath)]);
+}
+
+if ($action === 'set_caption') {
+    $name = (string) ($in['name'] ?? '');
+    if (!preg_match('/^(hero|model)-[1-9]$/', $name)) {
+        fail('Unknown picture');
+    }
+    $captions = lab_read($photosPath);
+    $text = mb_substr(trim((string) ($in['caption'] ?? '')), 0, 60);
+    if ($text === '') {
+        unset($captions[$name]);
+    } else {
+        $captions[$name] = $text;
+    }
+    lab_write($photosPath, $captions);
+    reply(['ok' => true, 'captions' => $captions]);
+}
+
+if ($action === 'delete_picture') {
+    $name = (string) ($in['name'] ?? '');
+    if (!preg_match('/^(hero-[1-5]|model-[1-9])\.jpg$/', $name)) {
+        fail('Unknown picture');
+    }
+    @unlink($home . '/' . $name);
+    reply(['ok' => true]);
 }
 
 if ($action === 'upload_picture') {

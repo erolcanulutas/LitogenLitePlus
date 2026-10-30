@@ -213,20 +213,32 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
   const lang = useLang();
   // The models on show: the built-in ones, with any that were made in the lab
   // standing in for the slot of the same number.
-  const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string; bands?: { start: number; color: string }[] }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
+  // Captions for the ready-made models, as written in the lab.
+  const [captions, setCaptions] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}home/models/photos.json?${Date.now()}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((c: unknown) => setCaptions(c && typeof c === "object" && !Array.isArray(c) ? (c as Record<string, string>) : {}))
+      .catch(() => {});
+  }, []);
+  const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
   useEffect(() => {
     let live = true;
     fetch(`${import.meta.env.BASE_URL}home/models/manifest.json?${Date.now()}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((list: { slot: number; file: string; caption: string; updated: string; color?: string; bands?: { start: number; color: string }[] }[]) => {
+      .then((list: { slot: number; file: string; caption: string; updated: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean; hidden?: boolean }[]) => {
         if (!live || !Array.isArray(list) || list.length === 0) return;
         const bySlot = new Map(list.map((m) => [m.slot, m]));
-        const merged = SHOWCASE_MODELS.map((d, i) => {
+        const merged: typeof models = [];
+        SHOWCASE_MODELS.forEach((d, i) => {
           const m = bySlot.get(i + 1);
-          return m ? { file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands } : { ...d, v: "" };
+          if (!m) merged.push({ ...d, v: "" });
+          else if (!m.hidden) merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands, rotate: m.rotate });
         });
         for (const m of list) {
-          if (m.slot > SHOWCASE_MODELS.length) merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands });
+          if (m.slot > SHOWCASE_MODELS.length && !m.hidden) {
+            merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands, rotate: m.rotate });
+          }
         }
         setModels(merged);
       })
@@ -360,7 +372,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
             {models.map((m) => (
               <figure key={m.file} style={{ margin: 0 }}>
                 <Suspense fallback={<div className="homePic" style={{ aspectRatio: "4 / 3" }} />}>
-                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={m.color} bands={m.bands} />
+                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={m.color} bands={m.bands} autoRotate={m.rotate !== false} />
                 </Suspense>
                 <figcaption className="homeCap">{t(m.caption)}</figcaption>
               </figure>
@@ -374,7 +386,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
           <div className={`homeGallery ${MODELS.length === 4 ? "four" : ""}`}>
             {MODELS.map((m) => (
               <button key={m.file} className="homeModelBtn" onClick={() => onOpenModel(m.file)}>
-                <Photo {...m} />
+                <Photo {...m} caption={captions[m.file.replace(/\.jpg$/, "")] ?? m.caption} />
               </button>
             ))}
           </div>

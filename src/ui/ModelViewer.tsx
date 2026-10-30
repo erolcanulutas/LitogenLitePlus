@@ -8,6 +8,8 @@ type Props = {
   color?: string;
   /** Which run of triangles is which colour, if the model has more than one. */
   bands?: { start: number; color: string }[];
+  /** Whether it turns by itself until it is touched. */
+  autoRotate?: boolean;
 };
 
 /**
@@ -18,7 +20,7 @@ type Props = {
  * while the model has been touched, so scrolling the page past it still scrolls
  * the page; it turns by itself until it is.
  */
-export default function ModelViewer({ src, color = "#d9b77a", bands }: Props) {
+export default function ModelViewer({ src, color = "#d9b77a", bands, autoRotate = true }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing">("loading");
 
@@ -102,7 +104,7 @@ export default function ModelViewer({ src, color = "#d9b77a", bands }: Props) {
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.enablePan = false;
-        controls.autoRotate = true;
+        controls.autoRotate = autoRotate;
         controls.autoRotateSpeed = 1.6;
         controls.minDistance = radius * 1.2;
         controls.maxDistance = radius * 8;
@@ -162,7 +164,7 @@ export default function ModelViewer({ src, color = "#d9b77a", bands }: Props) {
       live = false;
       stop();
     };
-  }, [src, color, bands]);
+  }, [src, color, bands, autoRotate]);
 
   return (
     <div className="homePic" style={{ aspectRatio: "4 / 3" }}>
