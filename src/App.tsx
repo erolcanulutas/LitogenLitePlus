@@ -2125,6 +2125,7 @@ export default function App() {
       frontZ: holderGeom.T,
       lip: holderGeom.T - holderGeom.pocketDepth,
       poly: holderGeom.poly,
+      squeeze: holderGeom.bend > 0 ? holderGeom.bend / (holderGeom.bend + holderGeom.T) : 1,
     }),
     [holderGeom],
   );

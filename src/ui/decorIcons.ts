@@ -181,6 +181,11 @@ export async function renderMask(
     const images = await Promise.all(which.map((d) => (isText(d) ? null : loadIcon(d.icon))));
     ctx.save();
     ctx.translate(M * px, M * px);
+    if (geom.squeeze && geom.squeeze < 1) {
+      ctx.translate((W / 2) * px, 0);
+      ctx.scale(geom.squeeze, 1);
+      ctx.translate((-W / 2) * px, 0);
+    }
     which.forEach((d, i) => drawDecoration(ctx, images[i], d, H, px));
     ctx.restore();
     return ctx.getImageData(0, 0, w, h).data;

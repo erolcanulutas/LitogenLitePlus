@@ -68,6 +68,13 @@ export type DecorGeom = {
   /** The front face, and how thick the layer in front of the picture is. */
   frontZ: number;
   lip: number;
+  /**
+   * On a curved frame the front face is on a wider arc than the plate it was laid
+   * out on, so everything on it stretches sideways when bent. Drawn this much
+   * narrower (about the frame's middle) it comes out the size it was placed at.
+   * Absent or 1 on a flat frame.
+   */
+  squeeze?: number;
   /** When the frame follows a shape: its outer edge, window and pocket as loops. */
   poly?: { outer: [number, number][]; window: [number, number][]; pocket: [number, number][] } | null;
 };
