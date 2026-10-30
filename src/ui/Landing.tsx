@@ -280,7 +280,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
           <div>
             <h1>{t("Turn a photo into a lithophane that glows")}</h1>
             <p>
-              {t("Upload a picture and get a print-ready 3D model in minutes — with a frame, a stand and decorations made to fit it.")}
+              {t("Upload a picture and get a print-ready 3D model in minutes — with a frame, a candle stand and decorations made to fit it.")}
             </p>
             <div className="homeCtas">
               <button className="homeBtn primary big" onClick={onSignUp}>{t("Start free")}</button>
@@ -315,7 +315,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
 
         <section className="homeSection">
           <h2>{t("What you can make")}</h2>
-          <p className="sub">{t("One studio for the picture, the frame it sits in and the stand that holds it.")}</p>
+          <p className="sub">{t("One studio for the picture, the frame it sits in and the candle stand that holds it.")}</p>
           <div className="homeFeatures">
             <div className="homeCard">
               <b>{t("Lithophanes")}</b>
@@ -330,8 +330,8 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
               <span>{t("Colours set side by side in one flat slab, for coasters and signs.")}</span>
             </div>
             <div className="homeCard">
-              <b>{t("Frames and stands")}</b>
-              <span>{t("A frame the print slides into and a stand for a tealight, in any shape, curved or flat.")}</span>
+              <b>{t("Frames and candle stands")}</b>
+              <span>{t("A frame the print slides into and a candle stand for a tealight, in any shape, curved or flat.")}</span>
             </div>
             <div className="homeCard">
               <b>{t("Decorations")}</b>
@@ -358,7 +358,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
             </div>
             <div className="homeCard">
               <b>{t("Litogen Lite")}</b>
-              <span>{t("Then it became much more: a free web app that turns any picture into a model, with frames, stands, decorations and colours.")}</span>
+              <span>{t("Then it became much more: a free web app that turns any picture into a model, with frames, candle stands, decorations and colours.")}</span>
             </div>
             <div className="homeCard">
               <b>{t("Litogen")}</b>
@@ -409,7 +409,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
               <ul>
                 <li>{t("5 tokens when you sign up")}</li>
                 <li>{t("Preview any model in 3D, always")}</li>
-                <li>{t("Stands are always free")}</li>
+                <li>{t("Candle stands are always free")}</li>
                 <li>{t("Downloading the same frame design again is free")}</li>
               </ul>
             </div>

@@ -4047,7 +4047,7 @@ export default function App() {
               <button
                 className={`viewTab ${view === "holder" ? "active" : ""}`}
                 onClick={() => setView("holder")}
-              >{t("Frame & Stand")}</button>
+              >{t("Frame & Candle Stand")}</button>
             </div>
 
             {view === "editor" && (
@@ -4421,8 +4421,8 @@ export default function App() {
                         {holderSub === "frame" && (
                           <>
                             <div className="label-row">
-                              <div className="sectionTitle">{t("Frame & stand")}</div>
-                              <InfoIcon text={t("A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.")} />
+                              <div className="sectionTitle">{t("Frame & candle stand")}</div>
+                              <InfoIcon text={t("A frame the finished lithophane slides into from behind, and a candle stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The candle stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.")} />
                             </div>
                             <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
                               Frame for a {widthMm.toFixed(0)} × {heightMm.toFixed(0)} × {maxT} mm picture.
@@ -4430,7 +4430,7 @@ export default function App() {
 
                             <div className="label-row">
                               <label className="miniLabel">{t("Panel angle: {a}°", { a: holderAngle })}</label>
-                              <InfoIcon text={t("How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.")} />
+                              <InfoIcon text={t("How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The candle stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.")} />
                             </div>
                             <input
                               className="range"
@@ -4487,7 +4487,7 @@ export default function App() {
 
                             <div className="label-row" style={{ marginTop: 12 }}>
                               <label className="miniLabel">{t("Fit (mm)")}</label>
-                              <InfoIcon text={t("The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble.")} />
+                              <InfoIcon text={t("The gap between the candle stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble.")} />
                             </div>
                             <NumField value={holderFit} min={0} max={0.6} step={0.05} onChange={setHolderFit} />
 
@@ -4499,7 +4499,7 @@ export default function App() {
 
                             <div className="label-row" style={{ marginTop: 12 }}>
                               <label className="miniLabel">{t("Tealight diameter (mm)")}</label>
-                              <InfoIcon text={t("The width of the tealight. The cup in the stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm.")} />
+                              <InfoIcon text={t("The width of the tealight. The cup in the candle stand is 4 mm wider than this, so it drops in and lifts out easily. A standard tealight is 38 mm.")} />
                             </div>
                             <NumField value={tealightMm} min={30} max={80} step={1} onChange={setTealightMm} />
                             <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
@@ -4722,10 +4722,10 @@ export default function App() {
                               className="btn"
                               style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                               onClick={() => downloadHolderPart("stand")}
-                            >{t("Download stand (STL) · free")}</button>
+                            >{t("Download candle stand (STL) · free")}</button>
                             {legSpacing < PRONG.spacing - 0.01 && (
                               <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>
-                                {t("This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.", { mm: legSpacing.toFixed(1) })}
+                                {t("This frame's legs are closer together than the standard candle stand's prongs, so it needs the candle stand from this button: {mm} mm between prongs. An older candle stand will not fit.", { mm: legSpacing.toFixed(1) })}
                               </div>
                             )}
                             <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>{t("Downloading the same frame design again is free.")}</div>

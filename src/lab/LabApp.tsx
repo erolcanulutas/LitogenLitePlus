@@ -9,6 +9,7 @@ import { pictureMatrix } from "../core/pocket";
 import STLWorker from "../worker/stl.worker?worker";
 import ModelViewer from "../ui/ModelViewer";
 import Texts from "./Texts";
+import { parse3MF, type Parsed3MF } from "./parse3mf";
 import { shapeOutline, type OutlineShape } from "../core/outline";
 import { buildStand } from "../core/stand";
 import { writeBinarySTL } from "../core/stl_writer";
@@ -57,8 +58,12 @@ type Settings = {
   hidden: boolean;
   /** Where the camera starts on the home page. */
   view: { az: number; el: number; zoom: number };
-  /** A frame with its stand, or the picture's model on its own. */
-  mode: "frame" | "print";
+  /** A frame with its candle stand, the picture's model on its own, or a 3MF made elsewhere. */
+  mode: "frame" | "print" | "upload";
+  /** Whether the candle stand is part of a frame's model. */
+  withStand: boolean;
+  /** How many quarter turns an uploaded model is turned about its vertical. */
+  uploadTurn: number;
   /** How the picture is made: a lithophane, tones standing at their own heights, or colours set side by side. */
   surface: "lithophane" | "layered" | "inlay";
   /** How many tones a layered or inlay picture has. */
@@ -69,7 +74,7 @@ type Settings = {
   inlayBase: string;
   caption: string;
 };
-const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, view: { az: -27, el: 21, zoom: 1 }, mode: "frame", surface: "lithophane", tones: 3, toneColors: ["#111827", "#6b7280", "#d1d5db", "#f2f2f2", "#fde68a", "#fca5a5"], inlayBase: "#f2f2f2", caption: "" };
+const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, view: { az: -27, el: 21, zoom: 1 }, mode: "frame", withStand: true, uploadTurn: 0, surface: "lithophane", tones: 3, toneColors: ["#111827", "#6b7280", "#d1d5db", "#f2f2f2", "#fde68a", "#fca5a5"], inlayBase: "#f2f2f2", caption: "" };
 
 type ModelEntry = { slot: number; file: string; caption: string; updated: string; color?: string };
 type TemplateEntry = { id: string; name: string; items: TemplateItem[]; updated: string };
@@ -171,6 +176,8 @@ export default function LabApp() {
   } | null>(null);
   const [pictureBusy, setPictureBusy] = useState(false);
   const pictureInput = useRef<HTMLInputElement>(null);
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploaded, setUploaded] = useState<(Parsed3MF & { name: string }) | null>(null);
   const pictureFile = useRef<File | null>(null);
   const [homeUrl, setHomeUrl] = useState("");
 
@@ -278,7 +285,9 @@ export default function LabApp() {
     const starts = [0, ...a.bodies.map((b) => b.start), a.mesh.triangleCount];
     const colours = [settings.color, ...a.bodies.map((b) => b.color || settings.color), settings.color];
     const placed = holderInPlace(a.mesh, params.tiltDeg, L.socketDepth, L.W / 2);
-    const stand = buildStand({ tealight: settings.tealight, prongSpacing: spacing });
+    const stand = settings.withStand
+      ? buildStand({ tealight: settings.tealight, prongSpacing: spacing })
+      : { positions: new Float32Array(0), triangleCount: 0 };
     const pic = pictureFits ? picture : null;
     // The colours of the picture's bodies, whichever way it is made.
     const bodyColours = (n: number): string[] => {
@@ -292,6 +301,29 @@ export default function LabApp() {
       }
       return Array.from({ length: n }, () => "#f6f1e7");
     };
+
+    // A 3MF made elsewhere is the whole model, as it came, turned about its vertical if asked.
+    if (settings.mode === "upload") {
+      if (!uploaded) {
+        return { positions: new Float32Array(0), triangleCount: 0, bandStarts: [0], colors: [settings.color], faceAxis: [0, 1, 0] } as PreviewMesh;
+      }
+      const q = ((settings.uploadTurn % 4) + 4) % 4;
+      const turned = new Float32Array(uploaded.positions.length);
+      for (let i = 0; i < turned.length; i += 3) {
+        const x = uploaded.positions[i];
+        const y = uploaded.positions[i + 1];
+        turned[i] = q === 0 ? x : q === 1 ? -y : q === 2 ? -x : y;
+        turned[i + 1] = q === 0 ? y : q === 1 ? x : q === 2 ? -y : -x;
+        turned[i + 2] = uploaded.positions[i + 2];
+      }
+      return {
+        positions: turned,
+        triangleCount: uploaded.triangleCount,
+        bandStarts: uploaded.bodies.map((b) => b.start),
+        colors: uploaded.bodies.map((b) => b.color),
+        faceAxis: [0, 1, 0],
+      } as PreviewMesh;
+    }
 
     // A picture on its own is the whole model: stood up, turned to face the front.
     if (settings.mode === "print") {
@@ -333,7 +365,7 @@ export default function LabApp() {
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
     return mesh;
-  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight, settings.mode, settings.surface, settings.tones, settings.toneColors, settings.inlayBase, picture, pictureFits]);
+  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight, settings.mode, settings.withStand, settings.uploadTurn, settings.surface, settings.tones, settings.toneColors, settings.inlayBase, picture, pictureFits, uploaded]);
 
   // -- decorations ------------------------------------------------------------
   const add = (d: Decoration) => {
@@ -735,10 +767,16 @@ export default function LabApp() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
               <label style={cell}>Model
                 <select className="spinInput" value={settings.mode} onChange={(e) => setSettings({ ...settings, mode: e.target.value as Settings["mode"] })}>
-                  <option value="frame">Frame and stand</option>
+                  <option value="frame">Frame and candle stand</option>
                   <option value="print">The picture on its own</option>
+                  <option value="upload">A 3MF I upload</option>
                 </select>
               </label>
+              {settings.mode === "frame" && (
+                <label style={cell}>With candle stand
+                  <input type="checkbox" checked={settings.withStand} onChange={(e) => setSettings({ ...settings, withStand: e.target.checked })} style={{ width: 22, height: 22 }} />
+                </label>
+              )}
               <label style={cell}>Shape
                 <select className="spinInput" value={settings.shape} onChange={(e) => setSettings({ ...settings, shape: e.target.value as Shape })}>
                   <option value="rectangle">Rectangle</option>
@@ -941,6 +979,42 @@ export default function LabApp() {
                     <button className="btn" style={{ padding: "2px 8px" }} onClick={() => removeTemplate(tpl.id)}>✕</button>
                   </div>
                 ))}
+                {settings.mode === "upload" && (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>The 3MF</div>
+                    <input
+                      ref={uploadInput}
+                      type="file"
+                      accept=".3mf"
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!f) return;
+                        try {
+                          const parsed = await parse3MF(await f.arrayBuffer());
+                          setUploaded({ ...parsed, name: f.name });
+                          setSettings((s) => ({ ...s, caption: s.caption || f.name.replace(/\.3mf$/i, "") }));
+                          setNote(`${f.name}: ${parsed.triangleCount.toLocaleString()} triangles, ${parsed.bodies.length} ${parsed.bodies.length === 1 ? "body" : "bodies"}.`);
+                        } catch (err) {
+                          setNote(err instanceof Error ? err.message : "Could not read that file");
+                        }
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button className="btn" onClick={() => uploadInput.current?.click()}>{uploaded ? "Choose another 3MF…" : "Choose a 3MF…"}</button>
+                      {uploaded && <button className="btn" onClick={() => setSettings({ ...settings, uploadTurn: settings.uploadTurn + 1 })}>Turn 90°</button>}
+                      {uploaded && <button className="btn" onClick={() => setSettings({ ...settings, uploadTurn: settings.uploadTurn + 2 })}>Turn around</button>}
+                      {uploaded && <button className="btn" onClick={() => setUploaded(null)}>Remove</button>}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                      {uploaded
+                        ? `${uploaded.name} — the front should face you in the home page preview below; turn it if it does not. The model is saved as an STL, one colour per body.`
+                        : "A 3MF made in the studio (or anywhere else) shows on the home page as it is, in its own colours. Saving needs the design to stay under 16 MB."}
+                    </div>
+                  </>
+                )}
+                {settings.mode !== "upload" && (<>
                 <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>{settings.mode === "frame" ? "Picture in the frame" : "The picture"}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <label style={cell}>Made as
@@ -1000,6 +1074,7 @@ export default function LabApp() {
                       ? "The photo is made into a lithophane that fits this frame, and sits in it in the model that is saved."
                       : "The picture is traced into tones: the tones take the colours above, and for an inlay start as the picture's own."}
                 </div>
+                </>)}
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
                   <button className="btn" style={{ padding: "2px 8px" }} onClick={copyDesign}>Copy this design</button>
