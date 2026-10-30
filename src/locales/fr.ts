@@ -367,4 +367,6 @@ export const fr: Record<string, string> = {
   "That address already has an account": "Cette adresse a déjà un compte",
   "Could not create the account": "Impossible de créer le compte",
   "No tokens left": "Plus de jetons",
+  "Picture play (mm)": "Jeu de l'image (mm)",
+  "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Jeu autour de l'image dans sa poche, de chaque côté. L'image est maintenue par deux petits crans dans chaque paroi latérale, ceci règle donc son serrage : baissez-le si l'image bouge dans le cadre, augmentez-le si elle n'entre pas. Les poches imprimées sortent souvent un peu grandes.",
 };

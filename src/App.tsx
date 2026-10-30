@@ -1440,6 +1440,7 @@ type SavedDesign = {
   corner?: number;
   preset?: keyof typeof HOLDER_PRESETS;
   fit: number;
+  play?: number;
   tealight: number;
   relief: number;
   reliefMode?: ReliefMode;
@@ -1858,6 +1859,8 @@ export default function App() {
   const [previewMesh, setPreviewMesh] = useState<PreviewMesh | null>(null);
   const [tealightMm, setTealightMm] = useState(38);
   const [holderFit, setHolderFit] = useState(0.2);
+  /** Room round the picture in its pocket, each side, in mm. */
+  const [holderPlay, setHolderPlay] = useState(0.2);
   const [decorations, setDecorations] = useState<Decoration[]>([]);
   const [decorSelected, setDecorSelected] = useState<number | null>(null);
   const [reliefMm, setReliefMm] = useState(1);
@@ -1926,11 +1929,12 @@ export default function App() {
       border: holderBorder,
       lip: lipFor(holderBorder),
       fit: holderFit,
+      pocketPlay: holderPlay,
       tiltDeg: 90 - holderAngle,
       corner: holderCorner,
       outline: shapeId === "rectangle" ? null : shapeOutline(shapeId as OutlineShape, widthMm, heightMm),
     };
-  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderAngle, shapeId]);
+  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderPlay, holderAngle, shapeId]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
   const holderUsable = !curved;
@@ -2866,6 +2870,7 @@ export default function App() {
       border: holderBorder,
       corner: holderCorner,
       fit: holderFit,
+      play: holderPlay,
       tealight: tealightMm,
       relief: reliefMm,
       reliefMode,
@@ -2893,6 +2898,7 @@ export default function App() {
     setHolderBorder(d.border ?? (d.preset && HOLDER_PRESETS[d.preset]?.border) ?? 10);
     setHolderCorner(d.corner ?? 0);
     setHolderFit(d.fit);
+    setHolderPlay(d.play ?? 0.3);
     setTealightMm(d.tealight);
     setReliefMm(d.relief);
     setReliefMode(d.reliefMode ?? "flat");
@@ -4395,6 +4401,12 @@ export default function App() {
                               <InfoIcon text={t("The gap between the stand's arm and prong and the channel in each leg that takes them. Printed parts come out slightly large, so a gap of zero does not go together. Raise it if the parts are tight, lower it if they wobble.")} />
                             </div>
                             <NumField value={holderFit} min={0} max={0.6} step={0.05} onChange={setHolderFit} />
+
+                            <div className="label-row" style={{ marginTop: 12 }}>
+                              <label className="miniLabel">{t("Picture play (mm)")}</label>
+                              <InfoIcon text={t("Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.")} />
+                            </div>
+                            <NumField value={holderPlay} min={0} max={0.5} step={0.05} onChange={setHolderPlay} />
 
                             <div className="label-row" style={{ marginTop: 12 }}>
                               <label className="miniLabel">{t("Tealight diameter (mm)")}</label>

@@ -109,7 +109,7 @@ export const HOLDER_DEFAULTS: HolderParams = {
   pictureT: 3,
   border: 10,
   lip: 3,
-  pocketPlay: 0.3,
+  pocketPlay: 0.2,
   lipThickness: 2,
   clips: true,
   legWidth: 10,
@@ -138,7 +138,9 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   const ct = Math.cos(tilt);
   const tt = Math.tan(tilt);
 
-  const pocketDepth = p.pictureT + 1;
+  // Just deep enough for the picture and the catch behind it: slack here is
+  // the picture rattling front to back.
+  const pocketDepth = p.pictureT + 0.9;
   const T = pocketDepth + p.lipThickness;
 
   let W = p.pictureW + 2 * p.border;
@@ -336,20 +338,28 @@ export function buildHolder(
   if (p.clips && !L.poly) {
     const x0 = W / 2 - pocketW / 2;
     const x1 = W / 2 + pocketW / 2;
-    const half = 6;
-    const bump = 0.45;
+    const half = 5;
+    const bump = 0.4;
+    // A catch, not a bump: a gentle ramp the picture rides over on its way in,
+    // then a steep face behind which its back edge settles. The picture sits
+    // at pocketDepth - pictureT = 0.9 from the back, just clear of that face.
     const profile = (x: number, dir: number): [number, number][] => [
-      [x, 0.1],
-      [x + dir * bump, 1.0],
-      [x, 1.6],
+      [x, 0.05],
+      [x + dir * bump, 0.55],
+      [x + dir * bump, 0.62],
+      [x, 0.72],
     ];
     const yc = rail + pocketH / 2;
+    const spread = Math.min(pocketH / 2 - half - 4, 16);
+    const rows = spread > 4 ? [yc - spread, yc + spread] : [yc];
     for (const [x, dir] of [[x0, 1], [x1, -1]] as const) {
-      const a = atY(profile(x, dir), yc - half);
-      const b = atY(profile(x, dir), yc + half);
-      cap(mb, a, [], [0, -1, 0]);
-      cap(mb, b, [], [0, 1, 0]);
-      wall(mb, a, b, true);
+      for (const y of rows) {
+        const a = atY(profile(x, dir), y - half);
+        const b = atY(profile(x, dir), y + half);
+        cap(mb, a, [], [0, -1, 0]);
+        cap(mb, b, [], [0, 1, 0]);
+        wall(mb, a, b, true);
+      }
     }
   }
 

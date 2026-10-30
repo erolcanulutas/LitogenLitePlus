@@ -367,4 +367,6 @@ export const es: Record<string, string> = {
   "That address already has an account": "Esa dirección ya tiene una cuenta",
   "Could not create the account": "No se pudo crear la cuenta",
   "No tokens left": "No quedan tokens",
+  "Picture play (mm)": "Holgura de la imagen (mm)",
+  "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Holgura alrededor de la imagen en su bolsillo, por lado. La imagen se sujeta con dos pequeños topes en cada pared lateral, así que esto fija lo ajustada que queda: bájala si la imagen queda floja en el marco, súbela si no entra. Los bolsillos impresos suelen salir algo grandes.",
 };

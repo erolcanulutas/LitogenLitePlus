@@ -367,4 +367,6 @@ export const tr: Record<string, string> = {
   "That address already has an account": "Bu adresin zaten bir hesabı var",
   "Could not create the account": "Hesap oluşturulamadı",
   "No tokens left": "Jeton kalmadı",
+  "Picture play (mm)": "Resim boşluğu (mm)",
+  "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Resmin cebindeki, her yandaki boşluk. Resim, her yan duvardaki iki küçük çentikle tutulur; bu, ne kadar sıkı oturduğunu belirler: resim çerçevede gevşekse azaltın, girmiyorsa artırın. Basılı cepler çoğu zaman biraz büyük çıkar.",
 };
