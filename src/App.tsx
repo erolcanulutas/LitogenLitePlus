@@ -4472,35 +4472,41 @@ export default function App() {
                               </button>
                             </div>
 
-                            <div className="label-row">
-                              <label className="miniLabel">{t("Start from a template")}</label>
-                              <InfoIcon text={t("A ready-made set of decorations along the borders, to start from and change. Choosing one replaces what is on the frame now; Undo brings it back.")} />
-                            </div>
-                            <select
-                              className="spinInput"
-                              value=""
-                              style={{ marginBottom: 12 }}
-                              onChange={(e) => {
-                                if (e.target.value) applyTemplate(e.target.value);
-                              }}
-                            >
-                              <option value="">{t("Choose…")}</option>
-                              {TEMPLATES.map((tpl) => (
-                                <option key={tpl.id} value={tpl.id}>
-                                  {t(tpl.label)}
-                                </option>
-                              ))}
-                            </select>
+                            {/* Templates are only for whoever runs the app locally (npm run dev): the
+                                lab to make them in, and the list to start from. The live site has neither. */}
+                            {import.meta.env.DEV && (
+                              <>
+                                <div className="label-row">
+                                  <label className="miniLabel">{t("Start from a template")}</label>
+                                  <InfoIcon text={t("A ready-made set of decorations along the borders, to start from and change. Choosing one replaces what is on the frame now; Undo brings it back.")} />
+                                </div>
+                                <select
+                                  className="spinInput"
+                                  value=""
+                                  style={{ marginBottom: 12 }}
+                                  onChange={(e) => {
+                                    if (e.target.value) applyTemplate(e.target.value);
+                                  }}
+                                >
+                                  <option value="">{t("Choose…")}</option>
+                                  {TEMPLATES.map((tpl) => (
+                                    <option key={tpl.id} value={tpl.id}>
+                                      {t(tpl.label)}
+                                    </option>
+                                  ))}
+                                </select>
 
-                            <TemplateLab
-                              decorations={decorations}
-                              frame={{ W: holderGeom.W, H: holderGeom.H }}
-                              onApply={(next) => {
-                                commitDecorations(next);
-                                setHolderPose("standing");
-                                setDecorSelected(null);
-                              }}
-                            />
+                                <TemplateLab
+                                  decorations={decorations}
+                                  frame={{ W: holderGeom.W, H: holderGeom.H }}
+                                  onApply={(next) => {
+                                    commitDecorations(next);
+                                    setHolderPose("standing");
+                                    setDecorSelected(null);
+                                  }}
+                                />
+                              </>
+                            )}
 
                             {decorSelected !== null && decorations[decorSelected] ? (
                               <DecorProps
