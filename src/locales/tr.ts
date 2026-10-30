@@ -371,4 +371,5 @@ export const tr: Record<string, string> = {
   "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Resmin cebindeki, her yandaki boşluk. Resim, her yan duvardaki iki küçük çentikle tutulur; bu, ne kadar sıkı oturduğunu belirler: resim çerçevede gevşekse azaltın, girmiyorsa artırın. Basılı cepler çoğu zaman biraz büyük çıkar.",
   "Panel angle: {a}°": "Panel açısı: {a}°",
   "Panel angle: 90° (a curved frame stands upright)": "Panel açısı: 90° (kavisli çerçeve dik durur)",
+  "This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.": "Bu çerçevenin ayakları standart ayağın çatallarından daha yakın; bu yüzden bu düğmedeki ayak gerekir: çatallar arası {mm} mm. Eski bir ayak uymaz.",
 };

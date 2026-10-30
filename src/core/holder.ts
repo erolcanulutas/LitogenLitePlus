@@ -91,6 +91,32 @@ export type HolderParams = {
 /** The loops of a frame that follows a shape, in the front face's terms. */
 export type FramePoly = { outer: Pt[]; window: Pt[]; pocket: Pt[] };
 
+/**
+ * How far apart the legs should stand for a frame that follows a shape.
+ *
+ * The stand's prongs set it, and a stand that is wide for the shape's underside
+ * makes the frame flare out to meet it. So the legs are brought in until they
+ * stand within the shape's own lowest edge; a round shape has no such edge and
+ * takes a narrow stand. The stand is made to the same spacing.
+ */
+export function legSpacingFor(outline: Pt[] | null | undefined, params: Partial<HolderParams>): number {
+  if (!outline || outline.length < 3) return PRONG.spacing;
+  const border = params.border ?? HOLDER_DEFAULTS.border;
+  const ring = offsetConvex(outline, border);
+  const low = Math.min(...ring.map((q) => q[1]));
+  const bottom = ring.filter((q) => q[1] < low + 0.01);
+  if (bottom.length < 2) return 30;
+  const half = Math.max(...bottom.map((q) => Math.abs(q[0])));
+  // Closer until the base the legs stand on is no wider than the shape's lowest edge.
+  let spacing: number = PRONG.spacing;
+  while (spacing > 26) {
+    const L = holderLayout({ ...params, outline, prongSpacing: spacing });
+    if (L.baseHalf <= half) break;
+    spacing -= 0.5;
+  }
+  return Math.max(26, spacing);
+}
+
 /** How far in from the plate's back face the picture's back sits, in mm. */
 export const PICTURE_SEAT_MM = 0.9;
 
@@ -202,6 +228,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   // border, joined down to a base the legs stand on. The hull of the two is
   // what fills the gaps between them.
   let poly: FramePoly | null = null;
+  let baseHalf = 0;
   let window = { x0: W / 2 - winW / 2, x1: W / 2 + winW / 2, y0: winY - winH / 2, y1: winY + winH / 2 };
   let pocket = { x0: W / 2 - pocketW / 2, x1: W / 2 + pocketW / 2, y0: rail, y1: rail + pocketH };
   if (p.outline && p.outline.length >= 3) {
@@ -216,7 +243,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
         legReach = Math.max(legReach, p.prongSpacing / 2 - Math.sin(alpha) * sAlong + Math.cos(alpha) * t);
       }
     }
-    const baseHalf = legReach + 1.5;
+    baseHalf = legReach + 1.5;
     const cy = rail + pocketH / 2;
     // The ring's corners may reach below the table plane; it is cut off there.
     const flat = (pts: Pt[]): Pt[] => {
@@ -238,10 +265,9 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
     const cx = W / 2;
     const at = (pts: Pt[]): Pt[] => pts.map(([x, y]): Pt => [x + cx, y + cy]);
     const ring = flat(grown).map(([x, y]): Pt => [x + cx, y]);
-    // Whatever of the ring is down in the rail is carried on to the table plane,
-    // so the underside is one flat edge as wide as the frame.
-    const dropped = ring.filter((q) => q[1] <= rail + 1e-6).map(([x]): Pt => [x, 0]);
-    const outer = convexHull([...ring, ...dropped, [cx - baseHalf, 0], [cx + baseHalf, 0]]);
+    // The frame runs down from the shape to the base the legs stand on in
+    // straight lines, so the shape's own outline is not widened to meet them.
+    const outer = convexHull([...ring, [cx - baseHalf, 0], [cx + baseHalf, 0]]);
     const win = at(offsetConvex(p.outline, -p.lip));
     const pock = at(offsetConvex(p.outline, p.pocketPlay));
     H = Math.max(...outer.map((q) => q[1]));
@@ -258,7 +284,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   }
 
   return {
-    p, tilt, T, pocketDepth, W, H, rail, corner, poly, bend, lift, zNear,
+    p, tilt, T, pocketDepth, W, H, rail, corner, poly, baseHalf, bend, lift, zNear,
     pocketW, pocketH,
     socketDepth, legW, h1, h2, top, half, armWide,
     /** The window the picture shows through, in the front face's terms. */
@@ -362,10 +388,10 @@ export function buildHolder(
   if (p.clips && !L.poly) {
     const x0 = W / 2 - pocketW / 2;
     const x1 = W / 2 + pocketW / 2;
-    const half = 5;
-    // The catch stands out by the play plus a fixed 0.15 mm, so the squeeze on
+    const half = 7;
+    // The catch stands out by the play plus a fixed 0.3 mm, so the squeeze on
     // the picture is the same however snug the pocket is.
-    const bump = p.pocketPlay + 0.15;
+    const bump = p.pocketPlay + 0.3;
     // A catch, not a bump: a gentle ramp the picture rides over on its way in,
     // then a steep face behind which its back edge settles. The picture sits
     // at pocketDepth - pictureT = 0.9 from the back, just clear of that face.
@@ -395,8 +421,8 @@ export function buildHolder(
     // the edge with its foot sunk into the wall, so it joins the frame whether
     // the wall is straight or a shallow arc.
     const ring = L.poly.pocket;
-    const bump = p.pocketPlay + 0.15;
-    const half = 5;
+    const bump = p.pocketPlay + 0.3;
+    const half = 7;
     const sink = 0.4;
     const prof: [number, number][] = [
       [-sink, 0.05],

@@ -22,6 +22,7 @@ import {
 } from "./core/palette";
 import {
   assembleHolder,
+  legSpacingFor,
   buildHolder,
   holderForPrinting,
   holderInPlace,
@@ -45,6 +46,7 @@ import { TEMPLATES } from "./core/templates";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
+import { PRONG } from "./core/prong";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
   OutOfTokens, deleteDesignRemote, listDesigns, loadFilaments, saveDesignRemote, signIn, signOut,
@@ -1921,7 +1923,11 @@ export default function App() {
   // smaller because the picture sits PICTURE_SEAT_MM in from the plate's back.
   const pictureRadius = curved ? bendRadius(widthMm, curveDeg) : 0;
   const frameRadius = pictureRadius > PICTURE_SEAT_MM + 5 ? pictureRadius - PICTURE_SEAT_MM : 0;
-  const holderParams = useMemo(() => {
+  const holderOutline = useMemo(
+    () => (shapeId === "rectangle" ? null : shapeOutline(shapeId as OutlineShape, widthMm, heightMm)),
+    [shapeId, widthMm, heightMm],
+  );
+  const holderBase = useMemo(() => {
     return {
       // Along the curve the plate's flat width wraps at its own radius, which is
       // less than the picture's, so the pocket is made that much shorter to
@@ -1935,10 +1941,13 @@ export default function App() {
       pocketPlay: holderPlay,
       tiltDeg: frameRadius > 0 ? 0 : 90 - holderAngle,
       corner: holderCorner,
-      outline: shapeId === "rectangle" ? null : shapeOutline(shapeId as OutlineShape, widthMm, heightMm),
+      outline: holderOutline,
       bend: frameRadius,
     };
-  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderPlay, holderAngle, shapeId, frameRadius, pictureRadius]);
+  }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderPlay, holderAngle, holderOutline, frameRadius, pictureRadius]);
+  // Where the frame follows a shape the legs are brought in, and the stand with them.
+  const legSpacing = useMemo(() => legSpacingFor(holderOutline, holderBase), [holderOutline, holderBase]);
+  const holderParams = useMemo(() => ({ ...holderBase, prongSpacing: legSpacing }), [holderBase, legSpacing]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
   const holderUsable = !curved || (shapeId === "rectangle" && frameRadius > 0);
@@ -2148,7 +2157,7 @@ export default function App() {
     const frame = built.mesh;
 
     const placed = holderInPlace(frame, holderParams.tiltDeg, holderGeom.socketDepth, holderGeom.W / 2);
-    const stand = buildStand({ tealight: tealightMm });
+    const stand = buildStand({ tealight: tealightMm, prongSpacing: legSpacing });
     const positions = new Float32Array(placed.positions.length + stand.positions.length);
     positions.set(placed.positions, 0);
     positions.set(stand.positions, placed.positions.length);
@@ -2731,7 +2740,7 @@ export default function App() {
     setHolderNote(null);
     if (part === "stand") {
       downloadArrayBuffer(
-        writeBinarySTL(buildStand({ tealight: tealightMm })),
+        writeBinarySTL(buildStand({ tealight: tealightMm, prongSpacing: legSpacing })),
         "litogen-stand.stl",
       );
       return;
@@ -4616,6 +4625,11 @@ export default function App() {
                               style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
                               onClick={() => downloadHolderPart("stand")}
                             >{t("Download stand (STL) · free")}</button>
+                            {legSpacing < PRONG.spacing - 0.01 && (
+                              <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>
+                                {t("This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.", { mm: legSpacing.toFixed(1) })}
+                              </div>
+                            )}
                             <div style={{ fontSize: 11, opacity: 0.65, marginTop: 4 }}>{t("Downloading the same frame design again is free.")}</div>
                             {holderNote && (
                               <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>{holderNote}</div>

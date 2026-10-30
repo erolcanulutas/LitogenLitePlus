@@ -371,4 +371,5 @@ export const fr: Record<string, string> = {
   "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Jeu autour de l'image dans sa poche, de chaque côté. L'image est maintenue par deux petits crans dans chaque paroi latérale, ceci règle donc son serrage : baissez-le si l'image bouge dans le cadre, augmentez-le si elle n'entre pas. Les poches imprimées sortent souvent un peu grandes.",
   "Panel angle: {a}°": "Angle du panneau : {a}°",
   "Panel angle: 90° (a curved frame stands upright)": "Angle du panneau : 90° (un cadre courbe se tient droit)",
+  "This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.": "Les pieds de ce cadre sont plus rapprochés que les crochets du support standard : il lui faut le support de ce bouton, {mm} mm entre crochets. Un ancien support ne conviendra pas.",
 };

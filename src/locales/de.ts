@@ -371,4 +371,5 @@ export const de: Record<string, string> = {
   "Room round the picture in its pocket, each side. The picture is held by two small catches in each side wall, so this is how snug it sits: lower it if the picture is loose in the frame, raise it if it will not go in. Printed pockets often come out a little large.": "Spiel um das Bild in seiner Tasche, je Seite. Das Bild wird von zwei kleinen Rasten in jeder Seitenwand gehalten, dies bestimmt also den Sitz: senke es, wenn das Bild lose im Rahmen sitzt, erhöhe es, wenn es nicht hineingeht. Gedruckte Taschen werden oft etwas zu groß.",
   "Panel angle: {a}°": "Plattenwinkel: {a}°",
   "Panel angle: 90° (a curved frame stands upright)": "Plattenwinkel: 90° (ein gekrümmter Rahmen steht aufrecht)",
+  "This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.": "Die Beine dieses Rahmens stehen enger als die Zinken des Standardständers, daher braucht er den Ständer von diesem Knopf: {mm} mm zwischen den Zinken. Ein älterer Ständer passt nicht.",
 };
