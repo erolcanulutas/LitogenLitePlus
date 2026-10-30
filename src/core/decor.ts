@@ -294,7 +294,30 @@ export function buildRelief(
     traced.push({ regions: vec.regions, top: (g) => frontZ + height * mask.groupFrac[g] });
   }
   if (anyLevel && count > 0) {
-    const vec = vectorise(lum, w, h, groupIds, 1.2, level, floorPx, undefined, 2, mask.group);
+    // The unsunk parts run a little way over the fill beside them, so the two
+    // overlap instead of meeting at a line that would show as a seam.
+    const lap = new Uint8Array(level);
+    const reach = 2;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (level[i] || !mask.flushBody[i]) continue;
+        let near = false;
+        for (let dy = -reach; dy <= reach && !near; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= h) continue;
+          for (let dx = -reach; dx <= reach; dx++) {
+            const xx = x + dx;
+            if (xx >= 0 && xx < w && level[yy * w + xx]) {
+              near = true;
+              break;
+            }
+          }
+        }
+        if (near) lap[i] = 1;
+      }
+    }
+    const vec = vectorise(lum, w, h, groupIds, 1.2, lap, floorPx, undefined, 2, mask.group);
     // A hair above the face rather than exactly on it: over the frame's own
     // material the two faces would coincide and flicker in the preview, and
     // a slicer would have no reason to prefer the decoration's colour.
@@ -311,7 +334,7 @@ export function buildRelief(
     }
     const sunk = flushRegions?.[g];
     if (sunk && sunk.rings.length > 0) {
-      extrudeRegion(mb, sunk.rings, place, frontZ - FLUSH_DEPTH_MM, frontZ);
+      extrudeRegion(mb, sunk.rings, place, frontZ - FLUSH_DEPTH_MM, frontZ + LEVEL_PROUD_MM);
     }
     const end = mb.triangleCount;
     if (end > start) groups.push({ start, end, color: mask.groupColors[g] ?? "" });
