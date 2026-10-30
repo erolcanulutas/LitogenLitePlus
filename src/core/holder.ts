@@ -172,7 +172,7 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
   const p = { ...HOLDER_DEFAULTS, ...input };
 
   const bend = p.bend && p.bend > 0 ? p.bend : 0;
-  const tilt = bend > 0 ? 0 : (Math.min(45, Math.max(0, p.tiltDeg)) * Math.PI) / 180;
+  const tilt = (Math.min(45, Math.max(0, p.tiltDeg)) * Math.PI) / 180;
   const ct = Math.cos(tilt);
   const tt = Math.tan(tilt);
 
@@ -218,7 +218,10 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
 
   // Rounding cannot take more than half of either side, and the legs stand on
   // the rail, so it stops short of them.
+  // A curved plate's underside is cut to the table plane after it is bent, which
+  // leaves no room for graded rounding; leaning back, its corners stay square.
   let corner = Math.max(0, Math.min(p.corner, W / 2 - 2, H / 2 - 2, 30));
+  if (bend > 0 && tilt > 0) corner = 0;
 
   const winW = p.pictureW - 2 * p.lip;
   const winH = p.pictureH - 2 * p.lip;
@@ -283,8 +286,16 @@ export function holderLayout(input: Partial<HolderParams> = {}) {
     pocket = bound(pock);
   }
 
+  // Leaning back, a curved plate's two far ends sit lower than its middle, so
+  // its underside is brought to the table plane by shearing the part of it below
+  // `shearTo` up or down. That only works while the shift stays well inside that
+  // height; past it the angle has to be less.
+  const shearTo = rail * 0.85;
+  const furthest = bend > 0 ? Math.max(0, sagAt(W / 2) - lift) : 0;
+  const shearOk = furthest * Math.tan(tilt) <= shearTo;
+
   return {
-    p, tilt, T, pocketDepth, W, H, rail, corner, poly, baseHalf, bend, lift, zNear,
+    p, tilt, T, pocketDepth, W, H, rail, corner, poly, baseHalf, bend, lift, zNear, shearTo, shearOk,
     pocketW, pocketH,
     socketDepth, legW, h1, h2, top, half, armWide,
     /** The window the picture shows through, in the front face's terms. */
@@ -299,6 +310,19 @@ export function buildHolder(
   cuts: readonly CutLoop[] = [],
   recess: Recess | null = null,
 ): Mesh {
+  const { plate, legs } = buildHolderParts(input, cuts, recess);
+  const positions = new Float32Array(plate.positions.length + legs.positions.length);
+  positions.set(plate.positions, 0);
+  positions.set(legs.positions, plate.positions.length);
+  return { positions, triangleCount: plate.triangleCount + legs.triangleCount };
+}
+
+/** The plate, bent if the frame is curved, and the legs, which are never bent. */
+export function buildHolderParts(
+  input: Partial<HolderParams> = {},
+  cuts: readonly CutLoop[] = [],
+  recess: Recess | null = null,
+): { plate: Mesh; legs: Mesh } {
   const L = holderLayout(input);
   const { p, T, pocketDepth, W, H, rail, corner, pocketW, pocketH } = L;
   const mb = new MeshBuilder(2048);
@@ -332,6 +356,8 @@ export function buildHolder(
   // underside of the plate lies on it; round a corner and the arc rises from
   // that edge by the same amount it climbs.
   const outerFront = atZ(outline, T).map((v): V3 => {
+    // A curved plate is cut to the table plane once it is bent.
+    if (L.bend > 0) return v;
     const k = v[1] <= 1e-9 ? 1 : corner > 0 && v[1] < corner ? 1 - v[1] / corner : 0;
     return [v[0], v[1] - T * tt * k, v[2]];
   });
@@ -547,11 +573,7 @@ export function buildHolder(
 
   const plate = mb.finish();
   const legs = lb.finish();
-  const body = L.bend > 0 ? curveFrame(plate, W, L.bend, L.lift) : plate;
-  const positions = new Float32Array(body.positions.length + legs.positions.length);
-  positions.set(body.positions, 0);
-  positions.set(legs.positions, body.positions.length);
-  return { positions, triangleCount: body.triangleCount + legs.triangleCount };
+  return { plate: L.bend > 0 ? curveFrame(plate, W, L.bend, L.lift, L.tilt, L.shearTo) : plate, legs };
 }
 
 /**
@@ -561,7 +583,7 @@ export function buildHolder(
  * Cut into strips across the bend first, so broad faces follow the arc rather
  * than crossing it as chords.
  */
-export function curveFrame(mesh: Mesh, width: number, radius: number, lift: number): Mesh {
+export function curveFrame(mesh: Mesh, width: number, radius: number, lift: number, tilt = 0, shearTo = 0): Mesh {
   const n = mesh.triangleCount * 9;
   const moved = new Float32Array(n);
   for (let i = 0; i < n; i += 3) {
@@ -574,6 +596,14 @@ export function curveFrame(mesh: Mesh, width: number, radius: number, lift: numb
   for (let i = 0; i < strips.triangleCount * 9; i += 3) {
     strips.positions[i] += width / 2;
     strips.positions[i + 2] += lift;
+    // Leaning back, the underside is the table plane, y = -z tan(tilt), which
+    // on a curved plate is a different height at every x.
+    // The shift fades out with height, so nothing above `shearTo` moves and the
+    // surface stays whole.
+    if (tilt > 0 && shearTo > 0) {
+      const y = strips.positions[i + 1];
+      if (y < shearTo) strips.positions[i + 1] = y - (1 - y / shearTo) * strips.positions[i + 2] * Math.tan(tilt);
+    }
   }
   return strips;
 }

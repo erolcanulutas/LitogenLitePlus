@@ -132,7 +132,7 @@ export const tr: Record<string, string> = {
   "Decorate": "Süsle",
   "Colours": "Renkler",
   "Print": "Yazdır",
-  "A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.": "Kavisli bir resmin kavisli çerçevesi yalnızca dikdörtgen şekilde olur. Kullanmak için dikdörtgeni seçin ya da kavisi kapatın.",
+  "This curve is too tight for a frame. Make the curve gentler or the picture wider, or turn the curve off, to use it.": "Bu kıvrım bir çerçeve için fazla sıkı. Kıvrımı yumuşatın ya da resmi genişletin, ya da kullanmak için kıvrımı kapatın.",
   "Frame & stand": "Çerçeve ve ayak",
   "A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.": "Bitmiş litofanın arkadan kaydığı bir çerçeve ve arkasında mum tutan bir ayak. Çerçeve bu resmin genişliği, yüksekliği ve kalınlığından ölçülür. Ayak yatık basılır ve destek istemez; çerçeve ön yüzü aşağı bakarak basılır. LED mum kullanın: basılı plastik alevi kaldırmaz.",
   "How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.": "Resmin dikten ne kadar yaslandığı. 90° dik durdurur, 45° iyice yatırır. Ayak düz kalır, bu yüzden çerçevenin kanalları dik kalır ve alt yüzü masaya düz oturacak şekilde kesilir. Yaslanan levha arkasındaki kısmı aşar; bu yüzden ayaklar daha geriye oturur ve resmin altındaki ray onları taşımak için büyür.",
@@ -409,4 +409,5 @@ export const tr: Record<string, string> = {
   "More animals": "Daha çok hayvan",
   "Science & space": "Bilim ve uzay",
   "Money & office": "Para ve ofis",
+  "This curve is too deep to lean that far: the frame stands at {a}°.": "Bu kıvrım o kadar yatmaya izin vermiyor: çerçeve {a}°'de duruyor.",
 };

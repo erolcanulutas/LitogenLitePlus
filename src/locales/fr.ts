@@ -132,7 +132,7 @@ export const fr: Record<string, string> = {
   "Decorate": "Décorer",
   "Colours": "Couleurs",
   "Print": "Imprimer",
-  "A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.": "Une image courbe n'a un cadre courbe que sur la forme rectangle. Choisissez le rectangle ou désactivez la courbe pour l'utiliser.",
+  "This curve is too tight for a frame. Make the curve gentler or the picture wider, or turn the curve off, to use it.": "Cette courbe est trop serrée pour un cadre. Adoucissez la courbe ou élargissez l'image, ou désactivez la courbe pour l'utiliser.",
   "Frame & stand": "Cadre et support",
   "A frame the finished lithophane slides into from behind, and a stand that holds a tealight behind it. The frame is sized from this picture's width, height and thickness. The stand lies flat and prints without support; the frame prints front face down. Use an LED tealight: the printed plastic cannot take a flame.": "Un cadre dans lequel la lithophanie finie glisse par l'arrière, et un support qui tient une bougie derrière. Le cadre est dimensionné d'après la largeur, la hauteur et l'épaisseur de cette image. Le support s'imprime à plat sans supports ; le cadre face avant vers le bas. Utilisez une bougie LED : le plastique imprimé ne supporte pas une flamme.",
   "How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.": "De combien l'image penche en arrière depuis la verticale. 90° la dresse droite, 45° la couche bien en arrière. Le support reste plat, les canaux du cadre restent donc verticaux et son dessous est coupé pour reposer à plat sur la table. Une plaque inclinée déborde de ce qu'il y a derrière, les pieds sont donc plus en arrière et le rail sous l'image s'agrandit pour les porter.",
@@ -409,4 +409,5 @@ export const fr: Record<string, string> = {
   "More animals": "Plus d'animaux",
   "Science & space": "Science et espace",
   "Money & office": "Argent et bureau",
+  "This curve is too deep to lean that far: the frame stands at {a}°.": "Cette courbe est trop profonde pour pencher autant : le cadre se tient à {a}°.",
 };

@@ -1929,7 +1929,7 @@ export default function App() {
     [shapeId, widthMm, heightMm],
   );
   const holderBase = useMemo(() => {
-    return {
+    const base = {
       // Along the curve the plate's flat width wraps at its own radius, which is
       // less than the picture's, so the pocket is made that much shorter to
       // give the picture the same arc.
@@ -1940,18 +1940,25 @@ export default function App() {
       lip: lipFor(holderBorder),
       fit: holderFit,
       pocketPlay: holderPlay,
-      tiltDeg: frameRadius > 0 ? 0 : 90 - holderAngle,
+      tiltDeg: 90 - holderAngle,
       corner: holderCorner,
       outline: holderOutline,
       bend: frameRadius,
     };
+    // A curved plate can only lean so far before its far ends are too low to be
+    // brought up to the table; the angle is held back to what the curve allows.
+    let lean = base.tiltDeg;
+    if (frameRadius > 0) {
+      while (lean > 0 && !holderLayout({ ...base, tiltDeg: lean }).shearOk) lean -= 1;
+    }
+    return { ...base, tiltDeg: lean };
   }, [holderBorder, holderCorner, widthMm, heightMm, maxT, holderFit, holderPlay, holderAngle, holderOutline, frameRadius, pictureRadius]);
   // Where the frame follows a shape the legs are brought in, and the stand with them.
   const legSpacing = useMemo(() => legSpacingFor(holderOutline, holderBase), [holderOutline, holderBase]);
   const holderParams = useMemo(() => ({ ...holderBase, prongSpacing: legSpacing }), [holderBase, legSpacing]);
 
   const holderGeom = useMemo(() => holderLayout(holderParams), [holderParams]);
-  const holderUsable = !curved || (shapeId === "rectangle" && frameRadius > 0);
+  const holderUsable = !curved || frameRadius > 0;
 
   /**
    * Every change to the decorations goes through here, so each can be undone.
@@ -4343,7 +4350,7 @@ export default function App() {
 
                   <div style={{ overflowY: "auto", padding: "0 14px 16px", flex: 1, minHeight: 0 }}>
                     {!holderUsable ? (
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("A curved picture gets a curved frame only on the rectangle shape. Pick the rectangle, or turn the curve off, to use it.")}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("This curve is too tight for a frame. Make the curve gentler or the picture wider, or turn the curve off, to use it.")}</div>
                     ) : (
                       <>
                         {holderSub === "frame" && (
@@ -4357,7 +4364,7 @@ export default function App() {
                             </div>
 
                             <div className="label-row">
-                              <label className="miniLabel">{frameRadius > 0 ? t("Panel angle: 90° (a curved frame stands upright)") : t("Panel angle: {a}°", { a: holderAngle })}</label>
+                              <label className="miniLabel">{t("Panel angle: {a}°", { a: holderAngle })}</label>
                               <InfoIcon text={t("How far the picture leans back from upright. 90° stands it straight up, 45° lays it well back. The stand stays flat, so the frame's channels stay upright and its underside is cut to rest flat on the table. A leaning plate overhangs what is behind it, so the legs sit further back and the rail under the picture grows to carry them.")} />
                             </div>
                             <input
@@ -4366,10 +4373,14 @@ export default function App() {
                               min={45}
                               max={90}
                               step={5}
-                              value={frameRadius > 0 ? 90 : holderAngle}
-                              disabled={frameRadius > 0}
+                              value={holderAngle}
                               onChange={(e) => setHolderAngle(Number(e.target.value))}
                             />
+                            {frameRadius > 0 && 90 - holderBase.tiltDeg > holderAngle + 0.5 && (
+                              <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>
+                                {t("This curve is too deep to lean that far: the frame stands at {a}°.", { a: Math.round(90 - holderBase.tiltDeg) })}
+                              </div>
+                            )}
 
                             <div className="label-row" style={{ marginTop: 12 }}>
                               <label className="miniLabel">{t("Frame width (mm)")}</label>
