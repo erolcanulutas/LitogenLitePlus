@@ -43,6 +43,7 @@ import DecorProps from "./ui/DecorProps";
 import FilamentEditor from "./ui/FilamentEditor";
 import { activeColours, parseFilaments, type Filament } from "./core/filaments";
 import { TEMPLATES } from "./core/templates";
+import TemplateLab from "./ui/TemplateLab";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
@@ -4490,6 +4491,16 @@ export default function App() {
                                 </option>
                               ))}
                             </select>
+
+                            <TemplateLab
+                              decorations={decorations}
+                              frame={{ W: holderGeom.W, H: holderGeom.H }}
+                              onApply={(next) => {
+                                commitDecorations(next);
+                                setHolderPose("standing");
+                                setDecorSelected(null);
+                              }}
+                            />
 
                             {decorSelected !== null && decorations[decorSelected] ? (
                               <DecorProps

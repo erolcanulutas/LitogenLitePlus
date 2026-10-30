@@ -146,3 +146,73 @@ export const TEMPLATES: Template[] = [
     },
   },
 ];
+
+/**
+ * A template made by hand in the lab: what is on the frame, placed as shares of
+ * the frame's own size so it lays out on a frame of any size.
+ */
+export type TemplateItem = Omit<Decoration, "x" | "y" | "size"> & {
+  /** Where its middle is, as a share of the frame's width and of its height. */
+  fx: number;
+  fy: number;
+  /** Its size, as a share of the frame's shorter side. */
+  fs: number;
+};
+
+export type SavedTemplate = { id: string; name: string; savedAt: number; items: TemplateItem[] };
+
+const round = (v: number) => Math.round(v * 10000) / 10000;
+
+/** What is on a frame, as items that can be laid out on any frame. */
+export function captureTemplate(decorations: readonly Decoration[], frame: { W: number; H: number }): TemplateItem[] {
+  const unit = Math.min(frame.W, frame.H);
+  return decorations.map((d) => {
+    const { x, y, size, ...rest } = d;
+    return { ...rest, fx: round(x / frame.W), fy: round(y / frame.H), fs: round(size / unit) };
+  });
+}
+
+/** Items laid out on a frame. */
+export function layTemplate(items: readonly TemplateItem[], frame: { W: number; H: number }): Decoration[] {
+  const unit = Math.min(frame.W, frame.H);
+  return items.map((it) => {
+    const { fx, fy, fs, ...rest } = it;
+    return { ...rest, x: fx * frame.W, y: fy * frame.H, size: fs * unit };
+  });
+}
+
+const KEY = "litogen.templates";
+
+export function readSavedTemplates(): SavedTemplate[] {
+  try {
+    const raw = localStorage.getItem(KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeSavedTemplates(list: SavedTemplate[]) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    // Storage blocked or full: the list stays in the page, it just is not kept.
+  }
+}
+
+/** A template as text to send on or paste back, or null when the text is not one. */
+export function parseTemplate(text: string): { name: string; items: TemplateItem[] } | null {
+  try {
+    const data = JSON.parse(text);
+    const items = Array.isArray(data) ? data : data?.items;
+    if (!Array.isArray(items) || items.length === 0) return null;
+    const ok = items.every(
+      (i) => i && typeof i.fx === "number" && typeof i.fy === "number" && typeof i.fs === "number" && typeof i.icon === "string",
+    );
+    if (!ok) return null;
+    return { name: typeof data?.name === "string" ? data.name.slice(0, 60) : "", items };
+  } catch {
+    return null;
+  }
+}

@@ -31,7 +31,7 @@ export default function IconPalette({ onAdd, onAddText }: Props) {
         style={{ width: "100%", justifyContent: "center", fontWeight: 600 }}
         onClick={onAddText}
       >
-        + Add text
+        {t("+ Add text")}
       </button>
 
       <input
@@ -44,12 +44,23 @@ export default function IconPalette({ onAdd, onAddText }: Props) {
       />
 
       {!searching && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, marginTop: 8 }}>
           {tabs.map((c) => (
             <button
               key={c.id}
               className={`segment ${category === c.id ? "active" : ""}`}
-              style={{ padding: "4px 8px", fontSize: 12 }}
+              style={{
+                height: 36,
+                padding: "2px 4px",
+                fontSize: 11.5,
+                lineHeight: 1.15,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                overflow: "hidden",
+                minWidth: 0,
+              }}
               onClick={() => setCategory(c.id)}
             >
               {t(c.label)}

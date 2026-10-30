@@ -661,6 +661,123 @@ export const CATEGORIES: { id: string; label: string; icons: string[] }[] = [
       "cooking", "spaghetti", "sushi", "birthday-cake",
     ],
   },
+  {
+    id: "sports",
+    label: "Sports",
+    icons: [
+      "volleyball", "american-football", "rugby-football", "ping-pong", "badminton",
+      "goal-net", "flag-in-hole", "ice-hockey", "field-hockey", "cricket-game", "lacrosse",
+      "bow-and-arrow", "sports-medal", "skis", "flying-disc", "stadium", "running-shoe",
+      "wheel",
+    ],
+  },
+  {
+    id: "baby",
+    label: "Baby & kids",
+    icons: [
+      "baby-bottle", "baby-chick", "baby-symbol", "footprints", "hatching-chick",
+      "backpack", "school", "honeybee",
+    ],
+  },
+  {
+    id: "wedding",
+    label: "Wedding & hearts",
+    icons: [
+      "wedding", "heart-on-fire", "heart-with-ribbon", "heart-decoration",
+      "heart-exclamation", "heart-suit", "face-blowing-a-kiss", "smiling-face-with-hearts",
+      "smiling-face-with-heart-eyes", "kissing-face", "kissing-face-with-closed-eyes",
+      "top-hat", "dress", "high-heeled-shoe", "lipstick",
+    ],
+  },
+  {
+    id: "weather",
+    label: "Weather & sky",
+    icons: [
+      "sun-behind-cloud", "sun-behind-large-cloud", "sun-behind-small-cloud",
+      "sun-behind-rain-cloud", "cloud-with-rain", "cloud-with-lightning",
+      "cloud-with-lightning-and-rain", "cloud-with-snow", "umbrella-with-rain-drops",
+      "umbrella-on-ground", "tornado", "fog", "wind-face", "thermometer", "shooting-star",
+      "milky-way", "ringed-planet", "night-with-stars", "new-moon-face",
+      "first-quarter-moon-face", "sunrise-over-mountains", "cityscape-at-dusk",
+    ],
+  },
+  {
+    id: "school",
+    label: "School & work",
+    icons: [
+      "pencil", "pen", "memo", "notebook", "notebook-with-decorative-cover",
+      "straight-ruler", "triangular-ruler", "microscope", "test-tube", "atom-symbol",
+      "briefcase", "chart-increasing", "calendar", "paperclip", "scissors",
+      "magnifying-glass-tilted-left", "lab-coat", "glasses", "abacus", "classical-building",
+    ],
+  },
+  {
+    id: "winter",
+    label: "Winter & Christmas",
+    icons: [
+      "scarf", "gloves", "coat", "socks", "ice", "skis", "cloud-with-snow", "candle",
+      "lollipop", "cookie", "hot-beverage",
+    ],
+  },
+  {
+    id: "ramadan",
+    label: "Ramadan & faith",
+    icons: [
+      "prayer-beads", "red-paper-lantern", "crescent-moon", "star-of-david", "menorah",
+      "wheel-of-dharma", "om", "yin-yang", "peace-symbol", "dango", "rice-ball",
+      "steaming-bowl",
+    ],
+  },
+  {
+    id: "vehicles",
+    label: "Vehicles",
+    icons: [
+      "ambulance", "fire-engine", "police-car", "tractor", "delivery-truck", "helicopter",
+      "parachute", "satellite", "flying-saucer", "speedboat", "canoe", "motorcycle",
+      "racing-car", "oncoming-taxi", "tram", "monorail", "metro", "bullet-train",
+      "oncoming-bus",
+    ],
+  },
+  {
+    id: "symbols",
+    label: "Symbols",
+    icons: [
+      "hundred-points", "check-mark-button", "cross-mark", "collision", "dizzy",
+      "speech-balloon", "thought-balloon", "zzz", "recycling-symbol", "fleur-de-lis",
+      "trident-emblem", "red-circle", "blue-circle", "infinity", "triangular-flag",
+      "heart-suit",
+    ],
+  },
+  {
+    id: "faces",
+    label: "Faces",
+    icons: [
+      "grinning-face", "smiling-face-with-sunglasses", "smiling-face",
+      "smiling-face-with-smiling-eyes", "smiling-face-with-halo", "smiling-face-with-horns",
+      "star-struck", "winking-face", "partying-face", "nerd-face", "cowboy-hat-face",
+      "pleading-face", "thinking-face", "face-with-tears-of-joy", "loudly-crying-face",
+      "clown-face", "grinning-cat", "grinning-face-with-big-eyes",
+      "winking-face-with-tongue",
+    ],
+  },
+  {
+    id: "fashion",
+    label: "Fashion",
+    icons: [
+      "kimono", "bikini", "t-shirt", "jeans", "necktie", "billed-cap", "sunglasses",
+      "goggles", "handbag", "purse", "dress", "socks", "top-hat", "running-shoe",
+      "lipstick", "gem-stone",
+    ],
+  },
+  {
+    id: "home",
+    label: "Home & tools",
+    icons: [
+      "hammer", "wrench", "gear", "toolbox", "nut-and-bolt", "brick", "houses",
+      "house-with-garden", "door", "couch-and-lamp", "bed", "bathtub", "basket", "bucket",
+      "sewing-needle", "thread", "yarn", "knot", "window", "hammer-and-wrench",
+    ],
+  },
 ];
 
 /** Icons in a category, in its order, then any the categories do not name. */
