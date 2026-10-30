@@ -46,7 +46,7 @@ export default function AccountPanel({
         <div className="acctWho">
           <span className="acctEmail">{account.email}</span>
           <span className={`balance ${sub ? "unlimited" : ""}`}>
-            {sub ? t("Unlimited") : t("{n} tokens", { n: account.tokens })}
+            {sub ? t("Unlimited") : t("{n} credits", { n: account.tokens })}
           </span>
         </div>
 
@@ -56,8 +56,8 @@ export default function AccountPanel({
           </p>
         )}
 
-        <h3 className="acctHeading">{t("Tokens")}</h3>
-        <p className="acctNote">{t("One token for each model you export. Looking at a model in 3D is free and always will be.")}</p>
+        <h3 className="acctHeading">{t("Credits")}</h3>
+        <p className="acctNote">{t("One credit for each model you export. Looking at a model in 3D is free and always will be.")}</p>
 
         <h3 className="acctHeading">{t("My filaments")}</h3>
         <p className="acctNote">{t("The colours of filament you have. Tick the ones to print with: an Inlay is divided into the ticked colours, Layered colours are moved to the nearest of them, and decorations on a frame are printed in them. Nothing is used unless it is ticked. The list is kept in your account, so it follows you to another device.")}</p>
@@ -104,7 +104,7 @@ export default function AccountPanel({
 
         {!closing ? (
           <>
-            <p className="acctNote">{t("Removes the account and everything on it, tokens included. There is no way back.")}</p>
+            <p className="acctNote">{t("Removes the account and everything on it, credits included. There is no way back.")}</p>
             <button className="btn" onClick={() => setClosing(true)}>{t("Close my account")}</button>
           </>
         ) : (

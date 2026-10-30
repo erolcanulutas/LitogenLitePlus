@@ -2764,12 +2764,12 @@ export default function App() {
     }
 
     if (!account) {
-      setAccountError(t("Sign in to download the frame. New accounts get 5 tokens."));
+      setAccountError(t("Sign in to download the frame. New accounts get 5 credits."));
       setAccountOpen(true);
       return;
     }
     if (!unlimited(account) && account.tokens < 1) {
-      setHolderNote(t("You are out of tokens."));
+      setHolderNote(t("You are out of credits."));
       return;
     }
 
@@ -2829,7 +2829,7 @@ export default function App() {
   function agreeToSpend(): boolean {
     if (!account || unlimited(account)) return true;
     return window.confirm(
-      t("This will use 1 token (you have {n}). Continue?", { n: account.tokens }),
+      t("This will use 1 credit (you have {n}). Continue?", { n: account.tokens }),
     );
   }
 
@@ -2855,7 +2855,7 @@ export default function App() {
     } catch (e) {
       setHolderNote(
         e instanceof OutOfTokens
-          ? t("You are out of tokens.")
+          ? t("You are out of credits.")
           : e instanceof Error
             ? e.message
             : t("Could not download"),
@@ -2977,14 +2977,14 @@ export default function App() {
     // model that cannot be handed over.
     if (download) {
       if (!account) {
-        setAccountError(t("Sign in to export. New accounts get 5 tokens."));
+        setAccountError(t("Sign in to export. New accounts get 5 credits."));
         setAccountOpen(true);
         return;
       }
       if (!unlimited(account) && account.tokens < 1) {
         setStatusMsg({
           type: "error",
-          text: t("You are out of tokens."),
+          text: t("You are out of credits."),
         });
         return;
       }
@@ -3077,7 +3077,7 @@ export default function App() {
               type: "error",
               text:
                 e instanceof OutOfTokens
-                  ? t("You are out of tokens.")
+                  ? t("You are out of credits.")
                   : e instanceof Error
                     ? e.message
                     : t("Could not export"),
@@ -3166,7 +3166,7 @@ export default function App() {
             )}
             {account && (
               <span className={`balance ${unlimited(account) ? "unlimited" : ""}`}>
-                {unlimited(account) ? t("Unlimited") : t("{n} tokens", { n: account.tokens })}
+                {unlimited(account) ? t("Unlimited") : t("{n} credits", { n: account.tokens })}
               </span>
             )}
             {account ? (
@@ -3174,8 +3174,8 @@ export default function App() {
                 className="autoBtn"
                 title={
                   unlimited(account)
-                    ? `${account.email} · unlimited · tokens, settings and sign out`
-                    : `${account.email} · ${account.tokens} tokens · tokens, settings and sign out`
+                    ? `${account.email} · unlimited · credits, settings and sign out`
+                    : `${account.email} · ${account.tokens} credits · credits, settings and sign out`
                 }
                 onClick={() => setAccountPanel(true)}
               >{t("Account")}</button>
@@ -4716,7 +4716,7 @@ export default function App() {
                               {(iconColours > 0 && decorations.some((d) => !d.cut)
                                 ? t("Download frame (3MF, colours)")
                                 : t("Download frame (STL)")) +
-                                (unlimited(account) ? " · included" : " · 1 token")}
+                                (unlimited(account) ? " · included" : " · 1 credit")}
                             </button>
                             <button
                               className="btn"

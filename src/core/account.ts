@@ -146,7 +146,7 @@ async function spend(ref?: string): Promise<{ account: Account; again: boolean }
   const data: { ok?: boolean; error?: string; again?: boolean; user?: Account | null } =
     await res.json().catch(() => ({}));
 
-  if (res.status === 402) throw new OutOfTokens(data.error || "No tokens left");
+  if (res.status === 402) throw new OutOfTokens(data.error || "No credits left");
   if (!data.ok || !data.user) throw new Error(t(data.error || "Could not export"));
 
   return { account: data.user, again: data.again === true };

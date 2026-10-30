@@ -286,7 +286,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
               <button className="homeBtn primary big" onClick={onSignUp}>{t("Start free")}</button>
               <button className="homeBtn big" onClick={onStudio}>{t("Try the studio without an account")}</button>
             </div>
-            <div className="homeSmall">{t("New accounts start with 5 tokens. Looking at a model in 3D is always free.")}</div>
+            <div className="homeSmall">{t("New accounts start with 5 credits. Looking at a model in 3D is always free.")}</div>
           </div>
           <HeroSlides />
         </header>
@@ -401,31 +401,30 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
 
         <section className="homeSection">
           <h2>{t("Pricing")}</h2>
-          <p className="sub">{t("Start free, and pay only for what you download. Tokens never expire.")}</p>
+          <p className="sub">{t("Start free, and pay only for what you download. Credits never expire.")}</p>
           <div className="homePlans">
             <div className="homeCard">
               <h3>{t("Free")}</h3>
               <div className="price">$0</div>
               <ul>
-                <li>{t("5 tokens when you sign up")}</li>
+                <li>{t("5 credits when you sign up")}</li>
                 <li>{t("Preview any model in 3D, always")}</li>
                 <li>{t("Candle stands are always free")}</li>
                 <li>{t("Downloading the same frame design again is free")}</li>
               </ul>
             </div>
             <div className="homeCard">
-              <h3>{t("Tokens")}</h3>
+              <h3>{t("Credits")}</h3>
               <div>
-                <div className="homePack"><b>40 {t("tokens")}</b><span>$2.99</span></div>
-                <div className="homePack"><b>80 {t("tokens")}</b><span>$4.99</span></div>
-                <div className="homePack best"><b data-best={t("Best value")}>200 {t("tokens")}</b><span>$9.99</span></div>
+                <div className="homePack"><b>100 {t("credits")}</b><span>$2.99</span></div>
+                <div className="homePack best"><b data-best={t("Best value")}>200 {t("credits")}</b><span>$3.99</span></div>
               </div>
-              <span className="homeSmall">{t("Each lithophane or new frame you download takes 1 token. Tokens never expire.")}</span>
+              <span className="homeSmall">{t("Each lithophane or new frame you download takes 1 credit. Credits never expire.")}</span>
             </div>
             <div className="homeCard">
               <h3>Pro</h3>
-              <div className="price">$3.99 <small>{t("a month")}</small></div>
-              <div className="homeSmall" style={{ marginTop: 0 }}>{t("or")} $29.99 {t("a year")}</div>
+              <div className="price">$2.99 <small>{t("a month")}</small></div>
+              <div className="homeSmall" style={{ marginTop: 0 }}>{t("or")} $19.99 {t("a year")}</div>
               <ul>
                 <li>{t("Unlimited output")}</li>
                 <li>{t("Commercial use")}</li>
@@ -446,7 +445,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
           </div>
           {CONTACT_EMAIL && (
             <p className="homeSmall" style={{ marginTop: 14 }}>
-              {t("Need more tokens?")} <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+              {t("Need more credits?")} <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
             </p>
           )}
           <div className="homeCtas" style={{ marginTop: 22 }}>

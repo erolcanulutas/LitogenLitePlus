@@ -53,7 +53,7 @@ if ($take->rowCount() !== 1) {
     if ($receipt) {
         $db->prepare('DELETE FROM export_receipts WHERE user_id = ? AND ref = ?')->execute([$user['id'], $ref]);
     }
-    fail('No tokens left', 402);
+    fail('No credits left', 402);
 }
 
 note_tokens($db, (int) $user['id'], -1, 'export');
