@@ -44,6 +44,7 @@ import FilamentEditor from "./ui/FilamentEditor";
 import { activeColours, parseFilaments, type Filament } from "./core/filaments";
 import { TEMPLATES } from "./core/templates";
 import TemplateLab from "./ui/TemplateLab";
+import Landing from "./ui/Landing";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
@@ -1608,6 +1609,10 @@ export default function App() {
    * server that cannot be reached costs nothing but a signed-out header.
    */
   const [account, setAccount] = useState<Account | null>(null);
+  /** Whether the server has said yet who is signed in; the home page waits for it. */
+  const [accountKnown, setAccountKnown] = useState(false);
+  /** Someone who chose to look around the studio without an account. */
+  const [inStudio, setInStudio] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountMode, setAccountMode] = useState<"in" | "up">("in");
   const [accountEmail, setAccountEmail] = useState("");
@@ -1645,7 +1650,10 @@ export default function App() {
   useEffect(() => {
     let live = true;
     whoAmI().then((a) => {
-      if (live) setAccount(a);
+      if (live) {
+        setAccount(a);
+        setAccountKnown(true);
+      }
     });
 
     // Coming back from Google, the server has already decided; the address says
@@ -3098,9 +3106,31 @@ export default function App() {
     }
   }
 
+  // The front page is for the live site. Whoever runs the app locally, or the lab
+  // build, goes straight to the studio; adding #home to the address shows it.
+  const homeOn =
+    (import.meta.env.PROD && import.meta.env.MODE !== "lab") || window.location.hash === "#home";
+
   return (
     <div className="appShell">
       <style>{BRAND_STYLE}</style>
+
+      {homeOn && !accountKnown && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "#0b1220" }} />}
+      {homeOn && accountKnown && !account && !inStudio && (
+        <Landing
+          onSignIn={() => {
+            setAccountMode("in");
+            setAccountError(null);
+            setAccountOpen(true);
+          }}
+          onSignUp={() => {
+            setAccountMode("up");
+            setAccountError(null);
+            setAccountOpen(true);
+          }}
+          onStudio={() => setInStudio(true)}
+        />
+      )}
 
       <aside className="leftPanel">
         <div className="panelHeader" style={{ paddingBottom: 10 }}>
@@ -4766,6 +4796,7 @@ export default function App() {
           onSignOut={async () => {
             await signOut();
             setAccount(null);
+            setInStudio(false);
             setAccountPanel(false);
           }}
           onClosedAccount={() => {
