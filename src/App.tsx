@@ -2756,12 +2756,12 @@ export default function App() {
     }
 
     if (!account) {
-      setAccountError(t("Sign in to download the frame. New accounts get 50 tokens."));
+      setAccountError(t("Sign in to download the frame. New accounts get 5 tokens."));
       setAccountOpen(true);
       return;
     }
     if (!unlimited(account) && account.tokens < 1) {
-      setHolderNote(t("Out of tokens. Top up, or subscribe for unlimited exports."));
+      setHolderNote(t("You are out of tokens."));
       return;
     }
 
@@ -2847,7 +2847,7 @@ export default function App() {
     } catch (e) {
       setHolderNote(
         e instanceof OutOfTokens
-          ? t("Out of tokens. Top up, or subscribe for unlimited exports.")
+          ? t("You are out of tokens.")
           : e instanceof Error
             ? e.message
             : t("Could not download"),
@@ -2969,14 +2969,14 @@ export default function App() {
     // model that cannot be handed over.
     if (download) {
       if (!account) {
-        setAccountError(t("Sign in to export. New accounts get 50 tokens."));
+        setAccountError(t("Sign in to export. New accounts get 5 tokens."));
         setAccountOpen(true);
         return;
       }
       if (!unlimited(account) && account.tokens < 1) {
         setStatusMsg({
           type: "error",
-          text: t("Out of tokens. Top up, or subscribe for unlimited exports."),
+          text: t("You are out of tokens."),
         });
         return;
       }
@@ -3069,7 +3069,7 @@ export default function App() {
               type: "error",
               text:
                 e instanceof OutOfTokens
-                  ? t("Out of tokens. Top up, or subscribe for unlimited exports.")
+                  ? t("You are out of tokens.")
                   : e instanceof Error
                     ? e.message
                     : t("Could not export"),

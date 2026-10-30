@@ -257,7 +257,7 @@ function note_miss(PDO $db): void
 
 
 /** What a new account starts with. */
-const SIGNUP_TOKENS = 50;
+const SIGNUP_TOKENS = 5;
 
 /** Records a change in someone's balance, with a note of why. */
 function note_tokens(PDO $db, int $userId, int $delta, string $reason): void

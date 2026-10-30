@@ -5,13 +5,7 @@ import type { Filament } from "../core/filaments";
 import FilamentEditor from "./FilamentEditor";
 
 /**
- * The account: what is left, what can be bought, and how to leave.
- *
- * Buying happens on Payhip rather than here, so there is no card form and no
- * card details ever reach this site. The one thing that has to travel with the
- * buyer is the address they signed in with — the purchase is matched to the
- * account by it — so it is said plainly and shown next to every button rather
- * than left to be guessed at.
+ * The account: what is left, and how to leave. There is nothing to buy here.
  */
 
 type Props = {
@@ -25,17 +19,6 @@ type Props = {
   onSignOut: () => void;
   onClosedAccount: () => void;
 };
-
-const PACKS = [
-  { tokens: 50, price: "$0.99", url: "https://payhip.com/b/oZuMi" },
-  { tokens: 250, price: "$4.49", url: "https://payhip.com/b/53tiU", best: true },
-  { tokens: 600, price: "$9.99", url: "https://payhip.com/b/Qb6iP" },
-];
-
-const PLANS = [
-  { every: "month", price: "$1.99", url: "https://payhip.com/b/9eIkh" },
-  { every: "year", price: "$9.99", url: "https://payhip.com/b/Gyghc", best: true },
-];
 
 export default function AccountPanel({
   account,
@@ -75,43 +58,6 @@ export default function AccountPanel({
 
         <h3 className="acctHeading">{t("Tokens")}</h3>
         <p className="acctNote">{t("One token for each model you export. Looking at a model in 3D is free and always will be.")}</p>
-
-        <div className="acctGrid">
-          {PACKS.map((p) => (
-            <a
-              key={p.tokens}
-              className={`acctBuy ${p.best ? "best" : ""}`}
-              href={p.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="acctBuyTop">{p.tokens}</span>
-              <span className="acctBuyLabel">{t("tokens")}</span>
-              <span className="acctBuyPrice">{p.price}</span>
-            </a>
-          ))}
-        </div>
-
-        <h3 className="acctHeading">{t("Unlimited")}</h3>
-        <p className="acctNote">{t("Export as much as you like, no tokens spent.")}</p>
-
-        <div className="acctGrid two">
-          {PLANS.map((p) => (
-            <a
-              key={p.every}
-              className={`acctBuy ${p.best ? "best" : ""}`}
-              href={p.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="acctBuyTop">{p.price}</span>
-              <span className="acctBuyLabel">a {p.every}</span>
-              <span className="acctBuyPrice">{p.every === "year" ? "save 58%" : ""}</span>
-            </a>
-          ))}
-        </div>
-
-        <div className="acctFlag">{t("Buy with")}{" "}<strong>{account.email}</strong>{" "}{t("— that is how a purchase finds this account. A different address is not lost: sign in with it and whatever it bought comes across.")}</div>
 
         <h3 className="acctHeading">{t("My filaments")}</h3>
         <p className="acctNote">{t("The colours of filament you have. Tick the ones to print with: an Inlay is divided into the ticked colours, Layered colours are moved to the nearest of them, and decorations on a frame are printed in them. Nothing is used unless it is ticked. The list is kept in your account, so it follows you to another device.")}</p>
