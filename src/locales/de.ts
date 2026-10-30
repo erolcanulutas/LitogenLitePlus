@@ -372,4 +372,6 @@ export const de: Record<string, string> = {
   "Panel angle: {a}°": "Plattenwinkel: {a}°",
   "Panel angle: 90° (a curved frame stands upright)": "Plattenwinkel: 90° (ein gekrümmter Rahmen steht aufrecht)",
   "This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.": "Die Beine dieses Rahmens stehen enger als die Zinken des Standardständers, daher braucht er den Ständer von diesem Knopf: {mm} mm zwischen den Zinken. Ein älterer Ständer passt nicht.",
+  "Custom single colour": "Eigene Einzelfarbe",
+  "now its own colours": "jetzt eigene Farben",
 };

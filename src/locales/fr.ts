@@ -372,4 +372,6 @@ export const fr: Record<string, string> = {
   "Panel angle: {a}°": "Angle du panneau : {a}°",
   "Panel angle: 90° (a curved frame stands upright)": "Angle du panneau : 90° (un cadre courbe se tient droit)",
   "This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.": "Les pieds de ce cadre sont plus rapprochés que les crochets du support standard : il lui faut le support de ce bouton, {mm} mm entre crochets. Un ancien support ne conviendra pas.",
+  "Custom single colour": "Couleur unique personnalisée",
+  "now its own colours": "actuellement ses propres couleurs",
 };

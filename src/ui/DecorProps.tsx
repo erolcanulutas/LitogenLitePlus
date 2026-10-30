@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { t } from "../i18n";
 import { FONTS, isText, type Decoration } from "../core/decor";
 
@@ -12,6 +13,8 @@ type Props = {
   onOrder: (by: 1 | -1) => void;
   canForward: boolean;
   canBack: boolean;
+  /** Printing in colours, which is a setting of the whole frame but is reached from here. */
+  colourOptions?: ReactNode;
 };
 
 /**
@@ -29,6 +32,7 @@ export default function DecorProps({
   onOrder,
   canForward,
   canBack,
+  colourOptions,
 }: Props) {
   return (
     <div
@@ -73,7 +77,7 @@ export default function DecorProps({
 
       {!isText(d) && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
-          <span style={{ flex: 1 }}>{d.tint ? t("One colour") : t("Its own colours")}</span>
+          <span style={{ flex: 1 }}>{t("Custom single colour")}{!d.tint && <span style={{ opacity: 0.6 }}> · {t("now its own colours")}</span>}</span>
           <input
             type="color"
             value={d.tint ?? "#444444"}
@@ -130,6 +134,8 @@ export default function DecorProps({
           )}
         </div>
       )}
+
+      {colourOptions && <div style={{ marginTop: 12 }}>{colourOptions}</div>}
 
       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 12 }}>{t("Place")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4, marginTop: 4 }}>

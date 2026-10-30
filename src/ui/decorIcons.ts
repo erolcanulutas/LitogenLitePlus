@@ -217,6 +217,8 @@ export async function renderMask(
   const cutOut = new Uint8Array(w * h);
   const flush = new Uint8Array(w * h);
   const sinkableMask = new Uint8Array(w * h);
+  /** Parts of a flush decoration that could not be sunk: built level with the face rather than standing out of it. */
+  const flat = new Uint8Array(w * h);
   /** The frame's border: on the frame and not over the pocket. */
   const border = new Uint8Array(w * h);
 
@@ -250,6 +252,8 @@ export async function renderMask(
         } else if (my >= 0) {
           if (onFace && !inWindow(mx, my)) onFrame[i] = 1;
           else beyond[i] = 1;
+          // Where a raised decoration is also, it stays raised.
+          if (!(rd && rd[i * 4 + 3] >= 128)) flat[i] = 1;
         }
       }
 
@@ -267,6 +271,7 @@ export async function renderMask(
       onFrame[i] = 0;
       beyond[i] = 0;
       flush[i] = 0;
+      flat[i] = 0;
     }
   }
 
@@ -293,6 +298,7 @@ export async function renderMask(
     cutOut,
     flush,
     flushBody,
+    flat,
     sinkable: sinkableMask,
     group,
     groupFrac,

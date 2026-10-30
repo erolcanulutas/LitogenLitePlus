@@ -372,4 +372,6 @@ export const tr: Record<string, string> = {
   "Panel angle: {a}°": "Panel açısı: {a}°",
   "Panel angle: 90° (a curved frame stands upright)": "Panel açısı: 90° (kavisli çerçeve dik durur)",
   "This frame's legs are closer together than the standard stand's prongs, so it needs the stand from this button: {mm} mm between prongs. An older stand will not fit.": "Bu çerçevenin ayakları standart ayağın çatallarından daha yakın; bu yüzden bu düğmedeki ayak gerekir: çatallar arası {mm} mm. Eski bir ayak uymaz.",
+  "Custom single colour": "Özel tek renk",
+  "now its own colours": "şu an kendi renkleri",
 };

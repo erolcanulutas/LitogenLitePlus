@@ -4502,6 +4502,25 @@ export default function App() {
                                 onOrder={orderSelectedDecor}
                                 canForward={decorSelected < decorations.length - 1}
                                 canBack={decorSelected > 0}
+                                colourOptions={
+                                  <>
+                        <label className="shadeToggle" style={{ display: "flex" }}>
+                          <input
+                            type="checkbox"
+                            checked={iconColours > 0}
+                            onChange={(e) => setIconColours(e.target.checked ? 4 : 0)}
+                          />{t("Print decorations in their own colours")}</label>
+                        {iconColours > 0 && (
+                          <>
+                            <div className="label-row" style={{ marginTop: 8 }}>
+                              <label className="miniLabel">{t("Reduce colours to at most")}</label>
+                              <InfoIcon text={t("Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them.")} />
+                            </div>
+                            <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
+                          </>
+                        )}
+                                  </>
+                                }
                               />
                             ) : (
                               <div style={{ fontSize: 12, opacity: 0.75 }}>{t("Pick something below to put it on the frame, then drag it into place on the left. Its handles set size and turn, and the cross takes it away.")}</div>
@@ -4550,21 +4569,6 @@ export default function App() {
                                   </>
                                 )}
 
-                            <label className="shadeToggle" style={{ marginTop: 14, display: "flex" }}>
-                              <input
-                                type="checkbox"
-                                checked={iconColours > 0}
-                                onChange={(e) => setIconColours(e.target.checked ? 4 : 0)}
-                              />{t("Print decorations in their own colours")}</label>
-                            {iconColours > 0 && (
-                              <>
-                                <div className="label-row" style={{ marginTop: 8 }}>
-                                  <label className="miniLabel">{t("Reduce colours to at most")}</label>
-                                  <InfoIcon text={t("Each colour of the icons becomes a body of its own in the 3MF, to be given a filament, alongside the frame. Shades that are close are one colour, and this caps how many there are, merging the nearest. With a colour per body the file is a 3MF; a plain STL cannot carry them.")} />
-                                </div>
-                                <NumField value={iconColours} min={2} max={8} step={1} onChange={setIconColours} />
-                              </>
-                            )}
                               </>
                             )}
                           </>

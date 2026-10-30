@@ -140,6 +140,8 @@ export type DecorMask = {
   flush: Uint8Array;
   /** The same pixels, which is what fills it: traced once with it, so the two fit. */
   flushBody: Uint8Array;
+  /** Of the raised pixels, those that belong to a flush decoration and are built level with the face. */
+  flat: Uint8Array;
   /** Where a recess may reach: the face, but not the window or the edge. */
   sinkable: Uint8Array;
   /** Which body each raised pixel belongs to: a height step, or one of the icons' colours. */
@@ -261,31 +263,45 @@ export function buildRelief(
   // inside its own material, where it overlaps the frame and so is joined to
   // it, and over the window or past the edge it is the lowest a part can start
   // without passing behind the face the picture rests against.
+  //
+  // The parts of a flush decoration that cannot be sunk — past the edge, over
+  // the window, in the strip kept clear of both — are traced apart and built
+  // only up to the face, so the whole decoration is level with it.
   const where = new Uint8Array(w * h);
+  const level = new Uint8Array(w * h);
   let any = false;
+  let anyLevel = false;
   for (let i = 0; i < where.length; i++) {
     if (mask.onFrame[i] || mask.beyond[i]) {
-      where[i] = 1;
-      any = true;
+      if (mask.flat[i]) {
+        level[i] = 1;
+        anyLevel = true;
+      } else {
+        where[i] = 1;
+        any = true;
+      }
     }
   }
   const baseZ = frontZ - rootDepth + ROOT_CLEARANCE_MM;
 
-  const traced: { regions: ReturnType<typeof vectorise>["regions"] }[] = [];
+  const groupIds = mask.groupFrac.map((_, k) => k);
+  const traced: { regions: ReturnType<typeof vectorise>["regions"]; top: (g: number) => number }[] = [];
   if (any && count > 0 && height > 0) {
-    const vec = vectorise(
-      lum, w, h, mask.groupFrac.map((_, k) => k), 1.2, where, floorPx, undefined, 2, mask.group,
-    );
-    traced.push({ regions: vec.regions });
+    const vec = vectorise(lum, w, h, groupIds, 1.2, where, floorPx, undefined, 2, mask.group);
+    traced.push({ regions: vec.regions, top: (g) => frontZ + height * mask.groupFrac[g] });
+  }
+  if (anyLevel && count > 0) {
+    const vec = vectorise(lum, w, h, groupIds, 1.2, level, floorPx, undefined, 2, mask.group);
+    traced.push({ regions: vec.regions, top: () => frontZ });
   }
 
   // Then body by body, so that each is one run of triangles.
   for (let g = 0; g < count; g++) {
     const start = mb.triangleCount;
-    for (const { regions } of traced) {
+    for (const { regions, top } of traced) {
       const region = regions[g];
       if (!region || region.rings.length === 0) continue;
-      extrudeRegion(mb, region.rings, place, baseZ, frontZ + height * mask.groupFrac[g]);
+      extrudeRegion(mb, region.rings, place, baseZ, top(g));
     }
     const sunk = flushRegions?.[g];
     if (sunk && sunk.rings.length > 0) {
