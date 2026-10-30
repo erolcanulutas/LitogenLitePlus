@@ -3133,7 +3133,8 @@ export default function App() {
             // A ready-made model is a picture; it opens as if it had just been uploaded.
             try {
               const r = await fetch(`${import.meta.env.BASE_URL}home/${file}`);
-              if (!r.ok) return;
+              // A missing file is answered with the page itself, so the type is checked too.
+              if (!r.ok || !(r.headers.get("content-type") ?? "").startsWith("image/")) return;
               const blob = await r.blob();
               setInStudio(true);
               pickFile(new File([blob], file, { type: blob.type || "image/jpeg" }));
