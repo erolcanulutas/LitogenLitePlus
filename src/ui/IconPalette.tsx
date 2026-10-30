@@ -101,7 +101,7 @@ export default function IconPalette({ onAdd, onAddText }: Props) {
         )}
       </div>
 
-      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>{t("Icons: Fluent Emoji by Microsoft, MIT licence.")}</div>
+      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>{t("Icons: Fluent Emoji by Microsoft; flags: flag-icons. MIT licence.")}</div>
     </div>
   );
 }
