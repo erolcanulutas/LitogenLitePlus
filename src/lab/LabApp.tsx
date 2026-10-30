@@ -12,6 +12,7 @@ import DecorProps from "../ui/DecorProps";
 import HolderDesigner from "../ui/HolderDesigner";
 import IconPalette from "../ui/IconPalette";
 import { makeDecor } from "../ui/decorIcons";
+import { SHOWCASE_MODELS } from "../ui/homeContent";
 import type { PreviewMesh } from "../ui/MeshPreview";
 
 const MeshPreview = React.lazy(() => import("../ui/MeshPreview"));
@@ -229,7 +230,7 @@ export default function LabApp() {
       try {
         const d = (await api({ action: "design", slot: next.n })).design as { settings?: Settings; decorations?: Decoration[] } | null;
         if (d?.settings) setSettings({ ...DEFAULTS, ...d.settings });
-        else setSettings({ ...DEFAULTS, caption: models.find((m) => m.slot === next.n)?.caption ?? "" });
+        else setSettings({ ...DEFAULTS, caption: models.find((m) => m.slot === next.n)?.caption || SHOWCASE_MODELS[next.n - 1]?.caption || "" });
         setDecorations(d?.decorations ?? []);
       } catch {
         setDecorations([]);
@@ -331,6 +332,8 @@ export default function LabApp() {
   }
 
   const slotInfo = (n: number) => models.find((m) => m.slot === n);
+  /** What the card is called on the home page: its saved caption, else the built-in one. */
+  const cardName = (n: number) => slotInfo(n)?.caption || SHOWCASE_MODELS[n - 1]?.caption || `New card ${n}`;
   const isSlot = area.kind === "slot";
 
   return (
@@ -352,8 +355,8 @@ export default function LabApp() {
           const on = area.kind === "slot" && area.n === n;
           return (
             <button key={n} className={`segment ${on ? "active" : ""}`} style={{ textAlign: "left", display: "grid", gap: 1 }} onClick={() => openArea({ kind: "slot", n })}>
-              <span>Showcase {n}</span>
-              <span style={{ fontSize: 11, opacity: 0.7 }}>{m ? `${m.caption} · saved` : n <= 4 ? "built-in model" : "empty"}</span>
+              <span>{cardName(n)}</span>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>{m ? "saved" : n <= 4 ? "built-in model" : "empty"}</span>
             </button>
           );
         })}
@@ -373,7 +376,7 @@ export default function LabApp() {
         ) : (
           <>
             <div style={{ fontSize: 18, fontWeight: 600 }}>
-              {isSlot ? `Showcase ${area.n}` : "Templates"}
+              {isSlot ? cardName(area.n) : "Templates"}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
