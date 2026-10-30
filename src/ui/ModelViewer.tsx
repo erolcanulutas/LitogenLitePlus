@@ -10,6 +10,8 @@ type Props = {
   bands?: { start: number; color: string }[];
   /** Whether it turns by itself until it is touched. */
   autoRotate?: boolean;
+  /** Where the camera starts: round from the front, up from the level, and how far out (1 is the usual). */
+  view?: { az: number; el: number; zoom: number };
 };
 
 /**
@@ -20,7 +22,10 @@ type Props = {
  * while the model has been touched, so scrolling the page past it still scrolls
  * the page; it turns by itself until it is.
  */
-export default function ModelViewer({ src, color = "#d9b77a", bands, autoRotate = true }: Props) {
+export default function ModelViewer({ src, color = "#d9b77a", bands, autoRotate = true, view }: Props) {
+  const az = view?.az ?? -27;
+  const el0 = view?.el ?? 21;
+  const zoom = view?.zoom ?? 1;
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing">("loading");
 
@@ -60,7 +65,10 @@ export default function ModelViewer({ src, color = "#d9b77a", bands, autoRotate 
         const camera = new THREE.PerspectiveCamera(35, 1, radius * 0.05, radius * 40);
         camera.up.set(0, 0, 1);
         // The frames face +y, so that is where to look from.
-        camera.position.set(-radius * 2.2, radius * 4.4, radius * 1.9);
+        const d = radius * 5.2 * zoom;
+        const a = (az * Math.PI) / 180;
+        const e = (el0 * Math.PI) / 180;
+        camera.position.set(d * Math.cos(e) * Math.sin(a), d * Math.cos(e) * Math.cos(a), d * Math.sin(e));
 
         scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1));
         const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -164,7 +172,7 @@ export default function ModelViewer({ src, color = "#d9b77a", bands, autoRotate 
       live = false;
       stop();
     };
-  }, [src, color, bands, autoRotate]);
+  }, [src, color, bands, autoRotate, az, el0, zoom]);
 
   return (
     <div className="homePic" style={{ aspectRatio: "4 / 3" }}>

@@ -4,6 +4,10 @@ import { signIn, signOut, whoAmI, type Account } from "../core/account";
 import { bendRadius } from "../core/bend";
 import type { DecorGeom, Decoration } from "../core/decor";
 import { PICTURE_SEAT_MM, assembleHolder, holderInPlace, holderLayout, legSpacingFor } from "../core/holder";
+import { pictureMatrix } from "../core/pocket";
+import STLWorker from "../worker/stl.worker?worker";
+import ModelViewer from "../ui/ModelViewer";
+import Texts from "./Texts";
 import { shapeOutline, type OutlineShape } from "../core/outline";
 import { buildStand } from "../core/stand";
 import { writeBinarySTL } from "../core/stl_writer";
@@ -50,14 +54,16 @@ type Settings = {
   rotate: boolean;
   /** Left off the home page without being deleted. */
   hidden: boolean;
+  /** Where the camera starts on the home page. */
+  view: { az: number; el: number; zoom: number };
   caption: string;
 };
-const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, caption: "" };
+const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, view: { az: -27, el: 21, zoom: 1 }, caption: "" };
 
 type ModelEntry = { slot: number; file: string; caption: string; updated: string; color?: string };
 type TemplateEntry = { id: string; name: string; items: TemplateItem[]; updated: string };
 
-type Area = { kind: "slot"; n: number } | { kind: "templates" } | { kind: "photos" };
+type Area = { kind: "slot"; n: number } | { kind: "templates" } | { kind: "photos" } | { kind: "texts" };
 
 async function api(body: unknown): Promise<Record<string, unknown>> {
   const res = await fetch("/api/lab.php", {
@@ -102,6 +108,7 @@ export default function LabApp() {
 
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const [decorations, setDecorationsRaw] = useState<Decoration[]>([]);
+  const workerRef = useRef<Worker | null>(null);
   const current = useRef<Decoration[]>([]);
   current.current = decorations;
   const past = useRef<Decoration[][]>([]);
@@ -140,6 +147,12 @@ export default function LabApp() {
   const [templateName, setTemplateName] = useState("");
   const [busy, setBusy] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  /** The picture's lithophane, built for the frame as it is, and laid in its pocket. */
+  const [picture, setPicture] = useState<{ positions: Float32Array; triangleCount: number; key: string } | null>(null);
+  const [pictureBusy, setPictureBusy] = useState(false);
+  const pictureInput = useRef<HTMLInputElement>(null);
+  const pictureFile = useRef<File | null>(null);
+  const [homeUrl, setHomeUrl] = useState("");
 
   useEffect(() => {
     document.title = "Litogen lab";
@@ -230,6 +243,13 @@ export default function LabApp() {
     };
   }, [decorations, geom, settings.iconColours, settings.relief, settings.flushClear]);
 
+  /** What the picture's place depends on: if any of it changes, the picture has to be built again. */
+  const pictureKey = JSON.stringify([
+    settings.shape, settings.widthMm, height, settings.curveDeg, settings.border, settings.angle, settings.play,
+    +L.W.toFixed(3), +L.H.toFixed(3), +L.socketDepth.toFixed(3), +L.lift.toFixed(3), params.tiltDeg,
+  ]);
+  const pictureFits = picture !== null && picture.key === pictureKey;
+
   const built = useMemo(() => {
     const a = assembleHolder(params, decor?.cuts ?? [], decor?.recess ?? null, decor?.relief ?? null);
     // The frame, then each colour of the decorations, then the stand.
@@ -237,19 +257,25 @@ export default function LabApp() {
     const colours = [settings.color, ...a.bodies.map((b) => b.color || settings.color), settings.color];
     const placed = holderInPlace(a.mesh, params.tiltDeg, L.socketDepth, L.W / 2);
     const stand = buildStand({ tealight: settings.tealight, prongSpacing: spacing });
-    const positions = new Float32Array(placed.positions.length + stand.positions.length);
+    const pic = pictureFits ? picture : null;
+    const positions = new Float32Array(placed.positions.length + stand.positions.length + (pic ? pic.positions.length : 0));
     positions.set(placed.positions, 0);
     positions.set(stand.positions, placed.positions.length);
+    if (pic) {
+      positions.set(pic.positions, placed.positions.length + stand.positions.length);
+      starts.push(placed.triangleCount + stand.triangleCount);
+      colours.push("#f6f1e7");
+    }
     const tilt = (params.tiltDeg * Math.PI) / 180;
     const mesh: PreviewMesh = {
       positions,
-      triangleCount: placed.triangleCount + stand.triangleCount,
+      triangleCount: placed.triangleCount + stand.triangleCount + (pic ? pic.triangleCount : 0),
       bandStarts: starts,
       colors: colours,
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
     return mesh;
-  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight]);
+  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight, picture, pictureFits]);
 
   // -- decorations ------------------------------------------------------------
   const add = (d: Decoration) => {
@@ -312,6 +338,7 @@ export default function LabApp() {
         color: settings.color,
         rotate: settings.rotate,
         hidden: settings.hidden,
+        view: settings.view,
         bands: built.bandStarts.map((start, i) => ({ start, color: built.colors[i] })),
         stl: toBase64(stl),
         design: { settings, decorations },
@@ -351,6 +378,106 @@ export default function LabApp() {
     const d = await api({ action: "delete_template", id });
     setTemplates(d.templates as TemplateEntry[]);
   };
+
+  // -- the picture in the frame -------------------------------------------------
+  const buildPicture = async (file: File) => {
+    setPictureBusy(true);
+    setNote("Building the picture…");
+    try {
+      // A flat picture is built at half size and stretched, which is a quarter of the
+      // triangles; a curved one has to be built as it is.
+      const k = settings.curveDeg > 0 ? 1 : 2;
+      const buildW = Math.max(1, settings.widthMm - 0.5);
+      const bw = buildW / k;
+      const bh = bw * (height / settings.widthMm);
+
+      // The picture, cut to the frame's proportions.
+      const bmp = await createImageBitmap(file);
+      const aspect = settings.widthMm / height;
+      const cw = aspect >= 1 ? 800 : Math.round(800 * aspect);
+      const ch = aspect >= 1 ? Math.round(800 / aspect) : 800;
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d")!;
+      const cover = Math.max(cw / bmp.width, ch / bmp.height);
+      ctx.drawImage(bmp, (cw - bmp.width * cover) / 2, (ch - bmp.height * cover) / 2, bmp.width * cover, bmp.height * cover);
+      const image = ctx.getImageData(0, 0, cw, ch);
+
+      if (!workerRef.current) workerRef.current = new STLWorker();
+      const w = workerRef.current;
+      const result = await new Promise<{ preview: ArrayBuffer; previewTriangles: number }>((resolve, reject) => {
+        const handler = (e: MessageEvent) => {
+          w.removeEventListener("message", handler);
+          if (e.data.ok) resolve({ preview: e.data.preview, previewTriangles: e.data.previewTriangles });
+          else reject(new Error(String(e.data.error)));
+        };
+        w.addEventListener("message", handler);
+        w.postMessage({
+          id: Date.now(),
+          shapeId: settings.shape,
+          image,
+          widthMm: +bw.toFixed(4),
+          heightMm: +bh.toFixed(4),
+          minT: 0.8,
+          maxT: 3,
+          frameMm: 1.5,
+          quality: "draft",
+          smoothing: 1,
+          levels: 0,
+          orientation: "vertical",
+          curveDeg: settings.curveDeg > 0 ? settings.curveDeg : 0,
+          splitHeightsMm: [],
+          toneHeightsMm: [],
+          toneCuts: [],
+          colors: ["#ffffff"],
+          layerHeight: 0.2,
+          emboss: "back",
+          vector: false,
+        });
+      });
+
+      // Standing up, the width is x, the height is z and the thickness y.
+      const pos = new Float32Array(result.preview);
+      if (k !== 1) {
+        for (let i = 0; i < pos.length; i += 3) {
+          pos[i] *= k;
+          pos[i + 2] *= k;
+        }
+      }
+      const m = pictureMatrix(
+        { positions: pos, triangleCount: result.previewTriangles, faceAxis: [0, -1, 0] },
+        { x: L.W / 2, y: (L.pocket.y0 + L.pocket.y1) / 2 },
+        L.pocketDepth - 0.3 + L.lift,
+        params.tiltDeg,
+        L.socketDepth,
+        L.W / 2,
+      );
+      for (let i = 0; i < pos.length; i += 3) {
+        const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+        pos[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+        pos[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+        pos[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+      }
+      setPicture({ positions: pos, triangleCount: result.previewTriangles, key: pictureKey });
+      setNote(`The picture is in the frame (${result.previewTriangles.toLocaleString()} triangles).`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Could not build the picture");
+    }
+    setPictureBusy(false);
+  };
+
+  // What the home page will show: the current model, drawn by the page's own viewer.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const stl = writeBinarySTL({ positions: built.positions, triangleCount: built.triangleCount });
+      setHomeUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(new Blob([stl], { type: "model/stl" }));
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [built]);
 
   // -- keys, copies and downloads ---------------------------------------------
   useEffect(() => {
@@ -481,6 +608,7 @@ export default function LabApp() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", height: "100vh", background: "#0b1220", color: "#e8eefc", fontFamily: "Outfit, system-ui, sans-serif" }}>
       <style>{BRAND_STYLE}</style>
+      <style>{`.homePic{position:relative;overflow:hidden;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:linear-gradient(135deg,rgba(34,211,238,0.18),rgba(167,139,250,0.16)),#111a2e}.homePic .hole{position:absolute;inset:0;display:grid;place-items:center;font-size:0.82rem;color:rgba(232,238,252,0.7);pointer-events:none}`}</style>
 
       <aside style={{ borderRight: "1px solid rgba(255,255,255,0.12)", padding: 14, overflowY: "auto", display: "grid", gap: 6, alignContent: "start" }}>
         <div style={{ fontSize: 20, fontWeight: 700 }}>Litogen lab</div>
@@ -510,11 +638,16 @@ export default function LabApp() {
         <button className={`segment ${area.kind === "photos" ? "active" : ""}`} style={{ textAlign: "left" }} onClick={() => openArea({ kind: "photos" })}>
           Photos
         </button>
+        <button className={`segment ${area.kind === "texts" ? "active" : ""}`} style={{ textAlign: "left" }} onClick={() => openArea({ kind: "texts" })}>
+          Home page texts
+        </button>
       </aside>
 
       <main style={{ overflowY: "auto", padding: 16, display: "grid", gap: 12, alignContent: "start" }}>
         {area.kind === "photos" ? (
           <Photos />
+        ) : area.kind === "texts" ? (
+          <Texts />
         ) : (
           <>
             <div style={{ fontSize: 18, fontWeight: 600 }}>
@@ -586,6 +719,15 @@ export default function LabApp() {
                 <label style={cell}>Picture play (mm)
                   <input className="spinInput" type="number" min={0} max={0.5} step={0.01} value={settings.play} onChange={(e) => setSettings({ ...settings, play: +e.target.value })} />
                 </label>
+                <label style={cell}>Camera: round (degrees)
+                  <input type="range" min={-180} max={180} value={settings.view.az} onChange={(e) => setSettings({ ...settings, view: { ...settings.view, az: +e.target.value } })} />
+                </label>
+                <label style={cell}>Camera: height (degrees)
+                  <input type="range" min={0} max={85} value={settings.view.el} onChange={(e) => setSettings({ ...settings, view: { ...settings.view, el: +e.target.value } })} />
+                </label>
+                <label style={cell}>Camera: distance
+                  <input type="range" min={0.5} max={1.6} step={0.05} value={settings.view.zoom} onChange={(e) => setSettings({ ...settings, view: { ...settings.view, zoom: +e.target.value } })} />
+                </label>
                 <label style={cell}>Flush clearance (mm)
                   <input className="spinInput" type="number" min={0} max={0.2} step={0.05} value={settings.flushClear} onChange={(e) => setSettings({ ...settings, flushClear: +e.target.value })} />
                 </label>
@@ -620,6 +762,21 @@ export default function LabApp() {
                 </React.Suspense>
               </div>
             </div>
+
+            {isSlot && (
+              <div style={{ maxWidth: 440 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>As it looks on the home page</div>
+                {homeUrl && (
+                  <ModelViewer
+                    src={homeUrl}
+                    color={settings.color}
+                    bands={built.bandStarts.map((start, i) => ({ start, color: built.colors[i] }))}
+                    autoRotate={settings.rotate}
+                    view={settings.view}
+                  />
+                )}
+              </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
               <div>
@@ -696,6 +853,36 @@ export default function LabApp() {
                     <button className="btn" style={{ padding: "2px 8px" }} onClick={() => removeTemplate(tpl.id)}>✕</button>
                   </div>
                 ))}
+                <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>Picture in the frame</div>
+                <input
+                  ref={pictureInput}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) {
+                      pictureFile.current = f;
+                      void buildPicture(f);
+                    }
+                  }}
+                />
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button className="btn" disabled={pictureBusy} onClick={() => pictureInput.current?.click()}>
+                    {pictureBusy ? "Building…" : picture ? "Choose another photo…" : "Choose a photo…"}
+                  </button>
+                  {picture && !pictureFits && pictureFile.current && (
+                    <button className="btn" disabled={pictureBusy} onClick={() => void buildPicture(pictureFile.current!)}>Build it again for this frame</button>
+                  )}
+                  {picture && <button className="btn" onClick={() => setPicture(null)}>Remove the picture</button>}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  {picture && !pictureFits
+                    ? "The frame changed since the picture was built, so it is left out until it is built again."
+                    : "The photo is made into a lithophane that fits this frame, and sits in it in the model that is saved."}
+                </div>
+
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
                   <button className="btn" style={{ padding: "2px 8px" }} onClick={copyDesign}>Copy this design</button>
                   <button className="btn" style={{ padding: "2px 8px" }} disabled={!pasteText.trim()} onClick={pasteDesign}>Paste a design from the box</button>

@@ -32,6 +32,10 @@ function detect(): Lang {
 
 let current: Lang = detect();
 const listeners = new Set<() => void>();
+/** Moves on whenever the language or any text changes, so components know to draw again. */
+let revision = 0;
+/** Texts rewritten from the lab, by language and then by the English source. */
+let overrides: Record<string, Record<string, string>> = {};
 if (typeof document !== "undefined") document.documentElement.lang = current;
 
 export function getLang(): Lang {
@@ -47,23 +51,37 @@ export function setLang(lang: Lang) {
     /* storage may be blocked */
   }
   if (typeof document !== "undefined") document.documentElement.lang = lang;
+  revision++;
   listeners.forEach((fn) => fn());
 }
 
 /** Re-renders the component when the language changes. */
 export function useLang(): Lang {
-  return useSyncExternalStore(
+  useSyncExternalStore(
     (fn) => {
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
-    () => current,
+    () => revision,
   );
+  return current;
+}
+
+/** Replaces texts, for every language, from the lab's saved list. */
+export function setTextOverrides(next: Record<string, Record<string, string>>) {
+  overrides = next && typeof next === "object" ? next : {};
+  revision++;
+  listeners.forEach((fn) => fn());
+}
+
+/** What a text is in a language before anything from the lab: the dictionary's, or the English. */
+export function translation(lang: Lang, source: string): string {
+  return (lang === "en" ? undefined : DICTIONARIES[lang][source]) ?? source;
 }
 
 /** Turns English source text into the language in use; `{name}` is filled from `vars`. */
 export function t(source: string, vars?: Record<string, string | number>): string {
-  const text = (current === "en" ? undefined : DICTIONARIES[current][source]) ?? source;
+  const text = overrides[current]?.[source] ?? (current === "en" ? undefined : DICTIONARIES[current][source]) ?? source;
   if (!vars) return text;
   return text.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
 }

@@ -19,7 +19,7 @@ require __DIR__ . '/db.php';
  */
 
 const SLOTS = 12;
-const MAX_STL = 6 * 1024 * 1024;
+const MAX_STL = 16 * 1024 * 1024;
 const MAX_PICTURE = 5 * 1024 * 1024;
 
 $db = db();
@@ -138,6 +138,11 @@ if ($action === 'save_model') {
         'color' => preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : '#d9b77a',
         'bands' => $bands,
         'rotate' => ($in['rotate'] ?? true) !== false,
+        'view' => [
+            'az' => max(-180, min(180, (float) ($in['view']['az'] ?? -27))),
+            'el' => max(0, min(85, (float) ($in['view']['el'] ?? 21))),
+            'zoom' => max(0.4, min(2.0, (float) ($in['view']['zoom'] ?? 1))),
+        ],
         'hidden' => ($in['hidden'] ?? false) === true,
         'updated' => gmdate('Y-m-d H:i:s'),
     ];
@@ -175,6 +180,28 @@ if ($action === 'delete_template') {
 }
 
 $photosPath = $models . '/photos.json';
+$textsPath = $models . '/texts.json';
+
+if ($action === 'texts') {
+    reply(['ok' => true, 'texts' => lab_read($textsPath)]);
+}
+
+if ($action === 'save_texts') {
+    $texts = $in['texts'] ?? null;
+    if (!is_array($texts) || strlen((string) json_encode($texts)) > 300000) {
+        fail('Those texts are too large');
+    }
+    $clean = [];
+    foreach (['en', 'tr', 'de', 'es', 'fr'] as $lang) {
+        foreach ((array) ($texts[$lang] ?? []) as $key => $value) {
+            if (is_string($key) && is_string($value) && strlen($key) <= 600 && strlen($value) <= 800 && trim($value) !== '') {
+                $clean[$lang][$key] = $value;
+            }
+        }
+    }
+    lab_write($textsPath, $clean);
+    reply(['ok' => true, 'texts' => $clean]);
+}
 
 if ($action === 'photos') {
     reply(['ok' => true, 'captions' => lab_read($photosPath)]);

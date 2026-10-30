@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { LANGUAGES, setLang, t, useLang, type Lang } from "../i18n";
+import { LANGUAGES, setLang, setTextOverrides, t, useLang, type Lang } from "../i18n";
 import { CONTACT_EMAIL, HERO_IMAGES, MAKERWORLD_URL, MODELS, SHOWCASE_MODELS, type Showcase } from "./homeContent";
 
 const ModelViewer = lazy(() => import("./ModelViewer"));
@@ -213,6 +213,13 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
   const lang = useLang();
   // The models on show: the built-in ones, with any that were made in the lab
   // standing in for the slot of the same number.
+  // Texts rewritten in the lab take the place of the built-in ones.
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}home/models/texts.json?${Date.now()}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((o: unknown) => setTextOverrides(o && typeof o === "object" ? (o as Record<string, Record<string, string>>) : {}))
+      .catch(() => {});
+  }, []);
   // Captions for the ready-made models, as written in the lab.
   const [captions, setCaptions] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -221,23 +228,23 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
       .then((c: unknown) => setCaptions(c && typeof c === "object" && !Array.isArray(c) ? (c as Record<string, string>) : {}))
       .catch(() => {});
   }, []);
-  const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
+  const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean; view?: { az: number; el: number; zoom: number } }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
   useEffect(() => {
     let live = true;
     fetch(`${import.meta.env.BASE_URL}home/models/manifest.json?${Date.now()}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((list: { slot: number; file: string; caption: string; updated: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean; hidden?: boolean }[]) => {
+      .then((list: { slot: number; file: string; caption: string; updated: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean; hidden?: boolean; view?: { az: number; el: number; zoom: number } }[]) => {
         if (!live || !Array.isArray(list) || list.length === 0) return;
         const bySlot = new Map(list.map((m) => [m.slot, m]));
         const merged: typeof models = [];
         SHOWCASE_MODELS.forEach((d, i) => {
           const m = bySlot.get(i + 1);
           if (!m) merged.push({ ...d, v: "" });
-          else if (!m.hidden) merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands, rotate: m.rotate });
+          else if (!m.hidden) merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands, rotate: m.rotate, view: m.view });
         });
         for (const m of list) {
           if (m.slot > SHOWCASE_MODELS.length && !m.hidden) {
-            merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands, rotate: m.rotate });
+            merged.push({ file: m.file, caption: m.caption, v: m.updated, color: m.color, bands: m.bands, rotate: m.rotate, view: m.view });
           }
         }
         setModels(merged);
@@ -372,7 +379,7 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
             {models.map((m) => (
               <figure key={m.file} style={{ margin: 0 }}>
                 <Suspense fallback={<div className="homePic" style={{ aspectRatio: "4 / 3" }} />}>
-                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={m.color} bands={m.bands} autoRotate={m.rotate !== false} />
+                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={m.color} bands={m.bands} autoRotate={m.rotate !== false} view={m.view} />
                 </Suspense>
                 <figcaption className="homeCap">{t(m.caption)}</figcaption>
               </figure>
