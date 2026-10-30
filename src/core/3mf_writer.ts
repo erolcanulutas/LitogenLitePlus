@@ -69,7 +69,9 @@ function meshXml(positions: Float32Array, from: number, to: number): string {
 export async function writeColored3MF(
   mesh: BandedMesh,
   colors: readonly string[],
+  options: { settings?: boolean; bambuVersion?: boolean } = {},
 ): Promise<ArrayBuffer> {
+  const { settings = true, bambuVersion = false } = options;
   const zip = new JSZip();
 
   zip.file(
@@ -117,7 +119,7 @@ export async function writeColored3MF(
 
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-  <metadata name="Application">Litogen</metadata>
+  <metadata name="Application">Litogen</metadata>${bambuVersion ? '<metadata name="BambuStudio:3mfVersion">1</metadata>' : ""}
   <resources>
     <basematerials id="1">${bases.join("")}</basematerials>
     ${objects.join("\n    ")}
@@ -148,7 +150,7 @@ export async function writeColored3MF(
     </part>`,
   );
 
-  zip.folder("Metadata")!.file(
+  if (settings) zip.folder("Metadata")!.file(
     "model_settings.config",
     `<?xml version="1.0" encoding="UTF-8"?>
 <config>
