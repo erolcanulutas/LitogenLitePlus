@@ -109,7 +109,7 @@ export const HOLDER_DEFAULTS: HolderParams = {
   pictureT: 3,
   border: 10,
   lip: 3,
-  pocketPlay: 0.08,
+  pocketPlay: 0.05,
   lipThickness: 2,
   clips: true,
   legWidth: 10,
@@ -362,6 +362,65 @@ export function buildHolder(
         cap(mb, b, [], [0, 1, 0]);
         wall(mb, a, b, true);
       }
+    }
+  }
+
+  if (p.clips && L.poly) {
+    // The same catch along the pocket's own edges: one at the middle of each
+    // side of a polygon, six evenly round a circle. Each is a short bar along
+    // the edge with its foot sunk into the wall, so it joins the frame whether
+    // the wall is straight or a shallow arc.
+    const ring = L.poly.pocket;
+    const bump = p.pocketPlay + 0.15;
+    const half = 5;
+    const sink = 0.4;
+    const prof: [number, number][] = [
+      [-sink, 0.05],
+      [bump, 0.55],
+      [bump, 0.62],
+      [-sink, 0.72],
+    ];
+    const lens = ring.map((q, k) => Math.hypot(ring[(k + 1) % ring.length][0] - q[0], ring[(k + 1) % ring.length][1] - q[1]));
+    const total = lens.reduce((x, y) => x + y, 0);
+    /** The point at distance `d` along the pocket's edge, counter-clockwise from its first corner. */
+    const along = (d: number): [number, number] => {
+      let r = ((d % total) + total) % total;
+      for (let k = 0; k < ring.length; k++) {
+        if (r <= lens[k]) {
+          const q = ring[k];
+          const w = ring[(k + 1) % ring.length];
+          const f = lens[k] > 0 ? r / lens[k] : 0;
+          return [q[0] + (w[0] - q[0]) * f, q[1] + (w[1] - q[1]) * f];
+        }
+        r -= lens[k];
+      }
+      return ring[0];
+    };
+    const spots: number[] = [];
+    if (ring.length <= 8) {
+      let run = 0;
+      lens.forEach((len) => {
+        if (len >= 2 * half + 4) spots.push(run + len / 2);
+        run += len;
+      });
+    } else {
+      for (let k = 0; k < 6; k++) spots.push(((k + 0.5) * total) / 6);
+    }
+    for (const at of spots) {
+      const c = along(at);
+      const before = along(at - 4);
+      const after = along(at + 4);
+      const dl = Math.hypot(after[0] - before[0], after[1] - before[1]) || 1;
+      const d: [number, number] = [(after[0] - before[0]) / dl, (after[1] - before[1]) / dl];
+      // Counter-clockwise, the inside is on the left of the way along.
+      const n: [number, number] = [-d[1], d[0]];
+      const section = (s: number): V3[] =>
+        prof.map(([off, z]): V3 => [c[0] + d[0] * s + n[0] * off, c[1] + d[1] * s + n[1] * off, z]);
+      const a = section(-half);
+      const b = section(half);
+      cap(mb, a, [], [-d[0], -d[1], 0]);
+      cap(mb, b, [], [d[0], d[1], 0]);
+      wall(mb, a, b, true);
     }
   }
 

@@ -1860,7 +1860,7 @@ export default function App() {
   const [tealightMm, setTealightMm] = useState(38);
   const [holderFit, setHolderFit] = useState(0.2);
   /** Room round the picture in its pocket, each side, in mm. */
-  const [holderPlay, setHolderPlay] = useState(0.08);
+  const [holderPlay, setHolderPlay] = useState(0.05);
   const [decorations, setDecorations] = useState<Decoration[]>([]);
   const [decorSelected, setDecorSelected] = useState<number | null>(null);
   const [reliefMm, setReliefMm] = useState(1);
