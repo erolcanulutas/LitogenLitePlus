@@ -228,6 +228,9 @@ export type Relief = {
   groups: { start: number; end: number; color: string }[];
 };
 
+/** How far a flush decoration's unsunk parts stand above the face, in mm: enough to win over it. */
+const LEVEL_PROUD_MM = 0.03;
+
 /**
  * The raised shapes for a mask, as a mesh standing on the front face.
  *
@@ -292,7 +295,10 @@ export function buildRelief(
   }
   if (anyLevel && count > 0) {
     const vec = vectorise(lum, w, h, groupIds, 1.2, level, floorPx, undefined, 2, mask.group);
-    traced.push({ regions: vec.regions, top: () => frontZ });
+    // A hair above the face rather than exactly on it: over the frame's own
+    // material the two faces would coincide and flicker in the preview, and
+    // a slicer would have no reason to prefer the decoration's colour.
+    traced.push({ regions: vec.regions, top: () => frontZ + LEVEL_PROUD_MM });
   }
 
   // Then body by body, so that each is one run of triangles.
