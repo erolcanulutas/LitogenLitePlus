@@ -211,6 +211,30 @@ function HeroSlides() {
  */
 export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: Props) {
   const lang = useLang();
+  // The models on show: the built-in ones, with any that were made in the lab
+  // standing in for the slot of the same number.
+  const [models, setModels] = useState(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
+  useEffect(() => {
+    let live = true;
+    fetch(`${import.meta.env.BASE_URL}home/models/manifest.json?${Date.now()}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: { slot: number; file: string; caption: string; updated: string }[]) => {
+        if (!live || !Array.isArray(list) || list.length === 0) return;
+        const bySlot = new Map(list.map((m) => [m.slot, m]));
+        const merged = SHOWCASE_MODELS.map((d, i) => {
+          const m = bySlot.get(i + 1);
+          return m ? { file: m.file, caption: m.caption, v: m.updated } : { ...d, v: "" };
+        });
+        for (const m of list) {
+          if (m.slot > SHOWCASE_MODELS.length) merged.push({ file: m.file, caption: m.caption, v: m.updated });
+        }
+        setModels(merged);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   return (
     <div className="home">
       <style>{STYLE}</style>
@@ -332,11 +356,11 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
         <section className="homeSection">
           <h2>{t("Made with Litogen")}</h2>
           <p className="sub">{t("Models from the studio. Drag to turn them; click one, then scroll to zoom.")}</p>
-          <div className={`homeGallery ${SHOWCASE_MODELS.length === 4 ? "four" : ""}`}>
-            {SHOWCASE_MODELS.map((m) => (
+          <div className={`homeGallery ${models.length === 4 ? "four" : ""}`}>
+            {models.map((m) => (
               <figure key={m.file} style={{ margin: 0 }}>
                 <Suspense fallback={<div className="homePic" style={{ aspectRatio: "4 / 3" }} />}>
-                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}`} color={m.color} />
+                  <ModelViewer src={`${import.meta.env.BASE_URL}home/${m.file}${m.v ? `?v=${encodeURIComponent(m.v)}` : ""}`} color={"color" in m ? (m as { color?: string }).color : undefined} />
                 </Suspense>
                 <figcaption className="homeCap">{t(m.caption)}</figcaption>
               </figure>

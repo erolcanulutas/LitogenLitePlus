@@ -61,7 +61,7 @@ import { drawGoogleButton, signInOutcome } from "./core/google";
 /* -------------------------------------------------------------
  * BRAND FONT & STYLES
  * ------------------------------------------------------------- */
-const BRAND_STYLE = `
+export const BRAND_STYLE = `
 :root {
   --k-brand-ink: linear-gradient(135deg, #fff 0%, #a5f3fc 100%);
 }
