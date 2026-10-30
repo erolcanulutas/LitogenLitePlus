@@ -3,6 +3,7 @@ import { BRAND_STYLE } from "../App";
 import { signIn, signOut, whoAmI, type Account } from "../core/account";
 import { bendRadius } from "../core/bend";
 import type { DecorGeom, Decoration } from "../core/decor";
+import { DEFAULT_GAP, clusterColors } from "../core/palette";
 import { PICTURE_SEAT_MM, assembleHolder, holderInPlace, holderLayout, legSpacingFor } from "../core/holder";
 import { pictureMatrix } from "../core/pocket";
 import STLWorker from "../worker/stl.worker?worker";
@@ -56,9 +57,19 @@ type Settings = {
   hidden: boolean;
   /** Where the camera starts on the home page. */
   view: { az: number; el: number; zoom: number };
+  /** A frame with its stand, or the picture's model on its own. */
+  mode: "frame" | "print";
+  /** How the picture is made: a lithophane, tones standing at their own heights, or colours set side by side. */
+  surface: "lithophane" | "layered" | "inlay";
+  /** How many tones a layered or inlay picture has. */
+  tones: number;
+  /** The tones' colours, darkest first. */
+  toneColors: string[];
+  /** The colour under an inlay's tones. */
+  inlayBase: string;
   caption: string;
 };
-const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, view: { az: -27, el: 21, zoom: 1 }, caption: "" };
+const DEFAULTS: Settings = { shape: "rectangle", widthMm: 90, heightMm: 70, curveDeg: 0, border: 10, angle: 85, corner: 0, color: "#d9b77a", iconColours: 0, tealight: 38, relief: 1, fit: 0.2, play: 0.05, flushClear: 0, rotate: true, hidden: false, view: { az: -27, el: 21, zoom: 1 }, mode: "frame", surface: "lithophane", tones: 3, toneColors: ["#111827", "#6b7280", "#d1d5db", "#f2f2f2", "#fde68a", "#fca5a5"], inlayBase: "#f2f2f2", caption: "" };
 
 type ModelEntry = { slot: number; file: string; caption: string; updated: string; color?: string };
 type TemplateEntry = { id: string; name: string; items: TemplateItem[]; updated: string };
@@ -148,7 +159,16 @@ export default function LabApp() {
   const [busy, setBusy] = useState(false);
   const [pasteText, setPasteText] = useState("");
   /** The picture's lithophane, built for the frame as it is, and laid in its pocket. */
-  const [picture, setPicture] = useState<{ positions: Float32Array; triangleCount: number; key: string } | null>(null);
+  const [picture, setPicture] = useState<{
+    /** Laid in the frame's pocket. */
+    positions: Float32Array;
+    /** On its own, turned to face the front. */
+    raw: Float32Array;
+    triangleCount: number;
+    key: string;
+    /** Where each body starts, in triangles. */
+    bands: number[];
+  } | null>(null);
   const [pictureBusy, setPictureBusy] = useState(false);
   const pictureInput = useRef<HTMLInputElement>(null);
   const pictureFile = useRef<File | null>(null);
@@ -245,8 +265,10 @@ export default function LabApp() {
 
   /** What the picture's place depends on: if any of it changes, the picture has to be built again. */
   const pictureKey = JSON.stringify([
-    settings.shape, settings.widthMm, height, settings.curveDeg, settings.border, settings.angle, settings.play,
-    +L.W.toFixed(3), +L.H.toFixed(3), +L.socketDepth.toFixed(3), +L.lift.toFixed(3), params.tiltDeg,
+    settings.shape, settings.widthMm, height, settings.curveDeg, settings.surface, settings.tones, settings.mode,
+    ...(settings.mode === "frame"
+      ? [settings.border, settings.angle, settings.play, +L.W.toFixed(3), +L.H.toFixed(3), +L.socketDepth.toFixed(3), +L.lift.toFixed(3), params.tiltDeg]
+      : []),
   ]);
   const pictureFits = picture !== null && picture.key === pictureKey;
 
@@ -258,13 +280,49 @@ export default function LabApp() {
     const placed = holderInPlace(a.mesh, params.tiltDeg, L.socketDepth, L.W / 2);
     const stand = buildStand({ tealight: settings.tealight, prongSpacing: spacing });
     const pic = pictureFits ? picture : null;
+    // The colours of the picture's bodies, whichever way it is made.
+    const bodyColours = (n: number): string[] => {
+      if (settings.surface === "layered") {
+        const ramp = settings.toneColors.slice(0, settings.tones).reverse();
+        return Array.from({ length: n }, (_, i) => ramp[Math.min(i, ramp.length - 1)] ?? "#f6f1e7");
+      }
+      if (settings.surface === "inlay") {
+        const all = [settings.inlayBase, ...settings.toneColors.slice(0, settings.tones)];
+        return Array.from({ length: n }, (_, i) => all[Math.min(i, all.length - 1)]);
+      }
+      return Array.from({ length: n }, () => "#f6f1e7");
+    };
+
+    // A picture on its own is the whole model: stood up, turned to face the front.
+    if (settings.mode === "print") {
+      const faceFront = pic ? new Float32Array(pic.raw.length) : new Float32Array(0);
+      if (pic) {
+        for (let i = 0; i < faceFront.length; i += 3) {
+          faceFront[i] = -pic.raw[i];
+          faceFront[i + 1] = -pic.raw[i + 1];
+          faceFront[i + 2] = pic.raw[i + 2];
+        }
+      }
+      return {
+        positions: faceFront,
+        triangleCount: pic ? pic.triangleCount : 0,
+        bandStarts: pic ? pic.bands : [0],
+        colors: pic ? bodyColours(pic.bands.length) : [settings.color],
+        faceAxis: [0, 1, 0],
+      } as PreviewMesh;
+    }
+
     const positions = new Float32Array(placed.positions.length + stand.positions.length + (pic ? pic.positions.length : 0));
     positions.set(placed.positions, 0);
     positions.set(stand.positions, placed.positions.length);
     if (pic) {
       positions.set(pic.positions, placed.positions.length + stand.positions.length);
-      starts.push(placed.triangleCount + stand.triangleCount);
-      colours.push("#f6f1e7");
+      const at = placed.triangleCount + stand.triangleCount;
+      const own = bodyColours(pic.bands.length);
+      pic.bands.forEach((b, i) => {
+        starts.push(at + b);
+        colours.push(own[i]);
+      });
     }
     const tilt = (params.tiltDeg * Math.PI) / 180;
     const mesh: PreviewMesh = {
@@ -275,7 +333,7 @@ export default function LabApp() {
       faceAxis: [0, Math.cos(tilt), Math.sin(tilt)],
     };
     return mesh;
-  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight, picture, pictureFits]);
+  }, [params, decor, L.socketDepth, L.W, spacing, settings.color, settings.tealight, settings.mode, settings.surface, settings.tones, settings.toneColors, settings.inlayBase, picture, pictureFits]);
 
   // -- decorations ------------------------------------------------------------
   const add = (d: Decoration) => {
@@ -385,8 +443,9 @@ export default function LabApp() {
     setNote("Building the picture…");
     try {
       // A flat picture is built at half size and stretched, which is a quarter of the
-      // triangles; a curved one has to be built as it is.
-      const k = settings.curveDeg > 0 ? 1 : 2;
+      // triangles (its thickness is not stretched); a curved one is built as it is.
+      const surface = settings.surface;
+      const k = settings.curveDeg === 0 ? 2 : 1;
       const buildW = Math.max(1, settings.widthMm - 0.5);
       const bw = buildW / k;
       const bh = bw * (height / settings.widthMm);
@@ -404,12 +463,35 @@ export default function LabApp() {
       ctx.drawImage(bmp, (cw - bmp.width * cover) / 2, (ch - bmp.height * cover) / 2, bmp.width * cover, bmp.height * cover);
       const image = ctx.getImageData(0, 0, cw, ch);
 
+      // What each way of making the picture asks of the generator.
+      const n = Math.max(2, Math.min(6, settings.tones));
+      let way: Record<string, unknown> = { levels: 0, splitHeightsMm: [], toneHeightsMm: [], toneCuts: [], colors: ["#ffffff"], vector: false };
+      let frameMm = 1.5;
+      if (surface === "layered") {
+        // One body per tone: tones stand at evenly spaced heights, the darkest highest,
+        // and a body ends halfway between two tones.
+        const range = 3 - 0.8;
+        const plateaus = Array.from({ length: n }, (_, band) => 3 - ((band + 0.5) / n) * range).sort((a, b) => a - b);
+        const bounds = plateaus.slice(1).map((p, i) => +((p + plateaus[i]) / 2).toFixed(4));
+        way = { levels: n, splitHeightsMm: bounds, toneHeightsMm: [], toneCuts: [], colors: Array(n).fill("#cccccc"), vector: true };
+        frameMm = 0;
+      } else if (surface === "inlay") {
+        const found = clusterColors(image, n, DEFAULT_GAP);
+        // The tones the picture really has, darkest first; they become the tone colours.
+        setSettings((s) => ({ ...s, toneColors: [...found.colors, ...s.toneColors.slice(found.colors.length)] }));
+        way = {
+          levels: n, splitHeightsMm: [], toneHeightsMm: [], toneCuts: [], colors: ["#f2f2f2", ...found.colors], vector: true,
+          inlayBaseLayers: 6, inlayTopLayers: 4, toneCentres: found.lab,
+        };
+        frameMm = 0;
+      }
+
       if (!workerRef.current) workerRef.current = new STLWorker();
       const w = workerRef.current;
-      const result = await new Promise<{ preview: ArrayBuffer; previewTriangles: number }>((resolve, reject) => {
+      const result = await new Promise<{ preview: ArrayBuffer; previewTriangles: number; previewBands: number[] }>((resolve, reject) => {
         const handler = (e: MessageEvent) => {
           w.removeEventListener("message", handler);
-          if (e.data.ok) resolve({ preview: e.data.preview, previewTriangles: e.data.previewTriangles });
+          if (e.data.ok) resolve({ preview: e.data.preview, previewTriangles: e.data.previewTriangles, previewBands: e.data.previewBands });
           else reject(new Error(String(e.data.error)));
         };
         w.addEventListener("message", handler);
@@ -421,19 +503,14 @@ export default function LabApp() {
           heightMm: +bh.toFixed(4),
           minT: 0.8,
           maxT: 3,
-          frameMm: 1.5,
+          frameMm,
           quality: "draft",
           smoothing: 1,
-          levels: 0,
           orientation: "vertical",
           curveDeg: settings.curveDeg > 0 ? settings.curveDeg : 0,
-          splitHeightsMm: [],
-          toneHeightsMm: [],
-          toneCuts: [],
-          colors: ["#ffffff"],
           layerHeight: 0.2,
           emboss: "back",
-          vector: false,
+          ...way,
         });
       });
 
@@ -445,6 +522,7 @@ export default function LabApp() {
           pos[i + 2] *= k;
         }
       }
+      const raw = new Float32Array(pos);
       const m = pictureMatrix(
         { positions: pos, triangleCount: result.previewTriangles, faceAxis: [0, -1, 0] },
         { x: L.W / 2, y: (L.pocket.y0 + L.pocket.y1) / 2 },
@@ -459,7 +537,7 @@ export default function LabApp() {
         pos[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
         pos[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
       }
-      setPicture({ positions: pos, triangleCount: result.previewTriangles, key: pictureKey });
+      setPicture({ positions: pos, raw, triangleCount: result.previewTriangles, key: pictureKey, bands: result.previewBands?.length ? result.previewBands : [0] });
       setNote(`The picture is in the frame (${result.previewTriangles.toLocaleString()} triangles).`);
     } catch (e) {
       setNote(e instanceof Error ? e.message : "Could not build the picture");
@@ -655,6 +733,12 @@ export default function LabApp() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+              <label style={cell}>Model
+                <select className="spinInput" value={settings.mode} onChange={(e) => setSettings({ ...settings, mode: e.target.value as Settings["mode"] })}>
+                  <option value="frame">Frame and stand</option>
+                  <option value="print">The picture on its own</option>
+                </select>
+              </label>
               <label style={cell}>Shape
                 <select className="spinInput" value={settings.shape} onChange={(e) => setSettings({ ...settings, shape: e.target.value as Shape })}>
                   <option value="rectangle">Rectangle</option>
@@ -740,7 +824,8 @@ export default function LabApp() {
               <span style={{ fontSize: 12, opacity: 0.6 }}>Ctrl+Z / Ctrl+Y · arrows nudge the selected icon (Shift: more) · Delete removes it</span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: settings.mode === "frame" ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)", gap: 12 }}>
+              {settings.mode === "frame" && (
               <div style={{ height: 460, position: "relative", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, overflow: "hidden" }}>
                 <HolderDesigner
                   width={L.W}
@@ -756,6 +841,7 @@ export default function LabApp() {
                   onSelect={setSelected}
                 />
               </div>
+              )}
               <div style={{ height: 460, position: "relative", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, overflow: "hidden" }}>
                 <React.Suspense fallback={null}>
                   <MeshPreview mesh={built} flatShading={false} lightBackground={false} showGrid={false} />
@@ -779,6 +865,7 @@ export default function LabApp() {
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+              {settings.mode === "frame" ? (
               <div>
                 {selected !== null && decorations[selected] ? (
                   <DecorProps
@@ -804,6 +891,7 @@ export default function LabApp() {
                 <div style={{ height: 10 }} />
                 <IconPalette onAdd={addIcon} onAddText={addText} />
               </div>
+              ) : <div />}
 
               <div style={{ display: "grid", gap: 10, alignContent: "start" }}>
                 {isSlot ? (
@@ -853,7 +941,35 @@ export default function LabApp() {
                     <button className="btn" style={{ padding: "2px 8px" }} onClick={() => removeTemplate(tpl.id)}>✕</button>
                   </div>
                 ))}
-                <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>Picture in the frame</div>
+                <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>{settings.mode === "frame" ? "Picture in the frame" : "The picture"}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <label style={cell}>Made as
+                    <select className="spinInput" value={settings.surface} onChange={(e) => setSettings({ ...settings, surface: e.target.value as Settings["surface"] })}>
+                      <option value="lithophane">Lithophane</option>
+                      <option value="layered">Layered</option>
+                      <option value="inlay">Inlay</option>
+                    </select>
+                  </label>
+                  {settings.surface !== "lithophane" && (
+                    <label style={cell}>Tones (2–6)
+                      <input className="spinInput" type="number" min={2} max={6} value={settings.tones} onChange={(e) => setSettings({ ...settings, tones: Math.max(2, Math.min(6, +e.target.value || 3)) })} />
+                    </label>
+                  )}
+                </div>
+                {settings.surface !== "lithophane" && (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+                    <span style={{ opacity: 0.7 }}>Tones, darkest first:</span>
+                    {Array.from({ length: settings.tones }, (_, i) => (
+                      <input key={i} type="color" value={settings.toneColors[i] ?? "#888888"} onChange={(e) => setSettings({ ...settings, toneColors: settings.toneColors.map((c, j) => (j === i ? e.target.value : c)) })} style={{ width: 34, height: 28, padding: 0, background: "transparent", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 6 }} />
+                    ))}
+                    {settings.surface === "inlay" && (
+                      <>
+                        <span style={{ opacity: 0.7, marginLeft: 8 }}>Under them:</span>
+                        <input type="color" value={settings.inlayBase} onChange={(e) => setSettings({ ...settings, inlayBase: e.target.value })} style={{ width: 34, height: 28, padding: 0, background: "transparent", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 6 }} />
+                      </>
+                    )}
+                  </div>
+                )}
                 <input
                   ref={pictureInput}
                   type="file"
@@ -873,14 +989,16 @@ export default function LabApp() {
                     {pictureBusy ? "Building…" : picture ? "Choose another photo…" : "Choose a photo…"}
                   </button>
                   {picture && !pictureFits && pictureFile.current && (
-                    <button className="btn" disabled={pictureBusy} onClick={() => void buildPicture(pictureFile.current!)}>Build it again for this frame</button>
+                    <button className="btn" disabled={pictureBusy} onClick={() => void buildPicture(pictureFile.current!)}>Build it again</button>
                   )}
                   {picture && <button className="btn" onClick={() => setPicture(null)}>Remove the picture</button>}
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.7 }}>
                   {picture && !pictureFits
-                    ? "The frame changed since the picture was built, so it is left out until it is built again."
-                    : "The photo is made into a lithophane that fits this frame, and sits in it in the model that is saved."}
+                    ? "Something the picture depends on changed since it was built, so it is left out until it is built again."
+                    : settings.surface === "lithophane"
+                      ? "The photo is made into a lithophane that fits this frame, and sits in it in the model that is saved."
+                      : "The picture is traced into tones: the tones take the colours above, and for an inlay start as the picture's own."}
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
