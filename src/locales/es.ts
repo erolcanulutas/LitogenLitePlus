@@ -498,4 +498,6 @@ export const es: Record<string, string> = {
   "Hexagon frame": "Marco hexagonal",
   "Curved frame": "Marco curvo",
   "Round frame": "Marco redondo",
+  "The faces of the IcosaLume lamp are triangles, twenty of them. Small and Large set the size of one face.": "Las caras de la lámpara IcosaLume son triángulos, veinte en total. Small y Large fijan el tamaño de una cara.",
+  "The faces of the DodecaLume lamp are pentagons, twelve of them. Small and Large set the size of one face.": "Las caras de la lámpara DodecaLume son pentágonos, doce en total. Small y Large fijan el tamaño de una cara.",
 };

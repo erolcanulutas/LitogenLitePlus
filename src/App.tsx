@@ -45,6 +45,7 @@ import { activeColours, parseFilaments, type Filament } from "./core/filaments";
 import { TEMPLATES } from "./core/templates";
 import TemplateLab from "./ui/TemplateLab";
 import Landing from "./ui/Landing";
+import { MAKERWORLD_URL } from "./ui/homeContent";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
 import { buildStand } from "./core/stand";
@@ -3408,6 +3409,8 @@ export default function App() {
             </div>
           )}
 
+          {(shapeId === "triangle" || shapeId === "pentagon") && (
+            <>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button
               className="btn"
@@ -3427,7 +3430,7 @@ export default function App() {
                 }
                 resetThicknessDefaults();
               }}
-            >{t("Small")}</button>
+            >{shapeId === "triangle" ? "Small Icosalume" : "Small Dodecalume"}</button>
 
             <button
               className="btn"
@@ -3447,8 +3450,18 @@ export default function App() {
                 }
                 resetThicknessDefaults();
               }}
-            >{t("Large")}</button>
+            >{shapeId === "triangle" ? "Large Icosalume" : "Large Dodecalume"}</button>
           </div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8, lineHeight: 1.45 }}>
+                {shapeId === "triangle"
+                  ? t("The faces of the IcosaLume lamp are triangles, twenty of them. Small and Large set the size of one face.")
+                  : t("The faces of the DodecaLume lamp are pentagons, twelve of them. Small and Large set the size of one face.")}{" "}
+                <a href={MAKERWORLD_URL} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>
+                  {t("See the Lume series on MakerWorld")} ↗
+                </a>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="section">

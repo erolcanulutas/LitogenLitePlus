@@ -498,4 +498,6 @@ export const fr: Record<string, string> = {
   "Hexagon frame": "Cadre hexagonal",
   "Curved frame": "Cadre courbe",
   "Round frame": "Cadre rond",
+  "The faces of the IcosaLume lamp are triangles, twenty of them. Small and Large set the size of one face.": "Les faces de la lampe IcosaLume sont des triangles, au nombre de vingt. Small et Large fixent la taille d'une face.",
+  "The faces of the DodecaLume lamp are pentagons, twelve of them. Small and Large set the size of one face.": "Les faces de la lampe DodecaLume sont des pentagones, au nombre de douze. Small et Large fixent la taille d'une face.",
 };

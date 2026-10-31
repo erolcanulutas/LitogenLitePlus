@@ -498,4 +498,6 @@ export const de: Record<string, string> = {
   "Hexagon frame": "Sechseck-Rahmen",
   "Curved frame": "Gekrümmter Rahmen",
   "Round frame": "Runder Rahmen",
+  "The faces of the IcosaLume lamp are triangles, twenty of them. Small and Large set the size of one face.": "Die Flächen der IcosaLume-Lampe sind Dreiecke, zwanzig an der Zahl. Small und Large legen die Größe einer Fläche fest.",
+  "The faces of the DodecaLume lamp are pentagons, twelve of them. Small and Large set the size of one face.": "Die Flächen der DodecaLume-Lampe sind Fünfecke, zwölf an der Zahl. Small und Large legen die Größe einer Fläche fest.",
 };

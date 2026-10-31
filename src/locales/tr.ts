@@ -498,4 +498,6 @@ export const tr: Record<string, string> = {
   "Hexagon frame": "Altıgen çerçeve",
   "Curved frame": "Kavisli çerçeve",
   "Round frame": "Yuvarlak çerçeve",
+  "The faces of the IcosaLume lamp are triangles, twenty of them. Small and Large set the size of one face.": "IcosaLume lambasının yüzleri üçgendir, yirmi tane. Small ve Large bir yüzün boyutunu ayarlar.",
+  "The faces of the DodecaLume lamp are pentagons, twelve of them. Small and Large set the size of one face.": "DodecaLume lambasının yüzleri beşgendir, on iki tane. Small ve Large bir yüzün boyutunu ayarlar.",
 };
