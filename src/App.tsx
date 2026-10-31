@@ -43,6 +43,7 @@ import Landing from "./ui/Landing";
 import HistoryPanel from "./ui/HistoryPanel";
 import { exportFrame, exportStand, type FrameInputs } from "./core/frameBuild";
 import { entryId, hashFile, readHistory, writeHistory, type HistoryEntry, type StudioSnapshot } from "./core/history";
+import { findPicture, forgetPictures, havePictures, keepPicture } from "./core/pictureStore";
 import { MAKERWORLD_URL } from "./ui/homeContent";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
@@ -50,7 +51,7 @@ import { buildStand } from "./core/stand";
 import { PRONG } from "./core/prong";
 import { writeBinarySTL } from "./core/stl_writer";
 import {
-  OutOfTokens, deleteDesignRemote, listDesigns, loadFilaments, saveDesignRemote, signIn, signOut,
+  OutOfTokens, deleteDesignRemote, deleteHistoryRemote, listHistoryRemote, saveHistoryRemote, listDesigns, loadFilaments, saveDesignRemote, signIn, signOut,
   storeFilaments,
   signUp, spendForExport, spendForHolder, unlimited, whoAmI,
   type Account,
@@ -1705,6 +1706,8 @@ export default function App() {
   /** Fingerprint of the picture file, which says whether a picture chosen later is the same one. */
   const [pictureHash, setPictureHash] = useState("");
   const [workHistory, setWorkHistory] = useState<HistoryEntry[]>(readHistory);
+  /** Which past work has its picture on this computer. */
+  const [storedPictures, setStoredPictures] = useState<Set<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyNote, setHistoryNote] = useState<string | null>(null);
   /** A piece of work waiting for its picture to finish loading, to be put back as it was. */
@@ -2794,7 +2797,57 @@ export default function App() {
       editor: editorRef.current?.exportState() ?? null,
       frame,
     };
-    setWorkHistory((cur) => writeHistory([entry, ...cur.filter((e) => e.id !== id)]));
+    setWorkHistory((cur) => {
+      const next = [entry, ...cur.filter((e) => e.id !== id)].slice(0, 50);
+      if (!account) writeHistory(next);
+      return next;
+    });
+    // In the account when there is one, without the picture; the picture, if
+    // this browser may keep it, stays here.
+    if (account) {
+      saveHistoryRemote(id, entry).catch(() => {
+        // Too large with the paint on it: the rest is still worth keeping.
+        saveHistoryRemote(id, { ...entry, editor: entry.editor ? { ...entry.editor, paint: null } : null }).catch(() => {});
+      });
+    }
+    void keepPicture(pictureHash, file);
+  }
+
+  /** The past work of whoever is here: the account's, or this browser's when nobody is signed in. */
+  useEffect(() => {
+    if (!accountKnown) return;
+    let live = true;
+    (async () => {
+      if (!account) {
+        setWorkHistory(readHistory());
+        return;
+      }
+      try {
+        const cloud = (await listHistoryRemote()).map((r) => r.data as HistoryEntry);
+        // What was kept before signing in goes into the account.
+        const local = readHistory();
+        const moved = local.filter((l) => !cloud.some((c) => c.id === l.id));
+        for (const m of moved) await saveHistoryRemote(m.id, m).catch(() => {});
+        if (local.length > 0) writeHistory([]);
+        if (live) setWorkHistory([...cloud, ...moved].sort((a, b) => b.at - a.at));
+      } catch {
+        if (live) setWorkHistory(readHistory());
+      }
+    })();
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.email, accountKnown]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    void havePictures(workHistory.map((e) => e.fileHash)).then(setStoredPictures);
+  }, [historyOpen, workHistory]);
+
+  async function openStoredPicture(e: HistoryEntry) {
+    const stored = await findPicture(e.fileHash);
+    if (stored) void openHistoryEntry(e, stored);
   }
 
   /** Puts a piece of work back: the picture is the one just chosen, the rest is as it was. */
@@ -4915,7 +4968,20 @@ export default function App() {
           onDownloadFrame={downloadHistoryFrame}
           onDownloadStand={downloadHistoryStand}
           onOpen={openHistoryEntry}
-          onDelete={(e) => setWorkHistory((cur) => writeHistory(cur.filter((x) => x.id !== e.id)))}
+          storedPictures={storedPictures}
+          onOpenStored={openStoredPicture}
+          onForgetPictures={() => {
+            void forgetPictures().then(() => setStoredPictures(new Set()));
+          }}
+          signedIn={!!account}
+          onDelete={(e) => {
+            setWorkHistory((cur) => {
+              const next = cur.filter((x) => x.id !== e.id);
+              if (!account) writeHistory(next);
+              return next;
+            });
+            if (account) void deleteHistoryRemote(e.id).catch(() => {});
+          }}
         />
       )}
 

@@ -44,7 +44,7 @@ const HEADERS = {
 async function call(
   path: string,
   body?: unknown,
-): Promise<{ user?: Account | null; designs?: DesignRecord[]; filaments?: unknown[] }> {
+): Promise<{ user?: Account | null; designs?: DesignRecord[]; filaments?: unknown[]; entries?: { id: string; data: unknown }[] }> {
   let res: Response;
   try {
     res = await fetch(`/api/${path}`, {
@@ -63,6 +63,7 @@ async function call(
     user?: Account | null;
     designs?: DesignRecord[];
     filaments?: unknown[];
+    entries?: { id: string; data: unknown }[];
   } = {};
   try {
     data = await res.json();
@@ -164,6 +165,20 @@ export async function saveDesignRemote(name: string, data: unknown): Promise<voi
 
 export async function deleteDesignRemote(name: string): Promise<void> {
   await call("designs.php", { action: "delete", name });
+}
+
+/** Past work kept in the account: settings and the frame, never the picture. */
+export async function listHistoryRemote(): Promise<{ id: string; data: unknown }[]> {
+  const { entries } = await call("history.php");
+  return entries ?? [];
+}
+
+export async function saveHistoryRemote(id: string, data: unknown): Promise<void> {
+  await call("history.php", { action: "save", id, data });
+}
+
+export async function deleteHistoryRemote(id: string): Promise<void> {
+  await call("history.php", { action: "delete", id });
 }
 
 /** The filament colours this account has kept. */

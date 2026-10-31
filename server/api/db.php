@@ -196,6 +196,21 @@ function db(): PDO
         'CREATE UNIQUE INDEX IF NOT EXISTS design_name ON holder_designs (user_id, name)'
     );
 
+    // Past work an account keeps: the settings, the editor's crop and the frame,
+    // as JSON, and never a picture.
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS work_history (
+            id $auto,
+            user_id INTEGER NOT NULL,
+            entry_id VARCHAR(40) NOT NULL,
+            data LONGTEXT NOT NULL,
+            updated_at DATETIME NOT NULL
+        )$tail"
+    );
+    $pdo->exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS history_once ON work_history (user_id, entry_id)'
+    );
+
     // Holders an account has paid for, by a fingerprint of the design: a
     // second download of the same one is free. The fingerprint says nothing
     // about what the design is.

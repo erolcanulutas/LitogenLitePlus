@@ -510,4 +510,9 @@ export const de: Record<string, string> = {
   "Open with the picture…": "Mit dem Bild öffnen…",
   "Choose the same picture again to open it with these settings": "Wähle dasselbe Bild erneut, um es mit diesen Einstellungen zu öffnen",
   "Triangle": "Dreieck",
+  "Your past work, kept in your account without the pictures. The frame and the candle stand download straight from here. A picture stays on the computer it was used on: there it opens again by itself, anywhere else choose the same picture again.": "Deine bisherige Arbeit, ohne die Bilder in deinem Konto gespeichert. Rahmen und Kerzenständer lassen sich direkt von hier herunterladen. Ein Bild bleibt auf dem Computer, auf dem es verwendet wurde: dort öffnet es sich von selbst wieder, anderswo wähle dasselbe Bild erneut.",
+  "Your past work, kept in this browser without the pictures. Sign in to keep it in your account. The frame and the candle stand download straight from here; for the picture's own model, choose the same picture again.": "Deine bisherige Arbeit, ohne die Bilder in diesem Browser gespeichert. Melde dich an, um sie in deinem Konto zu behalten. Rahmen und Kerzenständer lassen sich direkt von hier herunterladen; für das Modell des Bildes wähle dasselbe Bild erneut.",
+  "Open": "Öffnen",
+  "The picture is still on this computer": "Das Bild ist noch auf diesem Computer",
+  "Forget the pictures kept on this computer": "Auf diesem Computer gespeicherte Bilder vergessen",
 };

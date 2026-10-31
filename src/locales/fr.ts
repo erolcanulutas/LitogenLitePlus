@@ -510,4 +510,9 @@ export const fr: Record<string, string> = {
   "Open with the picture…": "Ouvrir avec l'image…",
   "Choose the same picture again to open it with these settings": "Choisissez à nouveau la même image pour l'ouvrir avec ces réglages",
   "Triangle": "Triangle",
+  "Your past work, kept in your account without the pictures. The frame and the candle stand download straight from here. A picture stays on the computer it was used on: there it opens again by itself, anywhere else choose the same picture again.": "Votre travail passé, conservé dans votre compte sans les images. Le cadre et le support de bougie se téléchargent directement ici. Une image reste sur l'ordinateur où elle a servi : elle s'y rouvre toute seule, ailleurs choisissez à nouveau la même image.",
+  "Your past work, kept in this browser without the pictures. Sign in to keep it in your account. The frame and the candle stand download straight from here; for the picture's own model, choose the same picture again.": "Votre travail passé, conservé dans ce navigateur sans les images. Connectez-vous pour le garder dans votre compte. Le cadre et le support de bougie se téléchargent directement ici ; pour le modèle de l'image, choisissez à nouveau la même image.",
+  "Open": "Ouvrir",
+  "The picture is still on this computer": "L'image est toujours sur cet ordinateur",
+  "Forget the pictures kept on this computer": "Oublier les images conservées sur cet ordinateur",
 };

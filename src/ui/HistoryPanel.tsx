@@ -11,6 +11,13 @@ type Props = {
   onOpen: (entry: HistoryEntry, file: File) => void;
   onDelete: (entry: HistoryEntry) => void;
   note?: string | null;
+  /** The past work whose picture this computer still has. */
+  storedPictures: Set<string>;
+  /** Open it with the picture this computer has kept. */
+  onOpenStored: (entry: HistoryEntry) => void;
+  onForgetPictures: () => void;
+  /** Kept in the account, or in this browser only. */
+  signedIn: boolean;
 };
 
 const SHAPE_LABELS: Record<string, string> = {
@@ -26,7 +33,7 @@ const SHAPE_LABELS: Record<string, string> = {
  * the frame and its candle stand can be downloaded at once, and the picture's
  * own model needs the same picture chosen again — which is checked.
  */
-export default function HistoryPanel({ entries, onClose, onDownloadFrame, onDownloadStand, onOpen, onDelete, note }: Props) {
+export default function HistoryPanel({ entries, onClose, onDownloadFrame, onDownloadStand, onOpen, onDelete, note, storedPictures, onOpenStored, onForgetPictures, signedIn }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const [target, setTarget] = useState<HistoryEntry | null>(null);
 
@@ -42,7 +49,9 @@ export default function HistoryPanel({ entries, onClose, onDownloadFrame, onDown
       <div className="modalCard" style={{ width: "min(640px, 94vw)", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div className="modalTitle">{t("History")}</div>
         <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 10 }}>
-          {t("Your past work, kept in this browser without the pictures. The frame and the candle stand download straight from here; for the picture's own model, choose the same picture again.")}
+          {signedIn
+            ? t("Your past work, kept in your account without the pictures. The frame and the candle stand download straight from here. A picture stays on the computer it was used on: there it opens again by itself, anywhere else choose the same picture again.")
+            : t("Your past work, kept in this browser without the pictures. Sign in to keep it in your account. The frame and the candle stand download straight from here; for the picture's own model, choose the same picture again.")}
         </div>
 
         <input
@@ -73,18 +82,24 @@ export default function HistoryPanel({ entries, onClose, onDownloadFrame, onDown
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button className="btn" style={{ padding: "3px 10px" }} onClick={() => void onDownloadFrame(e)}>{t("Download frame")}</button>
                 <button className="btn" style={{ padding: "3px 10px" }} onClick={() => onDownloadStand(e)}>{t("Download candle stand")}</button>
-                <button
-                  className="btn"
-                  style={{ padding: "3px 10px" }}
-                  disabled={!e.fileHash}
-                  title={t("Choose the same picture again to open it with these settings")}
-                  onClick={() => {
-                    setTarget(e);
-                    input.current?.click();
-                  }}
-                >
-                  {t("Open with the picture…")}
-                </button>
+                {storedPictures.has(e.fileHash) ? (
+                  <button className="btn" style={{ padding: "3px 10px" }} title={t("The picture is still on this computer")} onClick={() => onOpenStored(e)}>
+                    {t("Open")}
+                  </button>
+                ) : (
+                  <button
+                    className="btn"
+                    style={{ padding: "3px 10px" }}
+                    disabled={!e.fileHash}
+                    title={t("Choose the same picture again to open it with these settings")}
+                    onClick={() => {
+                      setTarget(e);
+                      input.current?.click();
+                    }}
+                  >
+                    {t("Open with the picture…")}
+                  </button>
+                )}
                 <button className="btn" style={{ padding: "3px 10px", marginLeft: "auto" }} onClick={() => onDelete(e)} title={t("Delete")}>✕</button>
               </div>
             </div>
@@ -92,6 +107,11 @@ export default function HistoryPanel({ entries, onClose, onDownloadFrame, onDown
         </div>
 
         {note && <div style={{ fontSize: 13, marginTop: 10 }}>{note}</div>}
+        {storedPictures.size > 0 && (
+          <button className="btn" style={{ marginTop: 10, padding: "3px 10px", fontSize: 12 }} onClick={onForgetPictures}>
+            {t("Forget the pictures kept on this computer")}
+          </button>
+        )}
         <div className="modalActions" style={{ marginTop: 14 }}>
           <button className="btn" onClick={onClose}>{t("Close")}</button>
         </div>

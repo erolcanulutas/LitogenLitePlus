@@ -510,4 +510,9 @@ export const tr: Record<string, string> = {
   "Open with the picture…": "Resimle aç…",
   "Choose the same picture again to open it with these settings": "Bu ayarlarla açmak için aynı resmi yeniden seçin",
   "Triangle": "Üçgen",
+  "Your past work, kept in your account without the pictures. The frame and the candle stand download straight from here. A picture stays on the computer it was used on: there it opens again by itself, anywhere else choose the same picture again.": "Geçmiş çalışmalarınız, resimler olmadan hesabınızda saklanır. Çerçeve ve mum standı doğrudan buradan indirilir. Resim, kullanıldığı bilgisayarda kalır: orada kendiliğinden yeniden açılır, başka yerde aynı resmi yeniden seçmeniz gerekir.",
+  "Your past work, kept in this browser without the pictures. Sign in to keep it in your account. The frame and the candle stand download straight from here; for the picture's own model, choose the same picture again.": "Geçmiş çalışmalarınız, resimler olmadan bu tarayıcıda saklanır. Hesabınızda saklamak için giriş yapın. Çerçeve ve mum standı doğrudan buradan indirilir; resmin kendi modeli için aynı resmi yeniden seçin.",
+  "Open": "Aç",
+  "The picture is still on this computer": "Resim hâlâ bu bilgisayarda",
+  "Forget the pictures kept on this computer": "Bu bilgisayarda saklanan resimleri unut",
 };
