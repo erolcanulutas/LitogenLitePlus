@@ -23,17 +23,12 @@ import {
 import {
   assembleHolder,
   legSpacingFor,
-  buildHolder,
-  holderForPrinting,
   holderInPlace,
   holderLayout,
-  holderStanding,
   PICTURE_SEAT_MM,
 } from "./core/holder";
 import type { DecorGeom, Decoration, Relief, ReliefMode } from "./core/decor";
-import { writeColored3MF } from "./core/3mf_writer";
 import type { CutLoop, Recess } from "./core/holder";
-import type { Mesh } from "./core/mesh";
 import { pictureMatrix } from "./core/pocket";
 import { shapeOutline, type OutlineShape } from "./core/outline";
 import { bendRadius } from "./core/bend";
@@ -45,6 +40,9 @@ import { activeColours, parseFilaments, type Filament } from "./core/filaments";
 import { TEMPLATES } from "./core/templates";
 import TemplateLab from "./ui/TemplateLab";
 import Landing from "./ui/Landing";
+import HistoryPanel from "./ui/HistoryPanel";
+import { exportFrame, exportStand, type FrameInputs } from "./core/frameBuild";
+import { entryId, hashFile, readHistory, writeHistory, type HistoryEntry, type StudioSnapshot } from "./core/history";
 import { MAKERWORLD_URL } from "./ui/homeContent";
 import NumField from "./ui/NumField";
 import { makeDecor } from "./ui/decorIcons";
@@ -1498,22 +1496,6 @@ function writeDesigns(list: SavedDesign[]) {
   }
 }
 
-/**
- * A short fingerprint of a design: what it is made of, not how it was asked for.
- * The same holder always gives the same one, which is how a second download is
- * known for the same holder.
- */
-async function designFingerprint(positions: Float32Array, extra: string): Promise<string> {
-  const tail = new TextEncoder().encode(extra);
-  const head = new Uint8Array(positions.buffer, positions.byteOffset, positions.byteLength);
-  const all = new Uint8Array(head.length + tail.length);
-  all.set(head, 0);
-  all.set(tail, head.length);
-  const digest = await crypto.subtle.digest("SHA-256", all);
-  return Array.from(new Uint8Array(digest).slice(0, 16))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function downloadArrayBuffer(buf: ArrayBuffer, filename: string) {
   const blob = new Blob([buf], { type: "application/octet-stream" });
@@ -1720,6 +1702,13 @@ export default function App() {
   const cropRatio = shape.freeRatio ? boxRatio : shape.cropRatio;
 
   const [file, setFile] = useState<File | null>(null);
+  /** Fingerprint of the picture file, which says whether a picture chosen later is the same one. */
+  const [pictureHash, setPictureHash] = useState("");
+  const [workHistory, setWorkHistory] = useState<HistoryEntry[]>(readHistory);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyNote, setHistoryNote] = useState<string | null>(null);
+  /** A piece of work waiting for its picture to finish loading, to be put back as it was. */
+  const pendingEntry = useRef<HistoryEntry | null>(null);
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
   const [imgData, setImgData] = useState<ImageData | null>(null);
 
@@ -2410,6 +2399,8 @@ export default function App() {
    */
   function pickFile(next: File | null) {
     setFile(next);
+    setPictureHash("");
+    if (next) void hashFile(next).then((h) => setPictureHash(h));
     setStatusMsg(null);
     setPreviewMesh(null);
     setPreviewKey(null);
@@ -2754,13 +2745,148 @@ export default function App() {
    * The stand is free. The holder costs a token like any other export, spent
    * after it is built and before it is handed over, and the server decides.
    */
+  /** What the frame and its candle stand are made from, as the studio has it now. */
+  function frameInputsNow(): FrameInputs {
+    return {
+      shape: shapeId,
+      width: widthMm,
+      height: heightMm,
+      thickness: maxT,
+      curveDeg: curved ? curveDeg : 0,
+      angle: holderAngle,
+      border: holderBorder,
+      corner: holderCorner,
+      fit: holderFit,
+      play: holderPlay,
+      tealight: tealightMm,
+      relief: reliefMm,
+      reliefMode,
+      flushClearance,
+      iconColours,
+      frameColour,
+      pose: holderPose,
+      decorations,
+      palette: activeFilaments,
+    };
+  }
+
+  function studioNow(): StudioSnapshot {
+    return {
+      shapeId, widthMm, minT, maxT, frameMm, layerHeight, curved, curveDeg, orientation, graphic, inlayMode,
+      toneLevels, toneCuts, colors, splitLayers, quality, smoothing, vector, baseLayers, pictureLayers, colorGap,
+      bgColor, rotate, flipH, flipV, boxRatio,
+    };
+  }
+
+  /** Keeps this piece of work, without the picture, so it can be come back to from History. */
+  async function recordHistory() {
+    if (!file || !pictureHash) return;
+    const studio = studioNow();
+    const frame = frameInputsNow();
+    const id = await entryId(pictureHash, studio, frame);
+    const entry: HistoryEntry = {
+      id,
+      at: Date.now(),
+      name: file.name,
+      fileHash: pictureHash,
+      fileSize: file.size,
+      studio,
+      editor: editorRef.current?.exportState() ?? null,
+      frame,
+    };
+    setWorkHistory((cur) => writeHistory([entry, ...cur.filter((e) => e.id !== id)]));
+  }
+
+  /** Puts a piece of work back: the picture is the one just chosen, the rest is as it was. */
+  function applyEntry(e: HistoryEntry) {
+    const st = e.studio;
+    setShapeId(st.shapeId as ShapeId);
+    setWidthMm(st.widthMm);
+    setMinT(st.minT);
+    setMaxT(st.maxT);
+    setFrameMm(st.frameMm);
+    setLayerHeight(st.layerHeight);
+    setCurved(st.curved);
+    setCurveDeg(st.curveDeg);
+    setOrientation(st.orientation as "vertical" | "flat");
+    setGraphic(st.graphic);
+    setInlayMode(st.inlayMode);
+    setToneLevels(st.toneLevels);
+    setToneCuts(st.toneCuts);
+    setColors(st.colors);
+    setSplitLayers(st.splitLayers);
+    setQuality(st.quality as Quality);
+    setSmoothing(st.smoothing);
+    setVector(st.vector);
+    setBaseLayers(st.baseLayers);
+    setPictureLayers(st.pictureLayers);
+    setColorGap(st.colorGap);
+    setBgColor(st.bgColor);
+    setRotate(st.rotate);
+    setFlipH(st.flipH);
+    setFlipV(st.flipV);
+    setBoxRatio(st.boxRatio);
+
+    const f = e.frame;
+    setHolderAngle(f.angle);
+    setHolderBorder(f.border);
+    setHolderCorner(f.corner);
+    setHolderFit(f.fit);
+    setHolderPlay(f.play);
+    setTealightMm(f.tealight);
+    setReliefMm(f.relief);
+    setReliefMode(f.reliefMode);
+    setFlushClearance(f.flushClearance);
+    setIconColours(f.iconColours);
+    setFrameColour(f.frameColour);
+    setHolderPose(f.pose);
+    commitDecorations(f.decorations);
+    setDecorSelected(null);
+  }
+
+  // The picture of a past piece of work has been chosen again; once it has loaded, the work is put back.
+  useEffect(() => {
+    const e = pendingEntry.current;
+    if (!e || !imgEl) return;
+    pendingEntry.current = null;
+    applyEntry(e);
+    // After the editor has taken the new picture in.
+    setTimeout(() => {
+      if (e.editor) editorRef.current?.importState(e.editor);
+    }, 120);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imgEl]);
+
+  async function openHistoryEntry(e: HistoryEntry, picture: File) {
+    pendingEntry.current = e;
+    pickFile(picture);
+    setHistoryOpen(false);
+    setView("editor");
+  }
+
+  async function downloadHistoryFrame(e: HistoryEntry) {
+    setHistoryNote(null);
+    if (!account) {
+      setHistoryNote(t("Sign in to download the frame. New accounts get 5 credits."));
+      return;
+    }
+    if (!unlimited(account) && account.tokens < 1) {
+      setHistoryNote(t("You are out of credits."));
+      return;
+    }
+    const made = await exportFrame({ ...e.frame, palette: activeFilaments });
+    if (await payForHolder(made.ref)) downloadArrayBuffer(made.file, made.name);
+  }
+
+  function downloadHistoryStand(e: HistoryEntry) {
+    const made = exportStand(e.frame);
+    downloadArrayBuffer(made.file, made.name);
+  }
+
   async function downloadHolderPart(part: "holder" | "stand") {
     setHolderNote(null);
     if (part === "stand") {
-      downloadArrayBuffer(
-        writeBinarySTL(buildStand({ tealight: tealightMm, prongSpacing: legSpacing })),
-        "litogen-stand.stl",
-      );
+      downloadArrayBuffer(writeBinarySTL(buildStand({ tealight: tealightMm, prongSpacing: legSpacing })), "litogen-candle-stand.stl");
       return;
     }
 
@@ -2774,51 +2900,10 @@ export default function App() {
       return;
     }
 
-    let whole: Mesh;
-    let bodies: { start: number; color: string }[] = [];
-    if (decorations.length > 0) {
-      const made = await makeDecor(decorations, decorGeom, reliefMm, {
-        mode: reliefMode,
-        colours: iconColours,
-        palette: activeFilaments,
-      }, flushClearance);
-      const built = assembleHolder(holderParams, made.cuts, made.recess, made.relief);
-      whole = built.mesh;
-      bodies = built.bodies.map((g) => ({ start: g.start, color: g.color || frameColour }));
-    } else {
-      whole = buildHolder(holderParams);
-    }
-    const out =
-      holderPose === "standing"
-        ? holderStanding(whole, holderParams.tiltDeg)
-        : holderForPrinting(whole);
-
-    // Which design this is, apart from how it will be laid on the bed: the same
-    // holder in another pose is not another design.
-    const ref = await designFingerprint(
-      whole.positions.subarray(0, whole.triangleCount * 9),
-      `${iconColours > 0 && bodies.length > 0 ? "3mf" : "stl"}|${frameColour}|${bodies.map((b) => b.color).join(",")}`,
-    );
-
-    // Icons in their own colours need a file that can say so: the frame and
-    // each colour are separate bodies of one 3MF. The turning above keeps the
-    // triangles in the order they were built, so the runs are still the runs.
-    if (iconColours > 0 && bodies.length > 0) {
-      const file = await writeColored3MF(
-        {
-          positions: out.positions,
-          triangleCount: out.triangleCount,
-          bandStarts: [0, ...bodies.map((b) => b.start)],
-        },
-        [frameColour, ...bodies.map((b) => b.color)],
-      );
-      if (await payForHolder(ref)) {
-        downloadArrayBuffer(file, `litogen-frame-${holderAngle}deg.3mf`);
-      }
-      return;
-    }
-    if (await payForHolder(ref)) {
-      downloadArrayBuffer(writeBinarySTL(out), `litogen-frame-${holderAngle}deg.stl`);
+    const made = await exportFrame(frameInputsNow());
+    if (await payForHolder(made.ref)) {
+      downloadArrayBuffer(made.file, made.name);
+      void recordHistory();
     }
   }
 
@@ -3091,6 +3176,7 @@ export default function App() {
             result.file,
             `litogen-${baseName}.${result.extension}`,
           );
+          void recordHistory();
         }
 
         setStatusMsg({
@@ -3217,6 +3303,16 @@ export default function App() {
             )}
           </label>
 
+          <button
+            className="btn"
+            style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+            onClick={() => {
+              setHistoryNote(null);
+              setHistoryOpen(true);
+            }}
+          >
+            {t("History")}{workHistory.length > 0 ? ` (${workHistory.length})` : ""}
+          </button>
         </div>
 
         <div className="section">
@@ -3454,8 +3550,8 @@ export default function App() {
           </div>
               <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8, lineHeight: 1.45 }}>
                 {shapeId === "triangle"
-                  ? t("The faces of the IcosaLume lamp are triangles, twenty of them. Small and Large set the size of one face.")
-                  : t("The faces of the DodecaLume lamp are pentagons, twelve of them. Small and Large set the size of one face.")}{" "}
+                  ? t("The IcosaLume lamp is made of nineteen triangles and a base. Small and Large set the size of one triangle.")
+                  : t("The DodecaLume lamp is made of eleven pentagons and a base. Small and Large set the size of one pentagon.")}{" "}
                 <a href={MAKERWORLD_URL} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>
                   {t("See the Lume series on MakerWorld")} ↗
                 </a>
@@ -4810,6 +4906,18 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {historyOpen && (
+        <HistoryPanel
+          entries={workHistory}
+          note={historyNote}
+          onClose={() => setHistoryOpen(false)}
+          onDownloadFrame={downloadHistoryFrame}
+          onDownloadStand={downloadHistoryStand}
+          onOpen={openHistoryEntry}
+          onDelete={(e) => setWorkHistory((cur) => writeHistory(cur.filter((x) => x.id !== e.id)))}
+        />
+      )}
 
       {accountPanel && account && (
         <AccountPanel

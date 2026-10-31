@@ -72,6 +72,9 @@ export type ImageEditorHandle = {
   undoPaint: () => void;
   redoPaint: () => void;
   clearPaint: () => void;
+  /** The crop and what was painted, so work can be picked up again. */
+  exportState: () => { crop: { cx: number; cy: number; w: number; rot: number }; viewScale: number; paint: string | null };
+  importState: (state: { crop: { cx: number; cy: number; w: number; rot: number }; viewScale: number; paint: string | null }) => void;
 };
 
 type Props = {
@@ -230,6 +233,36 @@ const ImageEditor = forwardRef<ImageEditorHandle, Props>(
       reset: () => {
         setCrop(DEFAULT_CROP);
         setViewScale(1);
+      },
+      exportState: () => {
+        const layer = paintRef.current;
+        let paint: string | null = null;
+        const ctx = layer?.getContext("2d", { willReadFrequently: true });
+        if (layer && ctx) {
+          const px = ctx.getImageData(0, 0, layer.width, layer.height).data;
+          for (let i = 3; i < px.length; i += 4) {
+            if (px[i] !== 0) {
+              paint = layer.toDataURL("image/png");
+              break;
+            }
+          }
+        }
+        return { crop, viewScale, paint };
+      },
+      importState: (state) => {
+        setCrop(state.crop);
+        setViewScale(state.viewScale);
+        const layer = paintRef.current;
+        const ctx = layer?.getContext("2d", { willReadFrequently: true });
+        if (layer && ctx && state.paint) {
+          const img = new Image();
+          img.onload = () => {
+            ctx.clearRect(0, 0, layer.width, layer.height);
+            ctx.drawImage(img, 0, 0, layer.width, layer.height);
+            drawRef.current?.();
+          };
+          img.src = state.paint;
+        }
       },
       undoPaint: () => {
         const layer = paintRef.current;
