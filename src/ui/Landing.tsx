@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { LANGUAGES, setLang, setTextOverrides, t, useLang, type Lang } from "../i18n";
-import { CONTACT_EMAIL, HERO_IMAGES, MAKERWORLD_URL, MODELS, SHOWCASE_MODELS, type Showcase } from "./homeContent";
+import { CONTACT_EMAIL, HERO_IMAGES, MAKERWORLD_URL, SHOWCASE_MODELS } from "./homeContent";
 
 const ModelViewer = lazy(() => import("./ModelViewer"));
 
@@ -135,27 +135,6 @@ const STYLE = `
 }
 `;
 
-/** A photograph that may not be there yet: the box stays, with a note. */
-function Photo({ file, caption, className }: Showcase & { className?: string }) {
-  const [missing, setMissing] = useState(false);
-  return (
-    <figure style={{ margin: 0 }}>
-      <div className={`homePic ${className ?? ""}`}>
-        {!missing && (
-          <img
-            src={`${import.meta.env.BASE_URL}home/${file}`}
-            alt={t(caption)}
-            loading="lazy"
-            onError={() => setMissing(true)}
-          />
-        )}
-        {missing && <div className="hole">{t("Photo coming soon")}</div>}
-      </div>
-      {caption && <figcaption className="homeCap">{t(caption)}</figcaption>}
-    </figure>
-  );
-}
-
 /** The photographs at the top, one after another; they wait while the pointer is on them. */
 function HeroSlides() {
   const [at, setAt] = useState(0);
@@ -209,7 +188,7 @@ function HeroSlides() {
  * account, goes on to the studio; so does choosing to look around without one,
  * or opening a ready-made model.
  */
-export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: Props) {
+export default function Landing({ onSignIn, onSignUp, onStudio }: Props) {
   const lang = useLang();
   // The models on show: the built-in ones, with any that were made in the lab
   // standing in for the slot of the same number.
@@ -218,14 +197,6 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
     fetch(`${import.meta.env.BASE_URL}home/models/texts.json?${Date.now()}`)
       .then((r) => (r.ok ? r.json() : {}))
       .then((o: unknown) => setTextOverrides(o && typeof o === "object" ? (o as Record<string, Record<string, string>>) : {}))
-      .catch(() => {});
-  }, []);
-  // Captions for the ready-made models, as written in the lab.
-  const [captions, setCaptions] = useState<Record<string, string>>({});
-  useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}home/models/photos.json?${Date.now()}`)
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((c: unknown) => setCaptions(c && typeof c === "object" && !Array.isArray(c) ? (c as Record<string, string>) : {}))
       .catch(() => {});
   }, []);
   const [models, setModels] = useState<{ file: string; caption: string; v: string; color?: string; bands?: { start: number; color: string }[]; rotate?: boolean; view?: { az: number; el: number; zoom: number } }[]>(SHOWCASE_MODELS.map((m) => ({ ...m, v: "" })));
@@ -383,18 +354,6 @@ export default function Landing({ onSignIn, onSignUp, onStudio, onOpenModel }: P
                 </Suspense>
                 <figcaption className="homeCap">{t(m.caption)}</figcaption>
               </figure>
-            ))}
-          </div>
-        </section>
-
-        <section className="homeSection">
-          <h2>{t("Ready-made models")}</h2>
-          <p className="sub">{t("Pick one to open it in the editor, then make it yours.")}</p>
-          <div className={`homeGallery ${MODELS.length === 4 ? "four" : ""}`}>
-            {MODELS.map((m) => (
-              <button key={m.file} className="homeModelBtn" onClick={() => onOpenModel(m.file)}>
-                <Photo {...m} caption={captions[m.file.replace(/\.jpg$/, "")] ?? m.caption} />
-              </button>
             ))}
           </div>
         </section>
