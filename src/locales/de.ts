@@ -269,6 +269,7 @@ export const de: Record<string, string> = {
   "Type here": "Hier tippen",
   "Put it on the picture — it stays movable until you change tool (Ctrl+Enter)": "Aufs Bild setzen — bleibt verschiebbar, bis du das Werkzeug wechselst (Strg+Enter)",
   "Throw it away (Esc)": "Verwerfen (Esc)",
+  "Continue": "Weiter",
   "Cancel": "Abbrechen",
   "Generate a model to see it here. Drag to orbit, scroll to zoom.": "Erzeuge ein Modell, um es hier zu sehen. Ziehen zum Drehen, Scrollen zum Zoomen.",
   "Crop": "Zuschneiden",

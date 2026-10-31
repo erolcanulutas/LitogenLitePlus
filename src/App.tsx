@@ -1709,6 +1709,8 @@ export default function App() {
   /** Which past work has its picture on this computer. */
   const [storedPictures, setStoredPictures] = useState<Set<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
+  /** Asking whether to spend a credit; answered by the buttons, not the browser's own dialog, which can be switched off. */
+  const [spendAsk, setSpendAsk] = useState<{ credits: number; answer: (ok: boolean) => void } | null>(null);
   const [historyNote, setHistoryNote] = useState<string | null>(null);
   /** A piece of work waiting for its picture to finish loading, to be put back as it was. */
   const pendingEntry = useRef<HistoryEntry | null>(null);
@@ -2965,11 +2967,9 @@ export default function App() {
    * false, with the reason shown, if it could not.
    */
   /** Whether the person agrees to spend a token; asked only when one will be spent. */
-  function agreeToSpend(): boolean {
-    if (!account || unlimited(account)) return true;
-    return window.confirm(
-      t("This will use 1 credit (you have {n}). Continue?", { n: account.tokens }),
-    );
+  function agreeToSpend(): Promise<boolean> {
+    if (!account || unlimited(account)) return Promise.resolve(true);
+    return new Promise((resolve) => setSpendAsk({ credits: account.tokens, answer: resolve }));
   }
 
   async function payForHolder(ref: string): Promise<boolean> {
@@ -2980,7 +2980,7 @@ export default function App() {
     } catch {
       /* storage may be blocked */
     }
-    if (!paidBefore.includes(ref) && !agreeToSpend()) return false;
+    if (!paidBefore.includes(ref) && !(await agreeToSpend())) return false;
     try {
       const paid = await spendForHolder(ref);
       setAccount(paid.account);
@@ -3127,7 +3127,7 @@ export default function App() {
         });
         return;
       }
-      if (!agreeToSpend()) return;
+      if (!(await agreeToSpend())) return;
     }
 
     setIsGenerating(true);
@@ -4959,6 +4959,18 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {spendAsk && (
+        <div className="modalBackdrop" onClick={() => { spendAsk.answer(false); setSpendAsk(null); }}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginBottom: 14 }}>{t("This will use 1 credit (you have {n}). Continue?", { n: spendAsk.credits })}</div>
+            <div className="modalActions">
+              <button className="btn" onClick={() => { spendAsk.answer(false); setSpendAsk(null); }}>{t("Cancel")}</button>
+              <button className="primaryBtn" onClick={() => { spendAsk.answer(true); setSpendAsk(null); }}>{t("Continue")}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {historyOpen && (
         <HistoryPanel

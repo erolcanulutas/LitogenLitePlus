@@ -269,6 +269,7 @@ export const tr: Record<string, string> = {
   "Type here": "Buraya yazın",
   "Put it on the picture — it stays movable until you change tool (Ctrl+Enter)": "Resme koy — araç değiştirene kadar taşınabilir (Ctrl+Enter)",
   "Throw it away (Esc)": "Vazgeç (Esc)",
+  "Continue": "Devam et",
   "Cancel": "İptal",
   "Generate a model to see it here. Drag to orbit, scroll to zoom.": "Burada görmek için bir model oluşturun. Döndürmek için sürükleyin, yakınlaştırmak için kaydırın.",
   "Crop": "Kırp",
